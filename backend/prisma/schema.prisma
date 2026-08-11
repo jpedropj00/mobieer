@@ -371,3 +371,12 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+
+// ============================================================
+// SETTINGS
+// ============================================================
+
+model Setting {
+  key   String @id
+  value String @db.Text
+}

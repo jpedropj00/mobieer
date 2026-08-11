@@ -6,7 +6,7 @@ import { prisma } from "../../prisma";
 import { BadRequestError, NotFoundError, UnauthorizedError } from "../../utils/ApiError";
 
 function signToken(userId: string) {
-  return jwt.sign({ sub: userId }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+  return jwt.sign({ sub: userId }, env.jwtSecret, { expiresIn: env.jwtExpiresIn as jwt.SignOptions["expiresIn"] });
 }
 
 function serializeUser(user: {

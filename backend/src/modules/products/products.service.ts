@@ -91,7 +91,8 @@ export async function listProducts(params: {
   if (params.status) where.status = params.status;
   if (params.warehouseId) where.warehouseId = params.warehouseId;
   if (params.lowStock === "true") {
-    where.OR = [...(where.OR ?? []), { stock: { lte: prisma.product.fields.minStock } }];
+    const or = (where.OR as unknown[]) ?? [];
+    where.OR = [...or, { stock: { lte: prisma.product.fields.minStock } }];
   }
 
   const total = await prisma.product.count({ where });

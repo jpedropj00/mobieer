@@ -1,4 +1,4 @@
-import { NotificationType } from "@prisma/client";
+import { InventoryStatus, NotificationType } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import type { CreateInventoryInput } from "./inventory.schema";
@@ -192,11 +192,11 @@ export async function adjustItem(inventoryId: string, inventoryItemId: string, r
   return result;
 }
 
-export async function updateStatus(inventoryId: string, status: string, actorId: string) {
+export async function updateStatus(inventoryId: string, status: InventoryStatus, actorId: string) {
   const inventory = await prisma.inventory.findUnique({ where: { id: inventoryId } });
   if (!inventory) throw new NotFoundError("Inventário não encontrado");
 
-  const data: { status: string; concludedAt?: Date | null } = { status };
+  const data: { status: InventoryStatus; concludedAt?: Date | null } = { status };
   if (status === "CONCLUDED") data.concludedAt = new Date();
 
   const updated = await prisma.inventory.update({ where: { id: inventoryId }, data });
