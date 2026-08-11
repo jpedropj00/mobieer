@@ -1,0 +1,20 @@
+{
+  "name": "mobieer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Sistema de Gestão de Almoxarifado - MOBIEER",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run prisma:migrate --workspace backend",
+    "db:seed": "npm run prisma:seed --workspace backend",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build:frontend": "npm run build --workspace frontend",
+    "build:backend": "npm run build --workspace backend"
+  }
+}

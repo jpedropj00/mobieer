@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/
+coverage/
+backend/uploads/*
+!backend/uploads/.gitkeep
+frontend/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+*.db
+*.sqlite
