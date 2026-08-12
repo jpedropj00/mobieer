@@ -108,10 +108,10 @@ export async function runReport(type: ReportType, f: ReportFilters) {
     case "exits":
       return movementsData(f, MovementType.EXIT);
     case "movements":
-      return movementsData(f, undefined);
+      return movementsData(f, f.type);
     case "low-stock": {
       const products = await prisma.product.findMany({
-        where: { status: "ACTIVE", stock: { lte: prisma.product.fields.minStock } },
+        where: { status: "ACTIVE", stock: { lte: prisma.product.fields.minStock }, ...(f.categoryId ? { categoryId: f.categoryId } : {}) },
         include: { category: { select: { id: true, name: true } }, warehouse: { select: { id: true, name: true } } },
         orderBy: [{ stock: "asc" }],
       });
@@ -134,7 +134,7 @@ export async function runReport(type: ReportType, f: ReportFilters) {
       });
       const movedIds = new Set(movements.map((m) => m.productId));
       const products = await prisma.product.findMany({
-        where: { status: "ACTIVE", id: { notIn: [...movedIds] } },
+        where: { status: "ACTIVE", id: { notIn: [...movedIds] }, ...(f.categoryId ? { categoryId: f.categoryId } : {}) },
         include: { category: { select: { id: true, name: true } } },
         orderBy: { name: "asc" },
       });

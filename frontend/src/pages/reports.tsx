@@ -3,7 +3,7 @@ import { useState } from "react";
 import { BarChart3, Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, getToken } from "@/services/api";
-import type { Movement } from "@/types";
+import type { Category, Movement } from "@/types";
 import { formatCurrency, formatNumber, UNITS } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +77,12 @@ export function ReportsPage() {
   const [type, setType] = useState("stock");
   const [filters, setFilters] = useState<Record<string, string>>({});
 
+  const { data: categoriesData } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => apiGet<{ data: Category[] }>("/categories"),
+    enabled: can("categories.read"),
+  });
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["reports", type, filters],
     queryFn: () => apiGet<{ data: Row[] }>("/reports/" + type, filters),
@@ -125,7 +131,7 @@ export function ReportsPage() {
         <CardHeader>
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div className="space-y-2">
             <Label>Relatório</Label>
             <Select value={type} onValueChange={setType}>
@@ -149,6 +155,52 @@ export function ReportsPage() {
             <Label>Data final</Label>
             <Input type="date" value={filters.dateTo ?? ""} onChange={(e) => setFilter("dateTo", e.target.value)} />
           </div>
+          {can("categories.read") && (
+            <div className="space-y-2">
+              <Label>Categoria</Label>
+              <Select
+                value={filters.categoryId ?? ""}
+                onValueChange={(v) => setFilter("categoryId", v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todas</SelectItem>
+                  {categoriesData?.data.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {(type === "exits" || type === "movements") && (
+            <div className="space-y-2">
+              <Label>Setor</Label>
+              <Input placeholder="Ex.: Montagem" value={filters.sector ?? ""} onChange={(e) => setFilter("sector", e.target.value)} />
+            </div>
+          )}
+          {type === "movements" && (
+            <div className="space-y-2">
+              <Label>Tipo de movimentação</Label>
+              <Select
+                value={filters.type ?? ""}
+                onValueChange={(v) => setFilter("type", v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todos</SelectItem>
+                  <SelectItem value="ENTRY">Entrada</SelectItem>
+                  <SelectItem value="EXIT">Saída</SelectItem>
+                  <SelectItem value="ADJUST">Ajuste</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="flex items-end">
             <Button variant="outline" onClick={() => refetch()}>
               Aplicar filtros

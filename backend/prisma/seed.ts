@@ -41,6 +41,7 @@ const PERMISSIONS = [
   { code: "users.manage", label: "Gerenciar usuários", module: "Usuários" },
   { code: "audit.read", label: "Ver auditoria", module: "Auditoria" },
   { code: "notifications.read", label: "Ver notificações", module: "Notificações" },
+  { code: "settings.manage", label: "Gerenciar configurações", module: "Configurações" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -465,8 +466,11 @@ async function main() {
     const requester = REQUESTERS[i % REQUESTERS.length];
     const items = [];
     const itemCount = rand(1, 3);
-    for (let j = 0; j < itemCount; j++) {
+    const seen = new Set<string>();
+    while (items.length < itemCount) {
       const product = activeProducts[rand(0, activeProducts.length - 1)];
+      if (seen.has(product.id)) continue;
+      seen.add(product.id);
       items.push({ productId: product.id, quantity: rand(5, 60) });
     }
     const req = await prisma.requisition.create({

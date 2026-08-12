@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { GuestRoute, ProtectedRoute } from "@/router-guards";
+import { PermissionGate } from "@/components/permission-gate";
 import { LoginPage } from "@/pages/login";
 import { DashboardPage } from "@/pages/dashboard";
 import { ProductsPage } from "@/pages/products";
@@ -32,23 +33,23 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { path: "/", element: <DashboardPage /> },
-          { path: "/entrada", element: <StockEntryPage /> },
-          { path: "/saida", element: <StockExitPage /> },
-          { path: "/movimentacoes", element: <MovementsPage /> },
-          { path: "/produtos", element: <ProductsPage /> },
-          { path: "/produtos/:id", element: <ProductDetailPage /> },
-          { path: "/categorias", element: <CategoriesPage /> },
-          { path: "/fornecedores", element: <SuppliersPage /> },
-          { path: "/almoxarifados", element: <WarehousesPage /> },
-          { path: "/inventario", element: <InventoryPage /> },
-          { path: "/inventario/:id", element: <InventoryDetailPage /> },
-          { path: "/requisicoes", element: <RequisitionsPage /> },
-          { path: "/requisicoes/:id", element: <RequisitionDetailPage /> },
-          { path: "/alertas", element: <AlertsPage /> },
+          { path: "/", element: <PermissionGate permission="dashboard.read"><DashboardPage /></PermissionGate> },
+          { path: "/entrada", element: <PermissionGate permission="stock.entry"><StockEntryPage /></PermissionGate> },
+          { path: "/saida", element: <PermissionGate permission="stock.exit"><StockExitPage /></PermissionGate> },
+          { path: "/movimentacoes", element: <PermissionGate permission="stock.movements"><MovementsPage /></PermissionGate> },
+          { path: "/produtos", element: <PermissionGate permission="products.read"><ProductsPage /></PermissionGate> },
+          { path: "/produtos/:id", element: <PermissionGate permission="products.read"><ProductDetailPage /></PermissionGate> },
+          { path: "/categorias", element: <PermissionGate permission="categories.read"><CategoriesPage /></PermissionGate> },
+          { path: "/fornecedores", element: <PermissionGate permission="suppliers.read"><SuppliersPage /></PermissionGate> },
+          { path: "/almoxarifados", element: <PermissionGate permission="warehouses.read"><WarehousesPage /></PermissionGate> },
+          { path: "/inventario", element: <PermissionGate permission="inventory.read"><InventoryPage /></PermissionGate> },
+          { path: "/inventario/:id", element: <PermissionGate permission="inventory.read"><InventoryDetailPage /></PermissionGate> },
+          { path: "/requisicoes", element: <PermissionGate permission="requisitions.read"><RequisitionsPage /></PermissionGate> },
+          { path: "/requisicoes/:id", element: <PermissionGate permission="requisitions.read"><RequisitionDetailPage /></PermissionGate> },
+          { path: "/alertas", element: <PermissionGate permission="stock.read"><AlertsPage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },
-          { path: "/usuarios", element: <UsersPage /> },
-          { path: "/auditoria", element: <AuditPage /> },
+          { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },
+          { path: "/auditoria", element: <PermissionGate permission="audit.read"><AuditPage /></PermissionGate> },
           { path: "/configuracoes", element: <SettingsPage /> },
         ],
       },

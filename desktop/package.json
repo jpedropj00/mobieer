@@ -1,0 +1,85 @@
+{
+  "name": "mobieer-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MOBIEER Almoxarifado - Aplicativo Desktop",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node copy-files.mjs && electron .",
+    "dist": "node copy-files.mjs && electron-builder --win nsis",
+    "build": "node copy-files.mjs && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.15.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "br.com.mobieer.almoxarifado",
+    "productName": "MOBIEER",
+    "electronVersion": "33.2.0",
+    "copyright": "Copyright © 2026 MOBIEER",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "backend/**/*",
+      "frontend/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "!node_modules/electron/**",
+      "!node_modules/electron-builder/**",
+      "!node_modules/@electron/**",
+      "!node_modules/@types/**",
+      "!node_modules/.bin/**",
+      "!node_modules/app-builder-bin/**",
+      "!node_modules/dmg-builder/**",
+      "!node_modules/builder-util/**",
+      "!node_modules/electron-publish/**",
+      "!node_modules/electron-builder-squirrel-windows/**",
+      "!**/*.map",
+      "!**/*.tsbuildinfo"
+    ],
+    "npmRebuild": false,
+    "asarUnpack": [
+      "**/node_modules/@prisma/client/**",
+      "**/node_modules/@prisma/engines/**",
+      "**/node_modules/.prisma/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MOBIEER",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "MOBIEER - Gestão de Almoxarifado"
+    }
+  }
+}

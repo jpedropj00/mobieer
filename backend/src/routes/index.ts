@@ -13,6 +13,7 @@ import reportsRoutes from "../modules/reports/reports.routes";
 import notificationsRoutes from "../modules/notifications/notifications.routes";
 import auditRoutes from "../modules/audit/audit.routes";
 import searchRoutes from "../modules/search/search.routes";
+import settingsRoutes from "../modules/settings/settings.routes";
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use("/reports", reportsRoutes);
 router.use("/notifications", notificationsRoutes);
 router.use("/audit", auditRoutes);
 router.use("/search", searchRoutes);
+router.use("/settings", settingsRoutes);
 
 export default router;

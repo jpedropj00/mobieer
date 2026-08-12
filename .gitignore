@@ -14,5 +14,8 @@ backend/uploads/*
 frontend/dist/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+desktop/backend/
+desktop/frontend/
+desktop/release/
 *.db
 *.sqlite

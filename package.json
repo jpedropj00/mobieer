@@ -5,7 +5,8 @@
   "description": "Sistema de Gestão de Almoxarifado - MOBIEER",
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "desktop"
   ],
   "scripts": {
     "db:up": "docker compose up -d",
@@ -15,6 +16,7 @@
     "dev:backend": "npm run dev --workspace backend",
     "dev:frontend": "npm run dev --workspace frontend",
     "build:frontend": "npm run build --workspace frontend",
-    "build:backend": "npm run build --workspace backend"
+    "build:backend": "npm run build --workspace backend",
+    "build:desktop": "npm run build:frontend && npm run build:backend && npm run dist --workspace desktop"
   }
 }

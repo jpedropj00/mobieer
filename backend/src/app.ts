@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs";
 import express from "express";
 import cors from "cors";
 import { env } from "./config/env";
@@ -50,6 +51,15 @@ export function createApp() {
   app.use("/api/audit", auditRoutes);
   app.use("/api/search", searchRoutes);
   app.use("/api/settings", settingsRoutes);
+
+  const frontendDist = path.resolve(__dirname, "../../frontend/dist");
+  if (fs.existsSync(frontendDist)) {
+    app.use(express.static(frontendDist));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api")) return next();
+      res.sendFile(path.join(frontendDist, "index.html"));
+    });
+  }
 
   app.use(notFound);
   app.use(errorHandler);

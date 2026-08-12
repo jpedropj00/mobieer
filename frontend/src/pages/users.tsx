@@ -17,8 +17,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Pagination } from "@/components/ui/pagination";
 import { EmptyState, TableSkeleton } from "@/components/ui/states";
+import { RolesManagement } from "@/features/users/roles-management";
 import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -128,8 +130,15 @@ export function UsersPage() {
         )}
       </PageHeader>
 
-      <Card>
-        <CardContent className="p-4">
+      <Tabs defaultValue="users">
+        <TabsList>
+          <TabsTrigger value="users">Usuários</TabsTrigger>
+          <TabsTrigger value="roles">Perfis e permissões</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users" className="space-y-6">
+          <Card>
+            <CardContent className="p-4">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Buscar por nome, email, cargo ou setor..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
@@ -276,6 +285,12 @@ export function UsersPage() {
           </form>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        <TabsContent value="roles">
+          <RolesManagement />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
