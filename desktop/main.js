@@ -2,6 +2,8 @@ const { app, BrowserWindow, dialog } = require("electron");
 const path = require("path");
 const net = require("net");
 const { spawn } = require("child_process");
+const crypto = require("crypto");
+const fs = require("fs");
 
 const BACKEND_PORT = Number(process.env.MOBIEER_PORT || 3333);
 const DB_URL = process.env.DATABASE_URL || "postgresql://mobieer:mobieer_dev_2026@localhost:5434/mobieer?schema=public";
@@ -53,6 +55,17 @@ async function waitForBackend(timeoutMs) {
 function startBackend() {
   const entry = path.join(__dirname, "backend", "dist", "server.js");
   const userData = app.getPath("userData");
+  const secretPath = path.join(userData, ".jwt-secret");
+  let jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    try {
+      jwtSecret = fs.readFileSync(secretPath, "utf8").trim();
+    } catch {
+      jwtSecret = crypto.randomBytes(48).toString("hex");
+      fs.mkdirSync(userData, { recursive: true });
+      fs.writeFileSync(secretPath, jwtSecret, { encoding: "utf8", mode: 0o600 });
+    }
+  }
 
   backendProcess = spawn(process.execPath, [entry], {
     env: {
@@ -60,7 +73,7 @@ function startBackend() {
       ELECTRON_RUN_AS_NODE: "1",
       PORT: String(BACKEND_PORT),
       DATABASE_URL: DB_URL,
-      JWT_SECRET: process.env.JWT_SECRET || "mobieer-dev-secret",
+      JWT_SECRET: jwtSecret,
       JWT_EXPIRES_IN: "12h",
       FRONTEND_URLS: `http://localhost:${BACKEND_PORT}`,
       NODE_ENV: "production",
