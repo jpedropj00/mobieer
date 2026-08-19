@@ -1,9 +1,9 @@
 import { NotificationType, RequisitionStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
-import { BadRequestError, NotFoundError } from "../../utils/ApiError";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../../utils/ApiError";
 import { nextCode } from "../../utils/helpers";
 import type { CreateRequisitionInput } from "./requisitions.schema";
-import { createExit } from "../stock/stock.service";
+import { createExitWithClient } from "../stock/stock.service";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "Pendente",
@@ -160,13 +160,43 @@ const TRANSITIONS: Record<RequisitionStatus, RequisitionStatus[]> = {
   CANCELLED: [],
 };
 
+const REQUIRED_PERMISSION: Partial<Record<RequisitionStatus, string>> = {
+  IN_REVIEW: "requisitions.approve",
+  APPROVED: "requisitions.approve",
+  REFUSED: "requisitions.approve",
+  SEPARATION: "requisitions.separate",
+  CONCLUDED: "requisitions.finish",
+  CANCELLED: "requisitions.cancel",
+};
+
+export function assertRequisitionTransition(
+  currentStatus: RequisitionStatus,
+  nextStatus: RequisitionStatus,
+  permissions: string[]
+) {
+  if (currentStatus === nextStatus) {
+    throw new BadRequestError("A requisição já está neste status");
+  }
+  const allowed = TRANSITIONS[currentStatus];
+  if (!allowed.includes(nextStatus)) {
+    throw new BadRequestError(
+      `Transição inválida: ${currentStatus} → ${nextStatus}. Permitidas: ${allowed.join(", ") || "nenhuma"}`
+    );
+  }
+  const required = REQUIRED_PERMISSION[nextStatus];
+  if (required && !permissions.includes(required)) {
+    throw new ForbiddenError(`Permissão necessária: ${required}`);
+  }
+}
+
 export async function updateRequisitionStatus(
   id: string,
   nextStatus: RequisitionStatus,
   note: string | null,
   actorId: string,
   actorName: string,
-  allowNegative = false
+  allowNegative = false,
+  permissions: string[] = []
 ) {
   const requisition = await prisma.requisition.findUnique({
     where: { id },
@@ -177,16 +207,7 @@ export async function updateRequisitionStatus(
   });
   if (!requisition) throw new NotFoundError("Requisição não encontrada");
 
-  if (requisition.status === nextStatus) {
-    throw new BadRequestError("A requisição já está neste status");
-  }
-
-  const allowed = TRANSITIONS[requisition.status];
-  if (!allowed.includes(nextStatus)) {
-    throw new BadRequestError(
-      `Transição inválida: ${requisition.status} → ${nextStatus}. Permitidas: ${allowed.join(", ") || "nenhuma"}`
-    );
-  }
+  assertRequisitionTransition(requisition.status, nextStatus, permissions);
 
   const data: Record<string, unknown> = { status: nextStatus, note: note ?? requisition.note };
   if (nextStatus === RequisitionStatus.APPROVED) {
@@ -235,7 +256,8 @@ export async function updateRequisitionStatus(
         productId: i.productId,
         quantity: i.quantity,
       }));
-      await createExit(
+      await createExitWithClient(
+        tx,
         {
           items,
           requesterName: requisition.requester.name,

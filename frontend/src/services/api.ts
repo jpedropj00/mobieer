@@ -60,6 +60,10 @@ export async function api<T = unknown>(path: string, options: RequestOptions = {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && accessToken) {
+      setToken(null);
+      window.dispatchEvent(new Event("mobieer:unauthorized"));
+    }
     const message = (payload as { message?: string })?.message ?? `Erro ${response.status}`;
     throw new ApiError(response.status, message, (payload as { details?: unknown })?.details);
   }

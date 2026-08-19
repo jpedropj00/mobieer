@@ -9,6 +9,7 @@ build/
 .vscode/
 .idea/
 coverage/
+backend/test-dist/
 backend/uploads/*
 !backend/uploads/.gitkeep
 frontend/dist/

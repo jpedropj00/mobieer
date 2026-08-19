@@ -36,7 +36,8 @@ export const updateStatus = asyncHandler(async (req: Request, res: Response) => 
     note ?? null,
     req.user!.id,
     req.user!.name,
-    allowNegative
+    allowNegative,
+    req.user!.permissions
   );
   return ok(res, requisition, "Status da requisição atualizado");
 });

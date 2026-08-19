@@ -42,6 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refetch().catch(onMeError);
   }, [initialToken, refetch]);
 
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+      queryClient.clear();
+    };
+    window.addEventListener("mobieer:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("mobieer:unauthorized", handleUnauthorized);
+  }, [queryClient]);
+
   const loginMutation = useMutation({
     mutationFn: (credentials: { email: string; password: string }) =>
       api<{ data: { token: string; user: AuthUser } }>("/auth/login", { method: "POST", body: credentials }),
