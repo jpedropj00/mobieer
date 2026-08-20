@@ -2,7 +2,7 @@
   "name": "backend",
   "private": true,
   "version": "1.0.0",
-  "description": "MOBIEER Almoxarifado - API REST",
+  "description": "Gestium - Plataforma modular de gestão empresarial",
   "main": "dist/server.js",
   "scripts": {
     "postinstall": "prisma generate",

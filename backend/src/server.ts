@@ -10,7 +10,7 @@ async function main() {
   await inventoryService.refreshPendingInventory();
 
   app.listen(env.port, () => {
-    console.log(`\n  MOBIEER Almoxarifado API rodando em http://localhost:${env.port}\n`);
+    console.log(`\n  Gestium API rodando em http://localhost:${env.port}\n`);
   });
 }
 

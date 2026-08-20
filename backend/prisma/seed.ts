@@ -34,10 +34,15 @@ const PERMISSIONS = [
   { code: "inventory.update", label: "Realizar contagem", module: "Inventário" },
   { code: "inventory.adjust", label: "Ajustar divergências", module: "Inventário" },
   { code: "requisitions.read", label: "Ver requisições", module: "Requisições" },
+  { code: "requisitions.read.all", label: "Ver requisições de todos", module: "Requisições" },
   { code: "requisitions.create", label: "Criar requisições", module: "Requisições" },
-  { code: "requisitions.approve", label: "Aprovar/recusar", module: "Requisições" },
-  { code: "requisitions.separate", label: "Separar materiais", module: "Requisições" },
-  { code: "requisitions.finish", label: "Finalizar requisições", module: "Requisições" },
+  { code: "requisitions.edit", label: "Editar próprios rascunhos", module: "Requisições" },
+  { code: "requisitions.edit.all", label: "Editar todos os rascunhos", module: "Requisições" },
+  { code: "requisitions.analyze", label: "Analisar requisições", module: "Requisições" },
+  { code: "requisitions.reserve", label: "Reservar materiais", module: "Requisições" },
+  { code: "requisitions.release", label: "Liberar para corte", module: "Requisições" },
+  { code: "requisitions.cut", label: "Executar corte", module: "Requisições" },
+  { code: "requisitions.inspect", label: "Conferir e concluir", module: "Requisições" },
   { code: "requisitions.cancel", label: "Cancelar requisições", module: "Requisições" },
   { code: "reports.read", label: "Ver relatórios", module: "Relatórios" },
   { code: "reports.export", label: "Exportar relatórios", module: "Relatórios" },
@@ -89,9 +94,13 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "inventory.update",
       "inventory.adjust",
       "requisitions.read",
-      "requisitions.approve",
-      "requisitions.separate",
-      "requisitions.finish",
+      "requisitions.read.all",
+      "requisitions.edit.all",
+      "requisitions.analyze",
+      "requisitions.reserve",
+      "requisitions.release",
+      "requisitions.cut",
+      "requisitions.inspect",
       "requisitions.cancel",
       "reports.read",
       "reports.export",
@@ -124,9 +133,24 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "inventory.update",
       "inventory.adjust",
       "requisitions.read",
-      "requisitions.separate",
-      "requisitions.finish",
+      "requisitions.read.all",
+      "requisitions.reserve",
       "reports.read",
+      "notifications.read",
+    ],
+  },
+  {
+    name: "PRODUCTION",
+    label: "Produção / Corte",
+    description: "Executa e confere as peças liberadas para produção",
+    perms: [
+      "dashboard.read",
+      "products.read",
+      "stock.read",
+      "requisitions.read",
+      "requisitions.read.all",
+      "requisitions.cut",
+      "requisitions.inspect",
       "notifications.read",
     ],
   },
@@ -140,6 +164,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "stock.read",
       "requisitions.read",
       "requisitions.create",
+      "requisitions.edit",
       "requisitions.cancel",
       "notifications.read",
     ],
@@ -471,7 +496,7 @@ async function main() {
   }
 
   console.log("[SEED] Criando requisições...");
-  const reqStatuses = ["PENDING", "IN_REVIEW", "APPROVED", "SEPARATION", "CONCLUDED", "REFUSED", "CONCLUDED", "APPROVED"];
+  const reqStatuses = ["REQUESTED", "IN_REVIEW", "WAITING_MATERIAL", "RELEASED", "IN_CUTTING", "INSPECTION", "COMPLETED", "RELEASED"];
   const activeProducts = await prisma.product.findMany({ take: 40 });
   for (let i = 0; i < 14; i++) {
     const status = reqStatuses[i % reqStatuses.length];
@@ -483,7 +508,7 @@ async function main() {
       const product = activeProducts[rand(0, activeProducts.length - 1)];
       if (seen.has(product.id)) continue;
       seen.add(product.id);
-      items.push({ productId: product.id, quantity: rand(5, 60) });
+      items.push({ productId: product.id, description: product.name, material: product.name, quantity: rand(1, 12), unit: product.unit });
     }
     const req = await prisma.requisition.create({
       data: {
@@ -491,36 +516,21 @@ async function main() {
         sector: SECTORS[i % SECTORS.length],
         destination: "Produção",
         status: status as never,
+        priority: (["LOW", "NORMAL", "HIGH", "URGENT"] as const)[i % 4],
+        clientName: i % 3 === 0 ? `Cliente ${i + 1}` : null,
+        projectReference: `PROJ-${String(i + 1).padStart(3, "0")}`,
+        neededAt: daysAgo(rand(-7, 4)),
         note: rand(0, 1) ? "Uso interno" : null,
         requesterId: userIds[requester] ?? userIds["Ana Beatriz"],
-        approvedById: status === "APPROVED" || status === "SEPARATION" || status === "CONCLUDED" ? userIds["Marcos Vinícius"] : null,
-        approvedAt: status === "APPROVED" || status === "SEPARATION" || status === "CONCLUDED" ? daysAgo(rand(1, 10)) : null,
+        approvedById: !["REQUESTED", "IN_REVIEW"].includes(status) ? userIds["Marcos Vinícius"] : null,
+        approvedAt: !["REQUESTED", "IN_REVIEW", "WAITING_MATERIAL"].includes(status) ? daysAgo(rand(1, 10)) : null,
+        submittedAt: daysAgo(rand(1, 12)),
+        completedAt: status === "COMPLETED" ? daysAgo(rand(0, 4)) : null,
         createdAt: daysAgo(rand(0, 12)),
         items: { create: items },
       },
     });
-    if (status === "CONCLUDED") {
-      for (const it of items) {
-        const product = await prisma.product.findUnique({ where: { id: it.productId } });
-        if (product && product.stock >= it.quantity) {
-          await prisma.stockMovement.create({
-            data: {
-              type: MovementType.EXIT,
-              productId: it.productId,
-              quantity: it.quantity,
-              date: daysAgo(rand(0, 4)),
-              requesterName: requester,
-              sector: req.sector,
-              destination: "Produção",
-              reason: `Requisição ${req.number}`,
-              responsibleId: userIds["J. Silva"],
-              requisitionId: req.id,
-            },
-          });
-          await prisma.product.update({ where: { id: it.productId }, data: { stock: { decrement: it.quantity } } });
-        }
-      }
-    }
+    await prisma.requisitionHistory.create({ data: { requisitionId: req.id, userId: req.requesterId, action: "REQUISITION_SUBMITTED", toValue: { status } } });
   }
 
   console.log("[SEED] Gerando alertas de estoque...");

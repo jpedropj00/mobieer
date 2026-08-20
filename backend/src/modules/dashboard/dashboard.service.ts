@@ -1,4 +1,4 @@
-import { MovementType, Prisma } from "@prisma/client";
+import { MovementType, Prisma, RequisitionStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { daysAgo, num, previousMonthRange, startOfDay } from "../../utils/helpers";
 import type { ChartPeriod } from "./dashboard.schema";
@@ -35,7 +35,7 @@ export async function getDashboard() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const prev = previousMonthRange();
 
-  const [productAgg, alerts, current, prevMonth] = await Promise.all([
+  const [productAgg, alerts, current, prevMonth, requisitionsByStatus, overdueRequisitions, recentlyCompleted] = await Promise.all([
     prisma.product.aggregate({
       where: { status: "ACTIVE" },
       _sum: { stock: true },
@@ -44,6 +44,9 @@ export async function getDashboard() {
     prisma.product.count({ where: { status: "ACTIVE", stock: { lte: prisma.product.fields.minStock } } }),
     monthMovements(monthStart, now),
     monthMovements(prev.start, prev.end),
+    prisma.requisition.groupBy({ by: ["status"], _count: true }),
+    prisma.requisition.count({ where: { neededAt: { lt: now }, status: { notIn: [RequisitionStatus.COMPLETED, RequisitionStatus.CANCELLED] } } }),
+    prisma.requisition.count({ where: { status: RequisitionStatus.COMPLETED, completedAt: { gte: daysAgo(30) } } }),
   ]);
 
   const recentMovements = await prisma.stockMovement.findMany({
@@ -60,6 +63,7 @@ export async function getDashboard() {
   const exits = current.exits;
   const prevEntries = prevMonth.entries;
   const prevExits = prevMonth.exits;
+  const reqCount = Object.fromEntries(requisitionsByStatus.map((row) => [row.status, row._count]));
 
   const percent = (currentVal: number, previousVal: number): number | null => {
     if (previousVal === 0) return currentVal > 0 ? 100 : null;
@@ -81,6 +85,14 @@ export async function getDashboard() {
       },
     },
     balance: num(productAgg._sum.stock),
+    requisitions: {
+      open: Object.entries(reqCount).filter(([status]) => !["COMPLETED", "CANCELLED"].includes(status)).reduce((sum, [, value]) => sum + value, 0),
+      waitingMaterial: reqCount.WAITING_MATERIAL ?? 0,
+      released: reqCount.RELEASED ?? 0,
+      inCutting: reqCount.IN_CUTTING ?? 0,
+      overdue: overdueRequisitions,
+      recentlyCompleted,
+    },
     recentMovements: recentMovements.map((m) => ({
       id: m.id,
       type: m.type,

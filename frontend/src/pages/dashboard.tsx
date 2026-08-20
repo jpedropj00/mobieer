@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ArrowRight, Boxes, Package, Scale } from "lucide-react";
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ArrowRight, Boxes, ClipboardList, Package, Scale, Scissors } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "@/services/api";
 import type { Dashboard } from "@/types";
@@ -46,14 +46,14 @@ export function DashboardPage() {
     );
   }
 
-  const { kpis, recentMovements, balance } = data.data;
+  const { kpis, recentMovements, balance, requisitions } = data.data;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Visão geral do almoxarifado — {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Visão Geral</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Gestão inteligente em um só lugar — {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
         </div>
         <div className="flex gap-2">
           {can("stock.entry") && (
@@ -68,6 +68,8 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      {can("requisitions.read") && <Card><CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" />Requisições de Peças</CardTitle><Link to="/requisicoes" className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">Ver requisições <ArrowRight className="h-3.5 w-3.5" /></Link></CardHeader><CardContent><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"><MiniMetric label="Abertas" value={requisitions.open} /><MiniMetric label="Aguard. material" value={requisitions.waitingMaterial} /><MiniMetric label="Liberadas" value={requisitions.released} /><MiniMetric label="Em corte" value={requisitions.inCutting} icon={<Scissors className="h-4 w-4" />} /><MiniMetric label="Atrasadas" value={requisitions.overdue} danger /><MiniMetric label="Concluídas (30d)" value={requisitions.recentlyCompleted} /></div></CardContent></Card>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard title="Itens cadastrados" value={formatNumber(kpis.totalItems)} icon={Package} iconBg="bg-primary/10" />
@@ -159,4 +161,8 @@ export function DashboardPage() {
       {can("stock.read") && <UsagePanel />}
     </div>
   );
+}
+
+function MiniMetric({ label, value, danger = false, icon }: { label: string; value: number; danger?: boolean; icon?: React.ReactNode }) {
+  return <div className="rounded-lg border p-3"><div className="flex items-center justify-between text-xs text-muted-foreground"><span>{label}</span>{icon}</div><p className={danger && value > 0 ? "mt-1 text-xl font-bold text-destructive" : "mt-1 text-xl font-bold"}>{value}</p></div>;
 }

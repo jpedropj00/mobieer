@@ -1,4 +1,4 @@
-// MOBIEER Almoxarifado - Prisma Schema
+// Gestium - Plataforma modular de gestão empresarial
 // provider: PostgreSQL
 
 generator client {
@@ -40,6 +40,10 @@ model User {
   movements         StockMovement[]    @relation("MovementResponsible")
   createdReqs       Requisition[]      @relation("RequisitionCreator")
   approvedReqs      Requisition[]      @relation("RequisitionApprover")
+  responsibleReqs   Requisition[]      @relation("RequisitionResponsible")
+  cuttingReqs       Requisition[]      @relation("RequisitionCutter")
+  inspectedReqs     Requisition[]      @relation("RequisitionInspector")
+  requisitionEvents RequisitionHistory[]
   inventories       Inventory[]
   notifications     Notification[]
   auditLogs         AuditLog[]
@@ -281,10 +285,16 @@ model StockReservation {
   warehouse   Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   requesterId String
   requester   User              @relation(fields: [requesterId], references: [id])
+  requisitionId String?
+  requisition Requisition? @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  requisitionItemId String?
+  requisitionItem RequisitionItem? @relation(fields: [requisitionItemId], references: [id], onDelete: Cascade)
   movements   StockMovement[]
 
   @@index([productId, status])
   @@index([requesterId])
+  @@index([requisitionId, status])
+  @@index([requisitionItemId, status])
 }
 
 // ============================================================
@@ -340,19 +350,34 @@ model InventoryItem {
 // ============================================================
 
 enum RequisitionStatus {
-  PENDING
+  DRAFT
+  REQUESTED
   IN_REVIEW
-  APPROVED
-  SEPARATION
-  CONCLUDED
-  REFUSED
+  WAITING_MATERIAL
+  RELEASED
+  IN_CUTTING
+  INSPECTION
+  COMPLETED
   CANCELLED
 }
 
 enum RequisitionItemStatus {
   PENDING
-  SEPARATED
-  CONCLUDED
+  CUTTING
+  CUT
+  INSPECTED
+}
+
+enum RequisitionPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum InspectionResult {
+  APPROVED
+  NEEDS_CORRECTION
 }
 
 model Requisition {
@@ -360,11 +385,22 @@ model Requisition {
   number      String            @unique // REQ-00001
   sector      String?
   destination String?
-  status      RequisitionStatus @default(PENDING)
+  status      RequisitionStatus @default(DRAFT)
+  priority    RequisitionPriority @default(NORMAL)
   note        String?
+  clientName  String?
+  projectReference String?
+  neededAt    DateTime?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+  submittedAt DateTime?
   approvedAt  DateTime?
+  cuttingStartedAt DateTime?
+  inspectedAt DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  inspectionResult InspectionResult?
+  inspectionNote String?
 
   requesterId String
   requester   User   @relation("RequisitionCreator", fields: [requesterId], references: [id])
@@ -372,24 +408,83 @@ model Requisition {
   approvedById String?
   approvedBy   User?   @relation("RequisitionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
 
-  items     RequisitionItem[]
-  movements StockMovement[]
+  responsibleId String?
+  responsible User? @relation("RequisitionResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+
+  cutterId String?
+  cutter User? @relation("RequisitionCutter", fields: [cutterId], references: [id], onDelete: SetNull)
+
+  inspectorId String?
+  inspector User? @relation("RequisitionInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
+
+  items        RequisitionItem[]
+  movements    StockMovement[]
+  reservations StockReservation[]
+  history      RequisitionHistory[]
+  attachments  RequisitionAttachment[]
 
   @@index([status])
+  @@index([priority])
+  @@index([neededAt])
+  @@index([requesterId])
+  @@index([responsibleId])
+  @@index([cutterId])
+  @@index([inspectorId])
 }
 
 model RequisitionItem {
   id       String                @id @default(cuid())
   quantity Int
   status   RequisitionItemStatus @default(PENDING)
+  description String
+  material String?
+  thickness Decimal? @db.Decimal(10, 2)
+  length Decimal? @db.Decimal(10, 2)
+  width Decimal? @db.Decimal(10, 2)
+  unit Unit @default(UNIT)
+  edgeFinish String?
+  note String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   requisitionId String
   requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
 
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  reservations StockReservation[]
 
-  @@unique([requisitionId, productId])
+  @@index([requisitionId])
+  @@index([productId])
+}
+
+model RequisitionHistory {
+  id String @id @default(cuid())
+  action String
+  fromValue Json?
+  toValue Json?
+  note String?
+  createdAt DateTime @default(now())
+  requisitionId String
+  requisition Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([requisitionId, createdAt])
+  @@index([userId])
+}
+
+model RequisitionAttachment {
+  id String @id @default(cuid())
+  name String
+  url String
+  mimeType String?
+  size Int?
+  createdAt DateTime @default(now())
+  requisitionId String
+  requisition Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@index([requisitionId])
 }
 
 // ============================================================

@@ -108,7 +108,7 @@ export function exportPdf(res: Response, data: unknown[], filename: string, type
   res.setHeader("Content-Disposition", `attachment; filename="${filename}.pdf"`);
   doc.pipe(res);
 
-  doc.font(FONT).fontSize(16).text("MOBIEER — Relatório de Almoxarifado", { align: "center" });
+  doc.font(FONT).fontSize(16).text("Gestium — Relatório de Estoque", { align: "center" });
   doc.fontSize(10).text(`Tipo: ${type}  |  Gerado em: ${new Date().toLocaleString("pt-BR")}`, { align: "center" });
   doc.moveDown();
 

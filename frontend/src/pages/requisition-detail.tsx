@@ -1,206 +1,62 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, CheckCircle2, Clock3, Loader2, PackageCheck, Play, RotateCcw, ShieldCheck, XCircle } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Package } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { apiGet, apiPatch } from "@/services/api";
-import type { Requisition } from "@/types";
-import { formatNumber, UNITS } from "@/lib/utils";
+import { RequisitionStatusBadge } from "@/components/badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, TableSkeleton } from "@/components/ui/states";
-import { RequisitionStatusBadge } from "@/components/badges";
 import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
+import { apiGet, apiPatch, apiPost } from "@/services/api";
+import type { Requisition, RequisitionItemStatus, RequisitionStatus } from "@/types";
 
-const ACTIONS: Record<string, { to: string; label: string; permission?: string; tone?: "default" | "success" | "danger" }[]> = {
-  PENDING: [
-    { to: "IN_REVIEW", label: "Enviar para análise", permission: "requisitions.approve" },
-    { to: "CANCELLED", label: "Cancelar", permission: "requisitions.cancel", tone: "danger" },
-  ],
-  IN_REVIEW: [
-    { to: "APPROVED", label: "Aprovar", permission: "requisitions.approve", tone: "success" },
-    { to: "REFUSED", label: "Recusar", permission: "requisitions.approve", tone: "danger" },
-    { to: "CANCELLED", label: "Cancelar", permission: "requisitions.cancel", tone: "danger" },
-  ],
-  APPROVED: [
-    { to: "SEPARATION", label: "Iniciar separação", permission: "requisitions.separate" },
-    { to: "CANCELLED", label: "Cancelar", permission: "requisitions.cancel", tone: "danger" },
-  ],
-  SEPARATION: [
-    { to: "CONCLUDED", label: "Concluir (dar baixa)", permission: "requisitions.finish", tone: "success" },
-    { to: "CANCELLED", label: "Cancelar", permission: "requisitions.cancel", tone: "danger" },
-  ],
-};
+const priority: Record<string, string> = { LOW: "Baixa", NORMAL: "Normal", HIGH: "Alta", URGENT: "Urgente" };
+const itemStatus: Record<RequisitionItemStatus, string> = { PENDING: "Pendente", CUTTING: "Em corte", CUT: "Cortado", INSPECTED: "Conferido" };
+const historyLabel: Record<string, string> = { REQUISITION_CREATED: "Requisição criada", REQUISITION_SUBMITTED: "Requisição enviada", REQUISITION_UPDATED: "Requisição atualizada", REQUISITION_STATUS_CHANGED: "Status alterado", REQUISITION_ITEM_STATUS_CHANGED: "Andamento de peça alterado", REQUISITION_MATERIAL_RESERVED: "Material reservado", REQUISITION_INSPECTED: "Conferência realizada" };
 
 export function RequisitionDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const { can } = useAuth();
-  const queryClient = useQueryClient();
-  const [target, setTarget] = useState<{ status: string; label: string; note?: boolean } | null>(null);
-  const [note, setNote] = useState("");
+  const { id = "" } = useParams(); const { can } = useAuth(); const queryClient = useQueryClient(); const [confirm, setConfirm] = useState<{ kind: "status" | "inspection"; value: string; title: string } | null>(null); const [note, setNote] = useState("");
+  const query = useQuery({ queryKey: ["requisition", id], queryFn: () => apiGet<{ data: Requisition }>(`/requisitions/${id}`), enabled: Boolean(id) });
+  const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["requisition", id] }); void queryClient.invalidateQueries({ queryKey: ["requisitions"] }); void queryClient.invalidateQueries({ queryKey: ["requisition-indicators"] }); void queryClient.invalidateQueries({ queryKey: ["cutting-board"] }); };
+  const action = useMutation({ mutationFn: async () => { if (!confirm) return; return confirm.kind === "status" ? apiPatch(`/requisitions/${id}/status`, { status: confirm.value, note: note || null }) : apiPost(`/requisitions/${id}/inspection`, { result: confirm.value, note: note || null }); }, onSuccess: () => { toast.success("Requisição atualizada"); setConfirm(null); setNote(""); refresh(); }, onError: (error) => toast.error((error as Error).message) });
+  const itemMutation = useMutation({ mutationFn: ({ itemId, status }: { itemId: string; status: RequisitionItemStatus }) => apiPatch(`/requisitions/${id}/items/${itemId}/status`, { status }), onSuccess: refresh, onError: (error) => toast.error((error as Error).message) });
+  const reserve = useMutation({ mutationFn: (req: Requisition) => { const items = req.items.filter((item) => item.product && item.reservedQuantity < item.quantity).map((item) => ({ requisitionItemId: item.id, quantity: item.quantity - item.reservedQuantity })); if (!items.length) throw new Error("Todos os materiais vinculados já estão reservados"); return apiPost(`/requisitions/${id}/reservations`, { items }); }, onSuccess: () => { toast.success("Materiais reservados"); refresh(); }, onError: (error) => toast.error((error as Error).message) });
+  const req = query.data?.data;
+  if (query.isLoading) return <div className="p-8 text-sm text-muted-foreground">Carregando requisição...</div>;
+  if (!req) return <div className="p-8">Requisição não encontrada.</div>;
+  const openAction = (value: RequisitionStatus, title: string) => { setNote(""); setConfirm({ kind: "status", value, title }); };
+  const nextItemStatus = (status: RequisitionItemStatus): RequisitionItemStatus | null => status === "PENDING" ? "CUTTING" : status === "CUTTING" ? "CUT" : status === "CUT" && req.status === "INSPECTION" ? "INSPECTED" : null;
+  const linkedItems = req.items.filter((item) => item.product); const allAvailable = linkedItems.every((item) => (item.availability?.available ?? 0) + item.reservedQuantity >= item.quantity);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["requisition", id],
-    queryFn: () => apiGet<{ data: Requisition }>(`/requisitions/${id}`),
-    enabled: Boolean(id),
-  });
+  return <div className="space-y-6">
+    <div><Button variant="ghost" asChild className="mb-2 px-0"><Link to="/requisicoes"><ArrowLeft className="h-4 w-4" />Voltar para requisições</Link></Button><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-3"><h1 className="text-2xl font-bold">{req.number}</h1><RequisitionStatusBadge status={req.status} />{req.overdue && <span className="text-sm font-semibold text-destructive">Atrasada</span>}</div><p className="mt-1 text-sm text-muted-foreground">Solicitada por {req.requester.name} · {new Date(req.createdAt).toLocaleString("pt-BR")}</p></div><div className="flex flex-wrap gap-2">
+      {req.status === "DRAFT" && <Button onClick={() => openAction("REQUESTED", "Enviar requisição")}>Enviar requisição</Button>}
+      {req.status === "REQUESTED" && can("requisitions.analyze") && <Button onClick={() => openAction("IN_REVIEW", "Iniciar análise")}>Iniciar análise</Button>}
+      {(req.status === "IN_REVIEW" || req.status === "WAITING_MATERIAL") && can("requisitions.reserve") && <Button variant="outline" onClick={() => reserve.mutate(req)} disabled={reserve.isPending}><PackageCheck className="h-4 w-4" />Reservar materiais</Button>}
+      {req.status === "IN_REVIEW" && can("requisitions.analyze") && <Button variant="outline" onClick={() => openAction("WAITING_MATERIAL", "Aguardar material")}>Aguardar material</Button>}
+      {(req.status === "IN_REVIEW" || req.status === "WAITING_MATERIAL") && can("requisitions.release") && <Button onClick={() => openAction("RELEASED", "Liberar para corte")} disabled={!allAvailable}>Liberar para corte</Button>}
+      {req.status === "RELEASED" && can("requisitions.cut") && <Button onClick={() => openAction("IN_CUTTING", "Iniciar corte")}><Play className="h-4 w-4" />Iniciar corte</Button>}
+      {req.status === "IN_CUTTING" && can("requisitions.cut") && <Button onClick={() => openAction("INSPECTION", "Enviar para conferência")} disabled={req.items.some((item) => item.status !== "CUT" && item.status !== "INSPECTED")}><ShieldCheck className="h-4 w-4" />Enviar para conferência</Button>}
+      {req.status === "INSPECTION" && can("requisitions.inspect") && <><Button variant="outline" onClick={() => setConfirm({ kind: "inspection", value: "NEEDS_CORRECTION", title: "Devolver para correção" })}><RotateCcw className="h-4 w-4" />Devolver</Button><Button onClick={() => setConfirm({ kind: "inspection", value: "APPROVED", title: "Aprovar conferência e concluir" })}><CheckCircle2 className="h-4 w-4" />Concluir</Button></>}
+      {!(["COMPLETED", "CANCELLED"] as string[]).includes(req.status) && can("requisitions.cancel") && <Button variant="destructive" onClick={() => openAction("CANCELLED", "Cancelar requisição")}><XCircle className="h-4 w-4" />Cancelar</Button>}
+    </div></div></div>
 
-  const mutation = useMutation({
-    mutationFn: ({ status }: { status: string }) => apiPatch(`/requisitions/${id}/status`, { status, note: note || null }),
-    onSuccess: () => {
-      toast.success("Status atualizado");
-      queryClient.invalidateQueries({ queryKey: ["requisition", id] });
-      setTarget(null);
-      setNote("");
-    },
-    onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao atualizar status"),
-  });
+    <div className="grid gap-4 lg:grid-cols-3"><Card className="lg:col-span-2"><CardHeader><CardTitle>Informações gerais</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2"><Info label="Setor" value={req.sector} /><Info label="Cliente" value={req.clientName} /><Info label="Projeto/pedido" value={req.projectReference} /><Info label="Prioridade" value={priority[req.priority]} /><Info label="Data necessária" value={req.neededAt ? new Date(req.neededAt).toLocaleDateString("pt-BR") : null} /><Info label="Responsável" value={req.responsible?.name} /><Info label="Responsável pelo corte" value={req.cutter?.name} /><Info label="Responsável pela conferência" value={req.inspector?.name} />{req.note && <div className="sm:col-span-2"><Info label="Observações" value={req.note} /></div>}</CardContent></Card><Card><CardHeader><CardTitle>Progresso</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{req.progress}%</p><p className="mt-1 text-sm text-muted-foreground">{req.completedQty} de {req.totalQty} peças cortadas</p><div className="mt-4 h-3 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${req.progress}%` }} /></div></CardContent></Card></div>
 
-  if (isLoading) return <TableSkeleton rows={10} cols={5} />;
-  if (isError || !data?.data) return <EmptyState title="Erro ao carregar requisição" action={<Button variant="outline" size="sm" onClick={() => refetch()}>Tentar novamente</Button>} />;
+    <Card><CardHeader><CardTitle>Peças e materiais</CardTitle></CardHeader><CardContent className="space-y-3">{req.items.map((item) => { const next = nextItemStatus(item.status); return <div key={item.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{item.quantity}x {item.description}</h3><p className="text-sm text-muted-foreground">{[item.material, item.thickness && `${item.thickness} mm`, item.length && item.width && `${item.length} × ${item.width} mm`, item.edgeFinish].filter(Boolean).join(" · ") || "Sem especificações adicionais"}</p></div><div className="flex items-center gap-2"><span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", item.status === "INSPECTED" || item.status === "CUT" ? "bg-emerald-100 text-emerald-800" : item.status === "CUTTING" ? "bg-amber-100 text-amber-800" : "bg-muted text-muted-foreground")}>{itemStatus[item.status]}</span>{next && ((req.status === "IN_CUTTING" && can("requisitions.cut")) || (req.status === "INSPECTION" && can("requisitions.inspect"))) && <Button size="sm" variant="outline" disabled={itemMutation.isPending} onClick={() => itemMutation.mutate({ itemId: item.id, status: next })}>{itemStatus[next]}</Button>}</div></div>
+      {item.product ? <div className="mt-3 grid gap-2 rounded-md bg-muted/50 p-3 text-sm sm:grid-cols-5"><Info label="Produto relacionado" value={`${item.product.name} (${item.product.code})`} /><Info label="Necessário" value={String(item.quantity)} /><Info label="Físico" value={String(item.availability?.physical ?? 0)} /><Info label="Reservado p/ requisição" value={String(item.reservedQuantity)} /><Info label="Situação" value={item.reservedQuantity >= item.quantity ? "Reservado" : item.availability?.situation === "AVAILABLE" ? "Disponível" : item.availability?.situation === "PARTIAL" ? "Parcial" : "Indisponível"} /></div> : <p className="mt-3 rounded-md bg-amber-50 p-2 text-sm text-amber-900">Peça sem produto de estoque associado.</p>}
+      {item.note && <p className="mt-2 text-sm">Obs.: {item.note}</p>}</div>; })}</CardContent></Card>
 
-  const r = data.data;
-  const actions = (ACTIONS[r.status] ?? []).filter((a) => (a.permission ? can(a.permission) : true));
-  const needsNote = target?.note;
+    {req.inspectionResult && <Card><CardHeader><CardTitle>Conferência</CardTitle></CardHeader><CardContent><p className="font-medium">{req.inspectionResult === "APPROVED" ? "Aprovada" : "Devolvida para correção"}</p><p className="text-sm text-muted-foreground">{req.inspector?.name} · {req.inspectionNote || "Sem observações"}</p></CardContent></Card>}
+    {req.attachments.length > 0 && <Card><CardHeader><CardTitle>Anexos</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">{req.attachments.map((attachment) => <Button key={attachment.id} variant="outline" asChild><a href={attachment.url} target="_blank" rel="noreferrer">{attachment.name}</a></Button>)}</CardContent></Card>}
+    <Card><CardHeader><CardTitle>Histórico</CardTitle></CardHeader><CardContent><div className="space-y-4">{req.history.map((entry) => <div key={entry.id} className="flex gap-3"><div className="mt-0.5 rounded-full bg-primary/10 p-2"><Clock3 className="h-4 w-4 text-primary" /></div><div><p className="font-medium">{historyLabel[entry.action] || entry.action}</p><p className="text-sm text-muted-foreground">{entry.user?.name || "Sistema"} · {new Date(entry.createdAt).toLocaleString("pt-BR")}</p>{entry.note && <p className="mt-1 text-sm">{entry.note}</p>}</div></div>)}</div></CardContent></Card>
 
-  const confirmAction = (a: (typeof actions)[number]) => {
-    if (a.to === "REFUSED" || a.to === "CANCELLED") {
-      setTarget({ status: a.to, label: a.label, note: true });
-      setNote("");
-    } else {
-      setTarget({ status: a.to, label: a.label });
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{r.number}</h1>
-              <RequisitionStatusBadge status={r.status} />
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Solicitada por {r.requester.name} em {new Date(r.createdAt).toLocaleDateString("pt-BR")}
-              {r.requester.position ? ` · ${r.requester.position}` : ""}
-              {r.approvedBy ? ` · Aprovada por ${r.approvedBy.name}` : ""}
-            </p>
-          </div>
-        </div>
-        {actions.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {actions.map((a) => (
-              <Button key={a.to} variant={a.tone === "danger" ? "destructive" : a.tone === "success" ? "default" : "outline"} onClick={() => confirmAction(a)}>
-                {a.label}
-              </Button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm font-medium text-muted-foreground">Setor</p>
-            <p className="mt-1 font-semibold">{r.sector ?? "—"}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm font-medium text-muted-foreground">Destino</p>
-            <p className="mt-1 font-semibold">{r.destination ?? "—"}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm font-medium text-muted-foreground">Itens</p>
-            <p className="mt-1 font-semibold">{r.itemCount} itens · {formatNumber(r.totalQty)} un.</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {r.note && (
-        <Card>
-          <CardContent className="p-5 text-sm">
-            <p className="font-medium text-muted-foreground">Observação</p>
-            <p className="mt-1">{r.note}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Itens da requisição</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {r.items.length === 0 ? (
-            <EmptyState icon={Package} title="Sem itens" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produto</TableHead>
-                  <TableHead className="text-right">Quantidade</TableHead>
-                  <TableHead className="text-right hidden sm:table-cell">Disponível</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {r.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <p className="font-medium">{item.product.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.product.code}</p>
-                    </TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {formatNumber(item.quantity)} <span className="text-xs font-normal text-muted-foreground">{UNITS[item.product.unit] ?? item.product.unit}</span>
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{formatNumber(item.product.stock)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={target !== null} onOpenChange={(o) => { if (!o) setTarget(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{target?.label}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {needsNote && (
-              <div className="space-y-2">
-                <Label htmlFor="req-note">Justificativa</Label>
-                <Textarea id="req-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Informe o motivo" />
-              </div>
-            )}
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setTarget(null)}>
-                Voltar
-              </Button>
-              <Button
-                variant={target?.status === "REFUSED" || target?.status === "CANCELLED" ? "destructive" : "default"}
-                onClick={() => target && mutation.mutate({ status: target.status })}
-                disabled={mutation.isPending || (needsNote ? note.trim().length < 3 : false)}
-              >
-                {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Confirmar
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+    <Dialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }}><DialogContent><DialogHeader><DialogTitle>{confirm?.title}</DialogTitle></DialogHeader><div><Label>Observação {confirm?.value === "CANCELLED" || confirm?.value === "NEEDS_CORRECTION" ? "*" : "(opcional)"}</Label><Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Registre informações relevantes para o histórico" /></div><DialogFooter><Button variant="outline" onClick={() => setConfirm(null)}>Voltar</Button><Button disabled={action.isPending || ((confirm?.value === "CANCELLED" || confirm?.value === "NEEDS_CORRECTION") && note.trim().length < 3)} variant={confirm?.value === "CANCELLED" ? "destructive" : "default"} onClick={() => action.mutate()}>{action.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Confirmar</Button></DialogFooter></DialogContent></Dialog>
+  </div>;
 }
+
+function Info({ label, value }: { label: string; value: string | null | undefined }) { return <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 text-sm">{value || "—"}</p></div>; }

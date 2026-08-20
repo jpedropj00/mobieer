@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "MANAGER" | "WAREHOUSE" | "REQUESTER" | "VIEWER";
+export type Role = "ADMIN" | "MANAGER" | "WAREHOUSE" | "PRODUCTION" | "REQUESTER" | "VIEWER";
 
 export type AuthUser = {
   id: string;
@@ -120,19 +120,30 @@ export type StockAlert = {
 };
 
 export type RequisitionStatus =
-  | "PENDING"
+  | "DRAFT"
+  | "REQUESTED"
   | "IN_REVIEW"
-  | "APPROVED"
-  | "SEPARATION"
-  | "CONCLUDED"
-  | "REFUSED"
+  | "WAITING_MATERIAL"
+  | "RELEASED"
+  | "IN_CUTTING"
+  | "INSPECTION"
+  | "COMPLETED"
   | "CANCELLED";
+
+export type RequisitionPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+export type RequisitionItemStatus = "PENDING" | "CUTTING" | "CUT" | "INSPECTED";
 
 export type Requisition = {
   id: string;
   number: string;
   sector: string | null;
   destination: string | null;
+  clientName: string | null;
+  projectReference: string | null;
+  priority: RequisitionPriority;
+  neededAt: string | null;
+  inspectionResult: "APPROVED" | "NEEDS_CORRECTION" | null;
+  inspectionNote: string | null;
   status: RequisitionStatus;
   statusLabel: string;
   note: string | null;
@@ -141,14 +152,33 @@ export type Requisition = {
   updatedAt: string;
   requester: { id: string; name: string; sector: string | null; position: string | null };
   approvedBy: { id: string; name: string } | null;
+  responsible: { id: string; name: string } | null;
+  cutter: { id: string; name: string } | null;
+  inspector: { id: string; name: string } | null;
   itemCount: number;
   totalQty: number;
+  completedQty: number;
+  progress: number;
+  overdue: boolean;
   items: {
     id: string;
+    description: string;
+    material: string | null;
+    productId: string | null;
+    thickness: number | null;
+    length: number | null;
+    width: number | null;
     quantity: number;
-    status: string;
-    product: { id: string; name: string; code: string; unit: Unit; stock: number };
+    unit: Unit;
+    edgeFinish: string | null;
+    note: string | null;
+    status: RequisitionItemStatus;
+    reservedQuantity: number;
+    product: { id: string; name: string; code: string; unit: Unit; stock: number; reservedStock: number } | null;
+    availability: { physical: number; reserved: number; available: number; situation: "AVAILABLE" | "PARTIAL" | "UNAVAILABLE" } | null;
   }[];
+  history: { id: string; action: string; fromValue: unknown; toValue: unknown; note: string | null; createdAt: string; user: { id: string; name: string } | null }[];
+  attachments: { id: string; name: string; url: string; mimeType: string | null; size: number | null; createdAt: string }[];
 };
 
 export type InventoryStatus = "OPEN" | "IN_PROGRESS" | "CONCLUDED" | "CANCELLED";
@@ -189,6 +219,7 @@ export type Dashboard = {
     };
   };
   balance: number;
+  requisitions: { open: number; waitingMaterial: number; released: number; inCutting: number; overdue: number; recentlyCompleted: number };
   recentMovements: {
     id: string;
     type: MovementType;
