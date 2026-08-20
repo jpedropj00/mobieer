@@ -20,6 +20,12 @@ const typeOptions = [
   { value: "ENTRY", label: "Entrada" },
   { value: "EXIT", label: "Saída" },
   { value: "ADJUST", label: "Ajuste" },
+  { value: "TRANSFER", label: "Transferência" },
+  { value: "RESERVE", label: "Reserva" },
+  { value: "RELEASE", label: "Liberação" },
+  { value: "RETURN", label: "Devolução" },
+  { value: "LOSS", label: "Perda" },
+  { value: "DAMAGE", label: "Avaria" },
 ];
 
 export function MovementsPage() {
@@ -118,8 +124,8 @@ export function MovementsPage() {
                         <p className="text-xs text-muted-foreground">{m.product.code}</p>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className={`font-semibold ${m.type === "ENTRY" ? "text-green-600" : m.type === "EXIT" ? "text-red-600" : ""}`}>
-                          {m.type === "ENTRY" ? "+" : m.type === "EXIT" ? "−" : "±"} {formatNumber(m.quantity)} {UNITS[m.product.unit] ?? m.product.unit}
+                        <span className={`font-semibold ${m.type === "ENTRY" || m.type === "RETURN" ? "text-green-600" : m.type === "EXIT" || m.type === "LOSS" || m.type === "DAMAGE" ? "text-red-600" : ""}`}>
+                          {m.type === "ENTRY" || m.type === "RETURN" ? "+" : m.type === "EXIT" || m.type === "LOSS" || m.type === "DAMAGE" ? "−" : "±"} {formatNumber(m.quantity)} {UNITS[m.product.unit] ?? m.product.unit}
                         </span>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">{m.responsible?.name ?? "—"}</TableCell>

@@ -11,14 +11,18 @@ const PERIOD_DAYS: Record<ChartPeriod, number> = {
   "1y": 365,
 };
 
+const ENTRY_TYPES: MovementType[] = [MovementType.ENTRY, MovementType.RETURN];
+const EXIT_TYPES: MovementType[] = [MovementType.EXIT, MovementType.LOSS, MovementType.DAMAGE];
+const PHYSICAL_TYPES: MovementType[] = [...ENTRY_TYPES, ...EXIT_TYPES];
+
 async function monthMovements(from: Date, to: Date) {
   const movements = await prisma.stockMovement.findMany({
-    where: { date: { gte: from, lt: to }, type: { in: [MovementType.ENTRY, MovementType.EXIT] } },
+    where: { date: { gte: from, lt: to }, type: { in: PHYSICAL_TYPES } },
     select: { type: true, quantity: true },
   });
   return movements.reduce(
     (acc, m) => {
-      if (m.type === MovementType.ENTRY) acc.entries += m.quantity;
+      if (ENTRY_TYPES.includes(m.type)) acc.entries += m.quantity;
       else acc.exits += m.quantity;
       return acc;
     },
@@ -43,7 +47,7 @@ export async function getDashboard() {
   ]);
 
   const recentMovements = await prisma.stockMovement.findMany({
-    where: { type: { in: [MovementType.ENTRY, MovementType.EXIT] } },
+    where: { type: { in: PHYSICAL_TYPES } },
     include: {
       product: { select: { id: true, name: true, code: true, unit: true } },
       responsible: { select: { id: true, name: true } },
@@ -95,7 +99,7 @@ export async function getChart(period: ChartPeriod) {
   const today = startOfDay(new Date());
 
   const movements = await prisma.stockMovement.findMany({
-    where: { date: { gte: start, lte: today }, type: { in: [MovementType.ENTRY, MovementType.EXIT] } },
+    where: { date: { gte: start, lte: today }, type: { in: PHYSICAL_TYPES } },
     select: { type: true, quantity: true, date: true },
   });
 
@@ -109,7 +113,7 @@ export async function getChart(period: ChartPeriod) {
 
   for (const m of movements) {
     const key = startOfDay(m.date).toISOString().slice(0, 10);
-    const target = m.type === MovementType.ENTRY ? entriesByDay : exitsByDay;
+    const target = ENTRY_TYPES.includes(m.type) ? entriesByDay : exitsByDay;
     target.set(key, (target.get(key) ?? 0) + m.quantity);
   }
 

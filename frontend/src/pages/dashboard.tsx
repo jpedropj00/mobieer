@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatDate, formatNumber } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router-dom";
+import { UsagePanel } from "@/features/stock/usage-panel";
 
 export function DashboardPage() {
   const { can } = useAuth();
@@ -155,6 +156,7 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      {can("stock.read") && <UsagePanel />}
     </div>
   );
 }

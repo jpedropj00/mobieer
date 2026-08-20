@@ -130,7 +130,7 @@ export function GlobalSearch() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{m.product.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {m.type === "ENTRY" ? "Entrada" : "Saída"} · {m.quantity} un. · {formatDate(m.date)}
+                    {m.type === "ENTRY" ? "Entrada" : m.type === "EXIT" ? "Saída" : m.type} · {m.quantity} un. · {formatDate(m.date)}
                   </p>
                 </div>
               </ResultItem>

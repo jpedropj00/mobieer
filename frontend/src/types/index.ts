@@ -22,9 +22,13 @@ export type Product = {
   name: string;
   code: string;
   sku: string | null;
+  barcode: string | null;
+  qrCode: string | null;
   description: string | null;
   unit: Unit;
   stock: number;
+  reservedStock: number;
+  availableStock: number;
   minStock: number;
   maxStock: number | null;
   unitValue: number | null;
@@ -42,6 +46,7 @@ export type Product = {
   supplier: { id: string; name: string } | null;
   stockStatus: StockStatus;
   createdAt: string;
+  warehouseStocks?: { quantity: number; warehouse: { id: string; name: string; code: string } }[];
 };
 
 export type Category = {
@@ -50,6 +55,7 @@ export type Category = {
   description: string | null;
   productCount: number;
   createdAt: string;
+  parent?: { id: string; name: string } | null;
 };
 
 export type Supplier = {
@@ -74,7 +80,7 @@ export type Warehouse = {
   createdAt: string;
 };
 
-export type MovementType = "ENTRY" | "EXIT" | "ADJUST";
+export type MovementType = "ENTRY" | "EXIT" | "ADJUST" | "TRANSFER" | "RESERVE" | "RELEASE" | "RETURN" | "LOSS" | "DAMAGE";
 
 export type Movement = {
   id: string;
@@ -93,6 +99,9 @@ export type Movement = {
   responsible: { id: string; name: string } | null;
   supplier: { id: string; name: string } | null;
   requisition: { id: string; number: string } | null;
+  originWarehouse?: { id: string; name: string; code: string } | null;
+  destinationWarehouse?: { id: string; name: string; code: string } | null;
+  operationCode?: string | null;
 };
 
 export type StockAlert = {

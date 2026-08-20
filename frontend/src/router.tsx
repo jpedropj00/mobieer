@@ -23,6 +23,7 @@ const ReportsPage = lazy(() => import("@/pages/reports").then((m) => ({ default:
 const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.UsersPage })));
 const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })));
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
+const StockOperationsPage = lazy(() => import("@/pages/stock-operations").then((m) => ({ default: m.StockOperationsPage })));
 
 function LazyBoundary({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Carregando...</div>}>{children}</Suspense>;
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
           { path: "/entrada", element: <PermissionGate permission="stock.entry"><StockEntryPage /></PermissionGate> },
           { path: "/saida", element: <PermissionGate permission="stock.exit"><StockExitPage /></PermissionGate> },
           { path: "/movimentacoes", element: <PermissionGate permission="stock.movements"><MovementsPage /></PermissionGate> },
+          { path: "/operacoes-estoque", element: <PermissionGate permission="stock.scanner"><StockOperationsPage /></PermissionGate> },
           { path: "/produtos", element: <PermissionGate permission="products.read"><ProductsPage /></PermissionGate> },
           { path: "/produtos/:id", element: <PermissionGate permission="products.read"><ProductDetailPage /></PermissionGate> },
           { path: "/categorias", element: <PermissionGate permission="categories.read"><CategoriesPage /></PermissionGate> },

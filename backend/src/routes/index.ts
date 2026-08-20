@@ -14,6 +14,7 @@ import notificationsRoutes from "../modules/notifications/notifications.routes";
 import auditRoutes from "../modules/audit/audit.routes";
 import searchRoutes from "../modules/search/search.routes";
 import settingsRoutes from "../modules/settings/settings.routes";
+import stockOperationsRoutes from "../modules/stock-operations/stock-operations.routes";
 
 const router = Router();
 
@@ -23,6 +24,7 @@ router.use("/categories", categoriesRoutes);
 router.use("/suppliers", suppliersRoutes);
 router.use("/warehouses", warehousesRoutes);
 router.use("/stock", stockRoutes);
+router.use("/stock-operations", stockOperationsRoutes);
 router.use("/inventory", inventoryRoutes);
 router.use("/requisitions", requisitionsRoutes);
 router.use("/users", usersRoutes);

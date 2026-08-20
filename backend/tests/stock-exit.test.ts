@@ -6,15 +6,15 @@ test("recusa a saída quando a atualização condicional não encontra saldo", a
   let movementCreated = false;
   const tx = {
     product: {
-      findUnique: async (args: { select?: unknown }) => args.select ? { stock: 0 } : { id: "p1", name: "Produto", stock: 1 },
-      updateMany: async () => ({ count: 0 }),
+      findUnique: async (args: { select?: unknown }) => args.select ? { stock: 0 } : { id: "p1", name: "Produto", stock: 1, reservedStock: 0, warehouseId: null },
     },
+    $executeRaw: async () => 0,
     stockMovement: { create: async () => { movementCreated = true; return { id: "m1" }; } },
   };
 
   await assert.rejects(
     createExitWithClient(tx as never, { items: [{ productId: "p1", quantity: 1 }] }, "u1", "Usuário"),
-    /Estoque insuficiente/
+    /Estoque disponível insuficiente/
   );
   assert.equal(movementCreated, false);
 });

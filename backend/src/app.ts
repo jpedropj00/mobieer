@@ -18,6 +18,7 @@ import notificationsRoutes from "./modules/notifications/notifications.routes";
 import auditRoutes from "./modules/audit/audit.routes";
 import searchRoutes from "./modules/search/search.routes";
 import settingsRoutes from "./modules/settings/settings.routes";
+import stockOperationsRoutes from "./modules/stock-operations/stock-operations.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -25,7 +26,7 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: [...env.frontendUrls, /^http:\/\/localhost:\d+$/],
+      origin: [...env.frontendUrls, "https://mobieer.vercel.app", /^http:\/\/localhost:\d+$/],
       credentials: true,
     })
   );
@@ -43,6 +44,7 @@ export function createApp() {
   app.use("/api/suppliers", suppliersRoutes);
   app.use("/api/warehouses", warehousesRoutes);
   app.use("/api/stock", stockRoutes);
+  app.use("/api/stock-operations", stockOperationsRoutes);
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/requisitions", requisitionsRoutes);
   app.use("/api/reports", reportsRoutes);

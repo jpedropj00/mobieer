@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Package,
   ScrollText,
+  ScanLine,
   Settings,
   Tags,
   Truck,
@@ -45,6 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Entrada de Materiais", to: "/entrada", icon: ArrowDownToLine, permission: "stock.entry" },
       { label: "Saída de Materiais", to: "/saida", icon: ArrowUpFromLine, permission: "stock.exit" },
       { label: "Movimentações", to: "/movimentacoes", icon: ArrowLeftRight, permission: "stock.movements" },
+      { label: "Operações", to: "/operacoes-estoque", icon: ScanLine, permission: "stock.scanner" },
     ],
   },
   {

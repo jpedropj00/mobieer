@@ -221,11 +221,16 @@ export async function getProductHistory(productId: string) {
     include: movementInclude,
     orderBy: { date: "desc" },
   });
-  let running = product.stock;
   const oldestFirst = [...movements].reverse();
+  const delta = (m: (typeof oldestFirst)[number]) => {
+    if (m.type === "ENTRY" || m.type === "RETURN") return m.quantity;
+    if (m.type === "EXIT" || m.type === "LOSS" || m.type === "DAMAGE") return -m.quantity;
+    if (m.type === "ADJUST") return m.note?.includes("acréscimo") ? m.quantity : -m.quantity;
+    return 0;
+  };
+  let running = product.stock - oldestFirst.reduce((sum, movement) => sum + delta(movement), 0);
   const timeline = oldestFirst.map((m) => {
-    if (m.type === "ENTRY") running -= m.quantity;
-    if (m.type === "EXIT") running += m.quantity;
+    running += delta(m);
     return { ...serializeMovement(m), balanceAfter: running };
   });
   const byId = new Map(timeline.map((t) => [t.id, t.balanceAfter]));

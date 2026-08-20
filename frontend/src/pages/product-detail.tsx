@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, MapPin, Pencil, Package, Tag, Truck } from "lucide-react";
 import { apiGet } from "@/services/api";
-import type { Product } from "@/types";
+import type { MovementType, Product } from "@/types";
 import { formatCurrency, formatNumber, UNITS } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ export function ProductDetailPage() {
 
   const { data: historyData } = useQuery({
     queryKey: ["product-history", id],
-    queryFn: () => apiGet<{ data: { movements: { id: string; type: string; quantity: number; date: string; responsible: { name: string } | null; note: string | null; balanceAfter: number }[] } }>(`/reports/product/${id}/history`),
+    queryFn: () => apiGet<{ data: { movements: { id: string; type: MovementType; quantity: number; date: string; responsible: { name: string } | null; note: string | null; balanceAfter: number }[] } }>(`/reports/product/${id}/history`),
     enabled: Boolean(id),
   });
 
@@ -57,8 +57,10 @@ export function ProductDetailPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <InfoCard label="Estoque atual" value={`${formatNumber(p.stock)}`} sub={UNITS[p.unit] ?? p.unit} highlight />
+        <InfoCard label="Disponível" value={formatNumber(p.availableStock)} sub="sem reservas" />
+        <InfoCard label="Reservado" value={formatNumber(p.reservedStock)} sub="reservas ativas" />
         <InfoCard label="Estoque mínimo" value={formatNumber(p.minStock)} sub="mínimo" />
         <InfoCard label="Estoque máximo" value={p.maxStock ? formatNumber(p.maxStock) : "—"} sub="máximo" />
         <InfoCard label="Valor unitário" value={formatCurrency(p.unitValue)} sub="por unidade" />
@@ -77,6 +79,12 @@ export function ProductDetailPage() {
                 <p className="text-muted-foreground">{p.category?.name ?? "—"}</p>
               </div>
             </div>
+            <div>
+              <p className="font-medium">Códigos de leitura</p>
+              <p className="break-all text-muted-foreground">Barras: {p.barcode ?? "—"}</p>
+              <p className="break-all text-muted-foreground">QR: {p.qrCode ?? "—"}</p>
+            </div>
+            {p.warehouseStocks && p.warehouseStocks.length > 0 && <div><p className="font-medium">Saldo por almoxarifado</p>{p.warehouseStocks.map((balance) => <p key={balance.warehouse.id} className="text-muted-foreground">{balance.warehouse.name}: {formatNumber(balance.quantity)}</p>)}</div>}
             <div className="flex items-start gap-3">
               <Truck className="mt-0.5 h-4 w-4 text-muted-foreground" />
               <div>
@@ -127,7 +135,7 @@ export function ProductDetailPage() {
                         {new Date(m.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </TableCell>
                       <TableCell>
-                        <MovementBadge type={m.type as "ENTRY" | "EXIT" | "ADJUST"} />
+                        <MovementBadge type={m.type} />
                       </TableCell>
                       <TableCell className="text-right font-semibold">{formatNumber(m.quantity)}</TableCell>
                       <TableCell>{m.responsible?.name ?? "—"}</TableCell>
