@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Loader2, Package, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Package, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost } from "@/services/api";
 import type { Product, Supplier } from "@/types";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ProductPicker } from "@/features/stock/product-picker";
+import { ProductInputMethod } from "@/features/stock/product-input-method";
 import { useAuth } from "@/hooks/use-auth";
 
 type Item = {
@@ -30,7 +30,6 @@ export function StockEntryPage() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { data: suppliers } = useQuery({
@@ -167,9 +166,7 @@ export function StockEntryPage() {
               </div>
             </div>
           ))}
-          <Button variant="outline" className="w-full" onClick={() => setPickerOpen(true)}>
-            <Plus className="h-4 w-4" /> Adicionar produto
-          </Button>
+          <ProductInputMethod onSelect={addItem} excludeIds={items.map((i) => i.product.id)} />
         </CardContent>
       </Card>
 
@@ -218,7 +215,6 @@ export function StockEntryPage() {
         </Button>
       </div>
 
-      <ProductPicker open={pickerOpen} onOpenChange={setPickerOpen} onSelect={addItem} excludeIds={items.map((i) => i.product.id)} />
     </div>
   );
 }

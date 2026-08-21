@@ -9,6 +9,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/", requirePermission("products.read"), productsController.listProducts);
+router.get("/scan", requirePermission("stock.scanner"), productsController.scanProduct);
 router.get("/by-code/:code", requirePermission("products.read"), productsController.getProductByCode);
 router.get("/:id", requirePermission("products.read"), productsController.getProduct);
 router.post("/", requirePermission("products.create"), productsController.createProduct);

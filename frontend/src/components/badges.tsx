@@ -5,21 +5,31 @@ export const MOVEMENT_LABEL: Record<MovementType, string> = {
   ENTRY: "Entrada",
   EXIT: "Saída",
   ADJUST: "Ajuste",
+  TRANSFER: "Transferência",
+  RESERVE: "Reserva",
+  RELEASE: "Liberação",
+  RETURN: "Devolução",
+  LOSS: "Perda",
+  DAMAGE: "Avaria",
 };
 
 export function MovementBadge({ type }: { type: MovementType }) {
   if (type === "ENTRY") return <Badge variant="success">{MOVEMENT_LABEL.ENTRY}</Badge>;
   if (type === "EXIT") return <Badge variant="danger">{MOVEMENT_LABEL.EXIT}</Badge>;
-  return <Badge variant="warning">{MOVEMENT_LABEL.ADJUST}</Badge>;
+  if (type === "RETURN") return <Badge variant="success">{MOVEMENT_LABEL.RETURN}</Badge>;
+  if (type === "LOSS" || type === "DAMAGE") return <Badge variant="danger">{MOVEMENT_LABEL[type]}</Badge>;
+  return <Badge variant="warning">{MOVEMENT_LABEL[type]}</Badge>;
 }
 
 export const REQUISITION_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "success" | "danger" | "warning" | "muted" }> = {
-  PENDING: { label: "Pendente", variant: "warning" },
+  DRAFT: { label: "Rascunho", variant: "muted" },
+  REQUESTED: { label: "Solicitada", variant: "warning" },
   IN_REVIEW: { label: "Em análise", variant: "secondary" },
-  APPROVED: { label: "Aprovada", variant: "success" },
-  SEPARATION: { label: "Separação", variant: "default" },
-  CONCLUDED: { label: "Concluída", variant: "success" },
-  REFUSED: { label: "Recusada", variant: "danger" },
+  WAITING_MATERIAL: { label: "Aguardando material", variant: "warning" },
+  RELEASED: { label: "Liberada para corte", variant: "success" },
+  IN_CUTTING: { label: "Em corte", variant: "default" },
+  INSPECTION: { label: "Conferência", variant: "secondary" },
+  COMPLETED: { label: "Concluída", variant: "success" },
   CANCELLED: { label: "Cancelada", variant: "muted" },
 };
 

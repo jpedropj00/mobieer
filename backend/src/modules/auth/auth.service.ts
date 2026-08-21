@@ -75,7 +75,7 @@ export async function me(userId: string) {
 
 export async function forgotPassword(email: string) {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (!user) return { resetToken: null };
+  if (!user) return { resetRequested: true };
 
   const resetToken = crypto.randomBytes(32).toString("hex");
   const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1h
@@ -85,7 +85,9 @@ export async function forgotPassword(email: string) {
     data: { resetToken, resetTokenExpiry: expiry },
   });
 
-  return { resetToken };
+  // O token nunca deve atravessar a resposta HTTP. A entrega deve ser feita
+  // somente por um canal confiável (por exemplo, o serviço de e-mail).
+  return { resetRequested: true };
 }
 
 export async function resetPassword(token: string, newPassword: string) {

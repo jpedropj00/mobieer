@@ -1,7 +1,8 @@
-import { MovementType, Prisma } from "@prisma/client";
+import { MovementType, Prisma, RequisitionStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { daysAgo, num, previousMonthRange, startOfDay } from "../../utils/helpers";
 import type { ChartPeriod } from "./dashboard.schema";
+import { indicators as activityIndicators } from "../activities/activities.service";
 
 const PERIOD_DAYS: Record<ChartPeriod, number> = {
   "7d": 7,
@@ -11,14 +12,18 @@ const PERIOD_DAYS: Record<ChartPeriod, number> = {
   "1y": 365,
 };
 
+const ENTRY_TYPES: MovementType[] = [MovementType.ENTRY, MovementType.RETURN];
+const EXIT_TYPES: MovementType[] = [MovementType.EXIT, MovementType.LOSS, MovementType.DAMAGE];
+const PHYSICAL_TYPES: MovementType[] = [...ENTRY_TYPES, ...EXIT_TYPES];
+
 async function monthMovements(from: Date, to: Date) {
   const movements = await prisma.stockMovement.findMany({
-    where: { date: { gte: from, lt: to }, type: { in: [MovementType.ENTRY, MovementType.EXIT] } },
+    where: { date: { gte: from, lt: to }, type: { in: PHYSICAL_TYPES } },
     select: { type: true, quantity: true },
   });
   return movements.reduce(
     (acc, m) => {
-      if (m.type === MovementType.ENTRY) acc.entries += m.quantity;
+      if (ENTRY_TYPES.includes(m.type)) acc.entries += m.quantity;
       else acc.exits += m.quantity;
       return acc;
     },
@@ -26,12 +31,12 @@ async function monthMovements(from: Date, to: Date) {
   );
 }
 
-export async function getDashboard() {
+export async function getDashboard(organizationId = "default-org") {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const prev = previousMonthRange();
 
-  const [productAgg, alerts, current, prevMonth] = await Promise.all([
+  const [productAgg, alerts, current, prevMonth, requisitionsByStatus, overdueRequisitions, recentlyCompleted] = await Promise.all([
     prisma.product.aggregate({
       where: { status: "ACTIVE" },
       _sum: { stock: true },
@@ -40,10 +45,13 @@ export async function getDashboard() {
     prisma.product.count({ where: { status: "ACTIVE", stock: { lte: prisma.product.fields.minStock } } }),
     monthMovements(monthStart, now),
     monthMovements(prev.start, prev.end),
+    prisma.requisition.groupBy({ by: ["status"], _count: true }),
+    prisma.requisition.count({ where: { neededAt: { lt: now }, status: { notIn: [RequisitionStatus.COMPLETED, RequisitionStatus.CANCELLED] } } }),
+    prisma.requisition.count({ where: { status: RequisitionStatus.COMPLETED, completedAt: { gte: daysAgo(30) } } }),
   ]);
 
   const recentMovements = await prisma.stockMovement.findMany({
-    where: { type: { in: [MovementType.ENTRY, MovementType.EXIT] } },
+    where: { type: { in: PHYSICAL_TYPES } },
     include: {
       product: { select: { id: true, name: true, code: true, unit: true } },
       responsible: { select: { id: true, name: true } },
@@ -56,6 +64,8 @@ export async function getDashboard() {
   const exits = current.exits;
   const prevEntries = prevMonth.entries;
   const prevExits = prevMonth.exits;
+  const reqCount = Object.fromEntries(requisitionsByStatus.map((row) => [row.status, row._count]));
+  const activities = await activityIndicators(organizationId);
 
   const percent = (currentVal: number, previousVal: number): number | null => {
     if (previousVal === 0) return currentVal > 0 ? 100 : null;
@@ -77,6 +87,15 @@ export async function getDashboard() {
       },
     },
     balance: num(productAgg._sum.stock),
+    requisitions: {
+      open: Object.entries(reqCount).filter(([status]) => !["COMPLETED", "CANCELLED"].includes(status)).reduce((sum, [, value]) => sum + value, 0),
+      waitingMaterial: reqCount.WAITING_MATERIAL ?? 0,
+      released: reqCount.RELEASED ?? 0,
+      inCutting: reqCount.IN_CUTTING ?? 0,
+      overdue: overdueRequisitions,
+      recentlyCompleted,
+    },
+    activities,
     recentMovements: recentMovements.map((m) => ({
       id: m.id,
       type: m.type,
@@ -95,7 +114,7 @@ export async function getChart(period: ChartPeriod) {
   const today = startOfDay(new Date());
 
   const movements = await prisma.stockMovement.findMany({
-    where: { date: { gte: start, lte: today }, type: { in: [MovementType.ENTRY, MovementType.EXIT] } },
+    where: { date: { gte: start, lte: today }, type: { in: PHYSICAL_TYPES } },
     select: { type: true, quantity: true, date: true },
   });
 
@@ -109,7 +128,7 @@ export async function getChart(period: ChartPeriod) {
 
   for (const m of movements) {
     const key = startOfDay(m.date).toISOString().slice(0, 10);
-    const target = m.type === MovementType.ENTRY ? entriesByDay : exitsByDay;
+    const target = ENTRY_TYPES.includes(m.type) ? entriesByDay : exitsByDay;
     target.set(key, (target.get(key) ?? 0) + m.quantity);
   }
 

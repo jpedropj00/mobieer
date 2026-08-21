@@ -4,8 +4,8 @@ import { ok } from "../../utils/response";
 import * as dashboardService from "./dashboard.service";
 import { chartQuery } from "./dashboard.schema";
 
-export const dashboard = asyncHandler(async (_req: Request, res: Response) => {
-  const data = await dashboardService.getDashboard();
+export const dashboard = asyncHandler(async (req: Request, res: Response) => {
+  const data = await dashboardService.getDashboard(req.user?.organizationId);
   return ok(res, data);
 });
 

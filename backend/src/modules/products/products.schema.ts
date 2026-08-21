@@ -4,6 +4,8 @@ import { ProductStatus, Unit } from "@prisma/client";
 export const productSchema = z.object({
   name: z.string().min(2, "Nome obrigatório"),
   sku: z.string().optional().nullable(),
+  barcode: z.string().trim().min(3).max(128).optional().nullable(),
+  qrCode: z.string().trim().min(3).max(512).optional().nullable(),
   description: z.string().optional().nullable(),
   unit: z.nativeEnum(Unit).default(Unit.UNIT),
   minStock: z.number().int().min(0).default(0),
@@ -26,6 +28,10 @@ export const productListQuery = z.object({
   status: z.nativeEnum(ProductStatus).optional(),
   warehouseId: z.string().optional(),
   lowStock: z.enum(["true", "false"]).optional(),
+});
+
+export const productCodeSchema = z.object({
+  code: z.string().trim().min(1).max(512),
 });
 
 export type ProductInput = z.infer<typeof productSchema>;

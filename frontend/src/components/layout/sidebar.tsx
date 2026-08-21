@@ -5,11 +5,14 @@ import {
   ArrowLeftRight,
   ArrowUpFromLine,
   BarChart3,
+  CalendarDays,
   ClipboardCheck,
-  FileText,
+  FileClock,
   LayoutDashboard,
   Package,
   ScrollText,
+  ScanLine,
+  Scissors,
   Settings,
   Tags,
   Truck,
@@ -40,16 +43,12 @@ const NAV_GROUPS: NavGroup[] = [
     items: [{ label: "Dashboard", to: "/", icon: LayoutDashboard, permission: "dashboard.read", end: true }],
   },
   {
-    label: "Movimentações",
+    label: "Estoque",
     items: [
       { label: "Entrada de Materiais", to: "/entrada", icon: ArrowDownToLine, permission: "stock.entry" },
       { label: "Saída de Materiais", to: "/saida", icon: ArrowUpFromLine, permission: "stock.exit" },
       { label: "Movimentações", to: "/movimentacoes", icon: ArrowLeftRight, permission: "stock.movements" },
-    ],
-  },
-  {
-    label: "Cadastros",
-    items: [
+      { label: "Operações", to: "/operacoes-estoque", icon: ScanLine, permission: "stock.scanner" },
       { label: "Produtos", to: "/produtos", icon: Package, permission: "products.read" },
       { label: "Categorias", to: "/categorias", icon: Tags, permission: "categories.read" },
       { label: "Fornecedores", to: "/fornecedores", icon: Truck, permission: "suppliers.read" },
@@ -57,10 +56,17 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Operação",
+    label: "Requisições e produção",
+    items: [
+      { label: "Requisições de Peças", to: "/requisicoes", icon: Scissors, permission: "requisitions.read" },
+      { label: "Atividades", to: "/atividades", icon: FileClock, permission: "activities.read" },
+      { label: "Agenda", to: "/agenda", icon: CalendarDays, permission: "agenda.read" },
+    ],
+  },
+  {
+    label: "Controle de estoque",
     items: [
       { label: "Inventário", to: "/inventario", icon: ClipboardCheck, permission: "inventory.read" },
-      { label: "Requisições", to: "/requisicoes", icon: FileText, permission: "requisitions.read" },
       { label: "Alertas de Estoque", to: "/alertas", icon: AlertTriangle, permission: "stock.read" },
     ],
   },
@@ -148,8 +154,8 @@ export function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavig
             <div className="flex items-center gap-2.5">
               <AlertTriangle className="h-4 w-4 shrink-0 text-primary" />
               <div className="text-[11px] leading-tight text-sidebar-foreground/70">
-                <p className="font-medium text-sidebar-foreground">Almoxarifado 01</p>
-                <p className="capitalize">Corredores A–E</p>
+                <p className="font-medium text-sidebar-foreground">Gestium</p>
+                <p>Gestão inteligente</p>
               </div>
             </div>
           ) : (

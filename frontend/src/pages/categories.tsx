@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, TableSkeleton } from "@/components/ui/states";
 import { PageHeader } from "@/components/page-header";
@@ -22,6 +23,7 @@ import { useAuth } from "@/hooks/use-auth";
 const schema = z.object({
   name: z.string().min(2, "Nome obrigatório"),
   description: z.string().optional().or(z.literal("")),
+  parentId: z.string().optional().or(z.literal("")),
 });
 
 type Values = z.infer<typeof schema>;
@@ -41,17 +43,20 @@ export function CategoriesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", description: "" });
+    form.reset({ name: "", description: "", parentId: "" });
     setDialogOpen(true);
   };
   const openEdit = (c: Category) => {
     setEditing(c);
-    form.reset({ name: c.name, description: c.description ?? "" });
+    form.reset({ name: c.name, description: c.description ?? "", parentId: c.parent?.id ?? "" });
     setDialogOpen(true);
   };
 
   const mutation = useMutation({
-    mutationFn: (values: Values) => (editing ? apiPut(`/categories/${editing.id}`, values) : apiPost("/categories", values)),
+    mutationFn: (values: Values) => {
+      const payload = { ...values, parentId: values.parentId || null };
+      return editing ? apiPut(`/categories/${editing.id}`, payload) : apiPost("/categories", payload);
+    },
     onSuccess: () => {
       toast.success(editing ? "Categoria atualizada" : "Categoria criada");
       queryClient.invalidateQueries({ queryKey: ["categories"] });
@@ -96,6 +101,7 @@ export function CategoriesPage() {
               <TableRow>
                 <TableHead>Nome</TableHead>
                 <TableHead>Descrição</TableHead>
+                <TableHead>Categoria superior</TableHead>
                 <TableHead className="text-right">Produtos</TableHead>
                 <TableHead>Criada em</TableHead>
                 <TableHead className="w-10" />
@@ -106,6 +112,7 @@ export function CategoriesPage() {
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell className="max-w-[280px] truncate text-muted-foreground">{c.description ?? "—"}</TableCell>
+                  <TableCell>{c.parent?.name ?? "—"}</TableCell>
                   <TableCell className="text-right font-semibold">{c.productCount}</TableCell>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(c.createdAt)}</TableCell>
                   <TableCell>
@@ -138,6 +145,13 @@ export function CategoriesPage() {
             onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
             className="space-y-4"
           >
+            <div className="space-y-2">
+              <Label>Categoria superior (opcional)</Label>
+              <Select value={form.watch("parentId") || "ROOT"} onValueChange={(value) => form.setValue("parentId", value === "ROOT" ? "" : value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="ROOT">Categoria principal</SelectItem>{categories.filter((category) => category.id !== editing?.id).map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="c-name">Nome *</Label>
               <Input id="c-name" placeholder="Ex.: Fixadores" {...form.register("name")} />

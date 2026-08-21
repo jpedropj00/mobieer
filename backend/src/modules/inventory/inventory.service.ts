@@ -26,6 +26,24 @@ function serializeInventory(inv: {
   };
 }
 
+const INVENTORY_TRANSITIONS: Record<InventoryStatus, InventoryStatus[]> = {
+  OPEN: [InventoryStatus.IN_PROGRESS, InventoryStatus.CANCELLED],
+  IN_PROGRESS: [InventoryStatus.CONCLUDED, InventoryStatus.CANCELLED],
+  CONCLUDED: [],
+  CANCELLED: [],
+};
+
+export function assertInventoryTransition(currentStatus: InventoryStatus, nextStatus: InventoryStatus) {
+  if (currentStatus === nextStatus) {
+    throw new BadRequestError("O inventário já está neste status");
+  }
+  if (!INVENTORY_TRANSITIONS[currentStatus].includes(nextStatus)) {
+    throw new BadRequestError(
+      `Transição inválida: ${currentStatus} → ${nextStatus}. Permitidas: ${INVENTORY_TRANSITIONS[currentStatus].join(", ") || "nenhuma"}`
+    );
+  }
+}
+
 export async function listInventories(params: { page: number; perPage: number; status?: string; search?: string }) {
   const where: Record<string, unknown> = {};
   if (params.status) where.status = params.status;
@@ -153,7 +171,9 @@ export async function updateCount(inventoryId: string, itemId: string, countedQt
     include: { inventory: true, product: true },
   });
   if (!item) throw new NotFoundError("Item de inventário não encontrado");
-  if (item.inventory.status === "CONCLUDED") throw new BadRequestError("Inventário já concluído");
+  if (!(["OPEN", "IN_PROGRESS"] as InventoryStatus[]).includes(item.inventory.status)) {
+    throw new BadRequestError("Somente inventários abertos ou em andamento podem ser contados");
+  }
 
   const difference = countedQty - item.expectedQty;
 
@@ -181,6 +201,9 @@ export async function adjustItem(inventoryId: string, inventoryItemId: string, r
     include: { inventory: true },
   });
   if (!item) throw new NotFoundError("Item de inventário não encontrado");
+  if (!(["OPEN", "IN_PROGRESS"] as InventoryStatus[]).includes(item.inventory.status)) {
+    throw new BadRequestError("Somente inventários abertos ou em andamento podem ajustar estoque");
+  }
   if (item.countedQty === null) throw new BadRequestError("Realize a contagem antes de ajustar o estoque");
 
   const result = await adjustStock(
@@ -195,6 +218,8 @@ export async function adjustItem(inventoryId: string, inventoryItemId: string, r
 export async function updateStatus(inventoryId: string, status: InventoryStatus, actorId: string) {
   const inventory = await prisma.inventory.findUnique({ where: { id: inventoryId } });
   if (!inventory) throw new NotFoundError("Inventário não encontrado");
+
+  assertInventoryTransition(inventory.status, status);
 
   const data: { status: InventoryStatus; concludedAt?: Date | null } = { status };
   if (status === "CONCLUDED") data.concludedAt = new Date();

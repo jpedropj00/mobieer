@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { BarChart3, Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { BarChart3, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, getToken } from "@/services/api";
 import type { Category, Movement } from "@/types";
@@ -47,7 +47,7 @@ function downloadExport(url: string) {
       }
       const disposition = res.headers.get("content-disposition") ?? "";
       const match = disposition.match(/filename="?([^";]+)"?/);
-      const filename = match?.[1] ?? "relatorio.csv";
+      const filename = match?.[1] ?? "relatorio";
       const blob = await res.blob();
       const url2 = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -119,9 +119,6 @@ export function ReportsPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => exportMutation.mutate("xlsx")} disabled={exportMutation.isPending}>
               {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />} Excel
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => exportMutation.mutate("csv")} disabled={exportMutation.isPending}>
-              {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} CSV
             </Button>
           </div>
         )}

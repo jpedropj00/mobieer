@@ -1,0 +1,22 @@
+import type { Request, Response } from "express";
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ok } from "../../utils/response";
+import { ForbiddenError } from "../../utils/ApiError";
+import { activityInput, activityQuery, aiInput, signatureInput, statusInput } from "./activities.schema";
+import * as service from "./activities.service";
+import { activityPdf } from "./activities.export";
+
+const ownOnly = (req: Request) => !req.user!.permissions.includes("activities.read.all");
+const assertAccess = (req: Request, activity: any) => { if (activity.employeeId !== req.user!.id && ownOnly(req)) throw new ForbiddenError("Você não pode acessar esta atividade"); };
+export const list = asyncHandler(async (req: Request, res: Response) => { const q = activityQuery.parse(req.query); const result = await service.list(q, req.user!.organizationId, ownOnly(req) || q.my === "true" ? req.user!.id : undefined); res.json({ success: true, data: result.items, meta: result.meta }); });
+export const indicators = asyncHandler(async (req: Request, res: Response) => ok(res, await service.indicators(req.user!.organizationId, ownOnly(req) ? req.user!.id : undefined)));
+export const employees = asyncHandler(async (req: Request, res: Response) => ok(res, await service.employees(req.user!.organizationId)));
+export const get = asyncHandler(async (req: Request, res: Response) => { const item = await service.get(req.params.id, req.user!.organizationId); assertAccess(req, item); return ok(res, item); });
+export const create = asyncHandler(async (req: Request, res: Response) => ok(res, await service.create(activityInput.parse(req.body), req.user!), "Atividade criada"));
+export const update = asyncHandler(async (req: Request, res: Response) => ok(res, await service.update(req.params.id, activityInput.parse(req.body), req.user!), "Atividade atualizada"));
+export const changeStatus = asyncHandler(async (req: Request, res: Response) => ok(res, await service.changeStatus(req.params.id, statusInput.parse(req.body).status, req.user!), "Status atualizado"));
+export const remove = asyncHandler(async (req: Request, res: Response) => ok(res, await service.remove(req.params.id, req.user!), "Atividade excluída"));
+export const sign = asyncHandler(async (req: Request, res: Response) => ok(res, await service.sign(req.params.id, signatureInput.parse(req.body), req.user!), "Assinatura registrada"));
+export const pdf = asyncHandler(async (req: Request, res: Response) => { const item = await service.get(req.params.id, req.user!.organizationId); assertAccess(req, item); return activityPdf(res, item); });
+export const upload = asyncHandler(async (req: Request, res: Response) => { if (!req.file) return res.status(400).json({ success: false, message: "Selecione um arquivo" }); const baseUrl = `${req.protocol}://${req.get("host")}`; return ok(res, { name: req.file.originalname, url: `${baseUrl}/uploads/${req.file.filename}`, mimeType: req.file.mimetype, size: req.file.size, kind: req.file.mimetype.startsWith("image/") ? "PHOTO" : "FILE" }); });
+export const aiSuggest = asyncHandler(async (req: Request, res: Response) => { const { text } = aiInput.parse(req.body); const times = [...text.matchAll(/(?:às?|das?)\s*(\d{1,2})(?::(\d{2}))?h?/gi)].map((m) => `${m[1].padStart(2,"0")}:${m[2] ?? "00"}`); const quantities = [...text.matchAll(/(\d+(?:[,.]\d+)?)\s+([\p{L}][\p{L}\s-]{2,40}?)(?=,|\.|\se\s|$)/gu)].map((m) => ({ quantity: Number(m[1].replace(",",".")), name: m[2].trim(), unit: "UNIT", note: null })); const problemSentence = text.split(/[.!?]/).find((s) => /problema|defeito|falha|alinhamento|quebrad|danific/i.test(s)); return ok(res, { service: text.split(/[,.]/)[0].trim(), description: text, startTime: times[0] ?? null, endTime: times[1] ?? null, materials: quantities, problems: problemSentence ? [{ description: problemSentence.trim(), priority: "NORMAL", note: null, attachments: [] }] : [], observations: null, sourceText: text }); });

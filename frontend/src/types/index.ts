@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "MANAGER" | "WAREHOUSE" | "REQUESTER" | "VIEWER";
+export type Role = "ADMIN" | "MANAGER" | "WAREHOUSE" | "PRODUCTION" | "REQUESTER" | "VIEWER";
 
 export type AuthUser = {
   id: string;
@@ -15,6 +15,21 @@ export type AuthUser = {
 
 export type Unit = "UNIT" | "BOX" | "PACKAGE" | "METER" | "LITER" | "KILO" | "ROLL" | "PAIR";
 
+export type ActivityStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type ActivityAttachment = { id?: string; name: string; url: string; mimeType?: string | null; size?: number | null; kind: "PHOTO" | "FILE" | "PROBLEM_PHOTO" };
+export type ActivityMaterial = { id?: string; name: string; productId?: string | null; product?: Pick<Product, "id" | "name" | "code" | "unit"> | null; quantity: number; unit: Unit; note?: string | null };
+export type ActivityProblem = { id?: string; description: string; note?: string | null; priority: "LOW" | "NORMAL" | "HIGH" | "URGENT"; attachments: ActivityAttachment[] };
+export type Activity = {
+  id: string; number: string; status: ActivityStatus; date: string; startTime: string | null; endTime: string | null; sector: string | null;
+  clientName: string | null; projectReference: string | null; service: string; description: string; problemsSummary: string | null; observations: string | null;
+  signatureRequired: boolean; completedAt: string | null; cancelledAt: string | null; createdAt: string; updatedAt: string;
+  employeeId: string; employee: { id: string; name: string; sector: string | null; position?: string | null }; createdBy?: { id: string; name: string };
+  materials: ActivityMaterial[]; problems: ActivityProblem[]; attachments: ActivityAttachment[];
+  signatures: { id: string; role: "EMPLOYEE" | "CLIENT" | "INSPECTOR"; signerName: string; dataUrl: string; signedAt: string }[];
+  history: { id: string; action: string; details?: Record<string, unknown>; createdAt: string; user?: { id: string; name: string } | null }[];
+  _count?: { materials: number; problems: number; attachments: number };
+};
+
 export type StockStatus = "NORMAL" | "ATENCAO" | "CRITICO" | "SEM_ESTOQUE";
 
 export type Product = {
@@ -22,9 +37,13 @@ export type Product = {
   name: string;
   code: string;
   sku: string | null;
+  barcode: string | null;
+  qrCode: string | null;
   description: string | null;
   unit: Unit;
   stock: number;
+  reservedStock: number;
+  availableStock: number;
   minStock: number;
   maxStock: number | null;
   unitValue: number | null;
@@ -42,6 +61,7 @@ export type Product = {
   supplier: { id: string; name: string } | null;
   stockStatus: StockStatus;
   createdAt: string;
+  warehouseStocks?: { quantity: number; warehouse: { id: string; name: string; code: string } }[];
 };
 
 export type Category = {
@@ -50,6 +70,7 @@ export type Category = {
   description: string | null;
   productCount: number;
   createdAt: string;
+  parent?: { id: string; name: string } | null;
 };
 
 export type Supplier = {
@@ -74,7 +95,7 @@ export type Warehouse = {
   createdAt: string;
 };
 
-export type MovementType = "ENTRY" | "EXIT" | "ADJUST";
+export type MovementType = "ENTRY" | "EXIT" | "ADJUST" | "TRANSFER" | "RESERVE" | "RELEASE" | "RETURN" | "LOSS" | "DAMAGE";
 
 export type Movement = {
   id: string;
@@ -93,6 +114,9 @@ export type Movement = {
   responsible: { id: string; name: string } | null;
   supplier: { id: string; name: string } | null;
   requisition: { id: string; number: string } | null;
+  originWarehouse?: { id: string; name: string; code: string } | null;
+  destinationWarehouse?: { id: string; name: string; code: string } | null;
+  operationCode?: string | null;
 };
 
 export type StockAlert = {
@@ -111,19 +135,30 @@ export type StockAlert = {
 };
 
 export type RequisitionStatus =
-  | "PENDING"
+  | "DRAFT"
+  | "REQUESTED"
   | "IN_REVIEW"
-  | "APPROVED"
-  | "SEPARATION"
-  | "CONCLUDED"
-  | "REFUSED"
+  | "WAITING_MATERIAL"
+  | "RELEASED"
+  | "IN_CUTTING"
+  | "INSPECTION"
+  | "COMPLETED"
   | "CANCELLED";
+
+export type RequisitionPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+export type RequisitionItemStatus = "PENDING" | "CUTTING" | "CUT" | "INSPECTED";
 
 export type Requisition = {
   id: string;
   number: string;
   sector: string | null;
   destination: string | null;
+  clientName: string | null;
+  projectReference: string | null;
+  priority: RequisitionPriority;
+  neededAt: string | null;
+  inspectionResult: "APPROVED" | "NEEDS_CORRECTION" | null;
+  inspectionNote: string | null;
   status: RequisitionStatus;
   statusLabel: string;
   note: string | null;
@@ -132,14 +167,33 @@ export type Requisition = {
   updatedAt: string;
   requester: { id: string; name: string; sector: string | null; position: string | null };
   approvedBy: { id: string; name: string } | null;
+  responsible: { id: string; name: string } | null;
+  cutter: { id: string; name: string } | null;
+  inspector: { id: string; name: string } | null;
   itemCount: number;
   totalQty: number;
+  completedQty: number;
+  progress: number;
+  overdue: boolean;
   items: {
     id: string;
+    description: string;
+    material: string | null;
+    productId: string | null;
+    thickness: number | null;
+    length: number | null;
+    width: number | null;
     quantity: number;
-    status: string;
-    product: { id: string; name: string; code: string; unit: Unit; stock: number };
+    unit: Unit;
+    edgeFinish: string | null;
+    note: string | null;
+    status: RequisitionItemStatus;
+    reservedQuantity: number;
+    product: { id: string; name: string; code: string; unit: Unit; stock: number; reservedStock: number } | null;
+    availability: { physical: number; reserved: number; available: number; situation: "AVAILABLE" | "PARTIAL" | "UNAVAILABLE" } | null;
   }[];
+  history: { id: string; action: string; fromValue: unknown; toValue: unknown; note: string | null; createdAt: string; user: { id: string; name: string } | null }[];
+  attachments: { id: string; name: string; url: string; mimeType: string | null; size: number | null; createdAt: string }[];
 };
 
 export type InventoryStatus = "OPEN" | "IN_PROGRESS" | "CONCLUDED" | "CANCELLED";
@@ -180,6 +234,8 @@ export type Dashboard = {
     };
   };
   balance: number;
+  requisitions: { open: number; waitingMaterial: number; released: number; inCutting: number; overdue: number; recentlyCompleted: number };
+  activities: { today: number; inProgress: number; completed: number; withProblems: number; hours: number; bySector: { sector: string; total: number }[] };
   recentMovements: {
     id: string;
     type: MovementType;

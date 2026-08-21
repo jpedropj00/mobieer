@@ -6,6 +6,7 @@ export const entryItemSchema = z.object({
   quantity: z.number().int().positive("Quantidade deve ser maior que zero"),
   unitValue: z.number().nonnegative().optional().nullable(),
   batch: z.string().optional().nullable(),
+  warehouseId: z.string().optional().nullable(),
 });
 
 export const entrySchema = z.object({
@@ -19,6 +20,7 @@ export const entrySchema = z.object({
 export const exitItemSchema = z.object({
   productId: z.string().min(1, "Produto obrigatório"),
   quantity: z.number().int().positive("Quantidade deve ser maior que zero"),
+  warehouseId: z.string().optional().nullable(),
 });
 
 export const exitSchema = z.object({

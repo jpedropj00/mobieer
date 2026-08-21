@@ -9,7 +9,7 @@ Sistema empresarial completo de gestão de almoxarifado para a MOBIEER, com vers
 | Frontend   | React, TypeScript, Vite, Tailwind CSS, shadcn/ui, TanStack Query, React Router, React Hook Form, Zod |
 | Backend    | Node.js, TypeScript, Express, Prisma ORM                |
 | Banco      | PostgreSQL                                              |
-| Desktop    | Tauri (Windows / macOS / Linux)                         |
+| Desktop    | Electron (Windows)                                      |
 
 ## Arquitetura
 
@@ -25,12 +25,12 @@ Node.js + Express
     PostgreSQL
 ```
 
-Para desktop, o mesmo frontend React é empacotado pelo Tauri:
+Para desktop, o mesmo frontend React e a API são empacotados pelo Electron:
 
 ```
 React
   ↓
-Tauri
+Electron
   ↓
 Aplicativo Windows/macOS/Linux
 ```
@@ -60,7 +60,8 @@ project/
       schema.prisma
       seed.ts
   desktop/
-    src-tauri/       → Configuração Tauri
+    main.js          → Processo principal do Electron
+    copy-files.mjs   → Preparação dos artefatos para empacotamento
   docker-compose.yml → PostgreSQL local
 ```
 
@@ -68,7 +69,7 @@ project/
 
 - Node.js ≥ 20
 - Docker Desktop (para o PostgreSQL)
-- Rust (apenas para build desktop com Tauri)
+- PostgreSQL disponível também durante o uso da versão desktop
 
 ## Como rodar
 
@@ -101,12 +102,14 @@ npm run dev
 
 App disponível em `http://localhost:5173`
 
-### Desktop (Tauri)
+### Desktop (Electron)
 
 ```bash
+npm run build:frontend
+npm run build:backend
 cd desktop
 npm install
-npm run tauri dev
+npm run dev
 ```
 
 ## Credenciais de desenvolvimento (seed)

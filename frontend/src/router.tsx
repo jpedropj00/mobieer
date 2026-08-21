@@ -1,42 +1,54 @@
+import { lazy, Suspense } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { GuestRoute, ProtectedRoute } from "@/router-guards";
 import { PermissionGate } from "@/components/permission-gate";
-import { LoginPage } from "@/pages/login";
-import { DashboardPage } from "@/pages/dashboard";
-import { ProductsPage } from "@/pages/products";
-import { ProductDetailPage } from "@/pages/product-detail";
-import { CategoriesPage } from "@/pages/categories";
-import { SuppliersPage } from "@/pages/suppliers";
-import { WarehousesPage } from "@/pages/warehouses";
-import { StockEntryPage } from "@/pages/stock-entry";
-import { StockExitPage } from "@/pages/stock-exit";
-import { MovementsPage } from "@/pages/movements";
-import { AlertsPage } from "@/pages/alerts";
-import { InventoryPage } from "@/pages/inventory";
-import { InventoryDetailPage } from "@/pages/inventory-detail";
-import { RequisitionsPage } from "@/pages/requisitions";
-import { RequisitionDetailPage } from "@/pages/requisition-detail";
-import { ReportsPage } from "@/pages/reports";
-import { UsersPage } from "@/pages/users";
-import { AuditPage } from "@/pages/audit";
-import { SettingsPage } from "@/pages/settings";
+
+const LoginPage = lazy(() => import("@/pages/login").then((m) => ({ default: m.LoginPage })));
+const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })));
+const ProductsPage = lazy(() => import("@/pages/products").then((m) => ({ default: m.ProductsPage })));
+const ProductDetailPage = lazy(() => import("@/pages/product-detail").then((m) => ({ default: m.ProductDetailPage })));
+const CategoriesPage = lazy(() => import("@/pages/categories").then((m) => ({ default: m.CategoriesPage })));
+const SuppliersPage = lazy(() => import("@/pages/suppliers").then((m) => ({ default: m.SuppliersPage })));
+const WarehousesPage = lazy(() => import("@/pages/warehouses").then((m) => ({ default: m.WarehousesPage })));
+const StockEntryPage = lazy(() => import("@/pages/stock-entry").then((m) => ({ default: m.StockEntryPage })));
+const StockExitPage = lazy(() => import("@/pages/stock-exit").then((m) => ({ default: m.StockExitPage })));
+const MovementsPage = lazy(() => import("@/pages/movements").then((m) => ({ default: m.MovementsPage })));
+const AlertsPage = lazy(() => import("@/pages/alerts").then((m) => ({ default: m.AlertsPage })));
+const InventoryPage = lazy(() => import("@/pages/inventory").then((m) => ({ default: m.InventoryPage })));
+const InventoryDetailPage = lazy(() => import("@/pages/inventory-detail").then((m) => ({ default: m.InventoryDetailPage })));
+const RequisitionsPage = lazy(() => import("@/pages/requisitions").then((m) => ({ default: m.RequisitionsPage })));
+const RequisitionDetailPage = lazy(() => import("@/pages/requisition-detail").then((m) => ({ default: m.RequisitionDetailPage })));
+const ReportsPage = lazy(() => import("@/pages/reports").then((m) => ({ default: m.ReportsPage })));
+const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.UsersPage })));
+const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })));
+const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
+const StockOperationsPage = lazy(() => import("@/pages/stock-operations").then((m) => ({ default: m.StockOperationsPage })));
+const ActivitiesPage = lazy(() => import("@/pages/activities").then((m) => ({ default: m.ActivitiesPage })));
+const ActivityFormPage = lazy(() => import("@/pages/activity-form").then((m) => ({ default: m.ActivityFormPage })));
+const ActivityDetailPage = lazy(() => import("@/pages/activity-detail").then((m) => ({ default: m.ActivityDetailPage })));
+const AgendaPage = lazy(() => import("@/pages/agenda").then((m) => ({ default: m.AgendaPage })));
+
+function LazyBoundary({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Carregando...</div>}>{children}</Suspense>;
+}
 
 export const router = createBrowserRouter([
   {
     element: <GuestRoute />,
-    children: [{ path: "/login", element: <LoginPage /> }],
+    children: [{ path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> }],
   },
   {
     element: <ProtectedRoute />,
     children: [
       {
-        element: <AppShell />,
+        element: <LazyBoundary><AppShell /></LazyBoundary>,
         children: [
           { path: "/", element: <PermissionGate permission="dashboard.read"><DashboardPage /></PermissionGate> },
           { path: "/entrada", element: <PermissionGate permission="stock.entry"><StockEntryPage /></PermissionGate> },
           { path: "/saida", element: <PermissionGate permission="stock.exit"><StockExitPage /></PermissionGate> },
           { path: "/movimentacoes", element: <PermissionGate permission="stock.movements"><MovementsPage /></PermissionGate> },
+          { path: "/operacoes-estoque", element: <PermissionGate permission="stock.scanner"><StockOperationsPage /></PermissionGate> },
           { path: "/produtos", element: <PermissionGate permission="products.read"><ProductsPage /></PermissionGate> },
           { path: "/produtos/:id", element: <PermissionGate permission="products.read"><ProductDetailPage /></PermissionGate> },
           { path: "/categorias", element: <PermissionGate permission="categories.read"><CategoriesPage /></PermissionGate> },
@@ -46,6 +58,11 @@ export const router = createBrowserRouter([
           { path: "/inventario/:id", element: <PermissionGate permission="inventory.read"><InventoryDetailPage /></PermissionGate> },
           { path: "/requisicoes", element: <PermissionGate permission="requisitions.read"><RequisitionsPage /></PermissionGate> },
           { path: "/requisicoes/:id", element: <PermissionGate permission="requisitions.read"><RequisitionDetailPage /></PermissionGate> },
+          { path: "/atividades", element: <PermissionGate permission="activities.read"><ActivitiesPage /></PermissionGate> },
+          { path: "/atividades/nova", element: <PermissionGate permission="activities.create"><ActivityFormPage /></PermissionGate> },
+          { path: "/atividades/:id", element: <PermissionGate permission="activities.read"><ActivityDetailPage /></PermissionGate> },
+          { path: "/atividades/:id/editar", element: <PermissionGate permission="activities.edit"><ActivityFormPage /></PermissionGate> },
+          { path: "/agenda", element: <PermissionGate permission="agenda.read"><AgendaPage /></PermissionGate> },
           { path: "/alertas", element: <PermissionGate permission="stock.read"><AlertsPage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },
@@ -55,5 +72,5 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: "*", element: <LoginPage /> },
+  { path: "*", element: <LazyBoundary><LoginPage /></LazyBoundary> },
 ]);

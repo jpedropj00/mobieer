@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { MoreHorizontal, Package, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiDelete, apiGet } from "@/services/api";
@@ -29,12 +29,20 @@ import { useAuth } from "@/hooks/use-auth";
 export function ProductsPage() {
   const { can } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [status, setStatus] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get("novo") && can("products.create")) {
+      setEditing(null);
+      setDialogOpen(true);
+    }
+  }, [searchParams, can]);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["products", page, search, categoryId, status],
@@ -214,7 +222,15 @@ export function ProductsPage() {
       </Card>
 
       {dialogOpen && (
-        <ProductFormDialog open={dialogOpen} onOpenChange={setDialogOpen} product={editing} />
+      <ProductFormDialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open && searchParams.has("novo")) setSearchParams({}, { replace: true });
+        }}
+        product={editing}
+        initialBarcode={searchParams.get("novo") ?? undefined}
+      />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-// MOBIEER Almoxarifado - Prisma Schema
+// Gestium - Plataforma modular de gestão empresarial
 // provider: PostgreSQL
 
 generator client {
@@ -35,21 +35,48 @@ model User {
   updatedAt        DateTime   @updatedAt
 
   roleId String
-  role   Role     @relation(fields: [roleId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
 
-  movements       StockMovement[]    @relation("MovementResponsible")
-  createdReqs     Requisition[]      @relation("RequisitionCreator")
-  approvedReqs    Requisition[]      @relation("RequisitionApprover")
-  inventories     Inventory[]
-  notifications   Notification[]
-  auditLogs       AuditLog[]
+  movements               StockMovement[]      @relation("MovementResponsible")
+  createdReqs             Requisition[]        @relation("RequisitionCreator")
+  approvedReqs            Requisition[]        @relation("RequisitionApprover")
+  responsibleReqs         Requisition[]        @relation("RequisitionResponsible")
+  cuttingReqs             Requisition[]        @relation("RequisitionCutter")
+  inspectedReqs           Requisition[]        @relation("RequisitionInspector")
+  requisitionEvents       RequisitionHistory[]
+  inventories             Inventory[]
+  notifications           Notification[]
+  auditLogs               AuditLog[]
+  stockReservations       StockReservation[]
+  organizationId          String               @default("default-org")
+  organization            Organization         @relation(fields: [organizationId], references: [id])
+  activities              Activity[]           @relation("ActivityEmployee")
+  createdActivities       Activity[]           @relation("ActivityCreator")
+  activityHistory         ActivityHistory[]
+  activitySignatures      ActivitySignature[]
+  responsibleAgendaEvents AgendaEvent[]        @relation("AgendaResponsible")
+  createdAgendaEvents     AgendaEvent[]        @relation("AgendaCreator")
+  agendaParticipations    AgendaParticipant[]
+  agendaReminders         AgendaReminder[]
+  agendaHistory           AgendaEventHistory[]
 
   @@index([roleId])
+  @@index([organizationId])
+}
+
+model Organization {
+  id               String            @id @default(cuid())
+  name             String
+  createdAt        DateTime          @default(now())
+  users            User[]
+  activities       Activity[]
+  agendaEvents     AgendaEvent[]
+  agendaEventTypes AgendaEventType[]
 }
 
 model Role {
-  id          String  @id @default(cuid())
-  name        String  @unique // ADMIN | MANAGER | WAREHOUSE | REQUESTER | VIEWER
+  id          String           @id @default(cuid())
+  name        String           @unique // ADMIN | MANAGER | WAREHOUSE | REQUESTER | VIEWER
   label       String
   description String?
   permissions RolePermission[]
@@ -59,11 +86,11 @@ model Role {
 }
 
 model Permission {
-  id      String  @id @default(cuid())
-  code    String  @unique // e.g. "products.create"
-  label   String
-  module  String
-  roles   RolePermission[]
+  id     String           @id @default(cuid())
+  code   String           @unique // e.g. "products.create"
+  label  String
+  module String
+  roles  RolePermission[]
 
   createdAt DateTime @default(now())
 }
@@ -98,11 +125,16 @@ enum Unit {
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String    @unique
+  id          String     @id @default(cuid())
+  name        String     @unique
   description String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime   @default(now())
   products    Product[]
+  parentId    String?
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryTree")
+
+  @@index([parentId])
 }
 
 enum SupplierStatus {
@@ -111,43 +143,50 @@ enum SupplierStatus {
 }
 
 model Supplier {
-  id        String         @id @default(cuid())
+  id        String          @id @default(cuid())
   name      String
-  cnpj      String?        @unique
+  cnpj      String?         @unique
   contact   String?
   phone     String?
   email     String?
   address   String?
-  status    SupplierStatus @default(ACTIVE)
-  createdAt DateTime       @default(now())
+  status    SupplierStatus  @default(ACTIVE)
+  createdAt DateTime        @default(now())
   products  Product[]
   movements StockMovement[]
 }
 
 model Warehouse {
-  id        String    @id @default(cuid())
-  name      String
-  code      String    @unique
-  address   String?
-  createdAt DateTime  @default(now())
-  products  Product[]
+  id                   String                  @id @default(cuid())
+  name                 String
+  code                 String                  @unique
+  address              String?
+  createdAt            DateTime                @default(now())
+  products             Product[]
+  balances             ProductWarehouseStock[]
+  originMovements      StockMovement[]         @relation("MovementOriginWarehouse")
+  destinationMovements StockMovement[]         @relation("MovementDestinationWarehouse")
+  reservations         StockReservation[]
 }
 
 model Product {
-  id          String        @id @default(cuid())
-  name        String
-  code        String        @unique // MAT-00001
-  sku         String?       @unique
-  description String?
-  unit        Unit          @default(UNIT)
-  stock       Int           @default(0)
-  minStock    Int           @default(0)
-  maxStock    Int?
-  unitValue   Decimal?      @db.Decimal(12, 2)
-  imageUrl    String?
-  status      ProductStatus @default(ACTIVE)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  name          String
+  code          String        @unique // MAT-00001
+  sku           String?       @unique
+  barcode       String?       @unique
+  qrCode        String?       @unique
+  description   String?
+  unit          Unit          @default(UNIT)
+  stock         Int           @default(0)
+  reservedStock Int           @default(0)
+  minStock      Int           @default(0)
+  maxStock      Int?
+  unitValue     Decimal?      @db.Decimal(12, 2)
+  imageUrl      String?
+  status        ProductStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -161,13 +200,170 @@ model Product {
   shelf       String? // Prateleira
   position    String? // Posição
 
-  movements        StockMovement[]
-  inventoryItems   InventoryItem[]
-  requisitionItems RequisitionItem[]
-  notifications    Notification[]
+  movements         StockMovement[]
+  inventoryItems    InventoryItem[]
+  requisitionItems  RequisitionItem[]
+  notifications     Notification[]
+  warehouseStocks   ProductWarehouseStock[]
+  reservations      StockReservation[]
+  activityMaterials ActivityMaterial[]
 
   @@index([name])
   @@index([categoryId])
+  @@index([barcode])
+  @@index([qrCode])
+}
+
+// ============================================================
+// ACTIVITY REPORTS
+// ============================================================
+
+enum ActivityStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ActivityProblemPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ActivityAttachmentKind {
+  PHOTO
+  FILE
+  PROBLEM_PHOTO
+}
+
+enum ActivitySignatureRole {
+  EMPLOYEE
+  CLIENT
+  INSPECTOR
+}
+
+model Activity {
+  id                String               @id @default(cuid())
+  number            String               @unique
+  status            ActivityStatus       @default(DRAFT)
+  date              DateTime             @db.Date
+  startTime         String?
+  endTime           String?
+  sector            String?
+  clientName        String?
+  projectReference  String?
+  service           String
+  description       String               @db.Text
+  problemsSummary   String?              @db.Text
+  observations      String?              @db.Text
+  signatureRequired Boolean              @default(false)
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  organizationId    String
+  organization      Organization         @relation(fields: [organizationId], references: [id])
+  employeeId        String
+  employee          User                 @relation("ActivityEmployee", fields: [employeeId], references: [id])
+  createdById       String
+  createdBy         User                 @relation("ActivityCreator", fields: [createdById], references: [id])
+  agendaEventId     String?
+  agendaEvent       AgendaEvent?         @relation(fields: [agendaEventId], references: [id], onDelete: SetNull)
+  taskId            String?
+  assistanceId      String?
+  materials         ActivityMaterial[]
+  problems          ActivityProblem[]
+  attachments       ActivityAttachment[]
+  signatures        ActivitySignature[]
+  history           ActivityHistory[]
+
+  @@index([organizationId, date])
+  @@index([organizationId, status, date])
+  @@index([employeeId, date])
+  @@index([createdById])
+  @@index([agendaEventId])
+  @@index([sector])
+  @@index([clientName])
+  @@index([projectReference])
+}
+
+model ActivityMaterial {
+  id              String   @id @default(cuid())
+  name            String
+  quantity        Decimal  @db.Decimal(12, 3)
+  unit            Unit
+  note            String?
+  stockMovementId String?
+  createdAt       DateTime @default(now())
+  activityId      String
+  activity        Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([activityId])
+  @@index([productId])
+  @@index([stockMovementId])
+}
+
+model ActivityProblem {
+  id          String                  @id @default(cuid())
+  description String
+  note        String?                 @db.Text
+  priority    ActivityProblemPriority @default(NORMAL)
+  createdAt   DateTime                @default(now())
+  activityId  String
+  activity    Activity                @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  attachments ActivityAttachment[]
+
+  @@index([activityId])
+}
+
+model ActivityAttachment {
+  id         String                 @id @default(cuid())
+  name       String
+  url        String
+  mimeType   String?
+  size       Int?
+  kind       ActivityAttachmentKind
+  createdAt  DateTime               @default(now())
+  activityId String
+  activity   Activity               @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  problemId  String?
+  problem    ActivityProblem?       @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([activityId])
+  @@index([problemId])
+}
+
+model ActivitySignature {
+  id         String                @id @default(cuid())
+  role       ActivitySignatureRole
+  signerName String
+  dataUrl    String                @db.Text
+  signedAt   DateTime              @default(now())
+  activityId String
+  activity   Activity              @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  signedById String?
+  signedBy   User?                 @relation(fields: [signedById], references: [id], onDelete: SetNull)
+
+  @@unique([activityId, role])
+  @@index([signedById])
+}
+
+model ActivityHistory {
+  id         String   @id @default(cuid())
+  action     String
+  details    Json?
+  createdAt  DateTime @default(now())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([activityId, createdAt])
+  @@index([userId])
 }
 
 // ============================================================
@@ -178,6 +374,12 @@ enum MovementType {
   ENTRY
   EXIT
   ADJUST
+  TRANSFER
+  RESERVE
+  RELEASE
+  RETURN
+  LOSS
+  DAMAGE
 }
 
 model StockMovement {
@@ -190,7 +392,7 @@ model StockMovement {
 
   // ENTRY specific
   supplierId    String?
-  supplier      Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   invoiceNumber String? // Nota fiscal
   batch         String? // Lote
 
@@ -200,22 +402,74 @@ model StockMovement {
   destination   String?
   reason        String?
 
-  productId     String
-  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   responsibleId String?
-  responsible   User?    @relation("MovementResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  responsible   User?   @relation("MovementResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
 
   requisitionId   String?
-  requisition     Requisition?  @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  requisition     Requisition?   @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+
+  originWarehouseId      String?
+  originWarehouse        Warehouse?        @relation("MovementOriginWarehouse", fields: [originWarehouseId], references: [id], onDelete: SetNull)
+  destinationWarehouseId String?
+  destinationWarehouse   Warehouse?        @relation("MovementDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: SetNull)
+  reservationId          String?
+  reservation            StockReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  operationCode          String?
 
   createdAt DateTime @default(now())
 
   @@index([productId])
   @@index([date])
   @@index([type])
+}
+
+model ProductWarehouseStock {
+  productId   String
+  warehouseId String
+  quantity    Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@id([productId, warehouseId])
+  @@index([warehouseId])
+}
+
+enum ReservationStatus {
+  ACTIVE
+  FULFILLED
+  CANCELLED
+}
+
+model StockReservation {
+  id                String            @id @default(cuid())
+  quantity          Int
+  status            ReservationStatus @default(ACTIVE)
+  note              String?
+  expiresAt         DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  productId         String
+  product           Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId       String?
+  warehouse         Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  requesterId       String
+  requester         User              @relation(fields: [requesterId], references: [id])
+  requisitionId     String?
+  requisition       Requisition?      @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  requisitionItemId String?
+  requisitionItem   RequisitionItem?  @relation(fields: [requisitionItemId], references: [id], onDelete: Cascade)
+  movements         StockMovement[]
+
+  @@index([productId, status])
+  @@index([requesterId])
+  @@index([requisitionId, status])
+  @@index([requisitionItemId, status])
 }
 
 // ============================================================
@@ -236,24 +490,24 @@ enum InventoryItemStatus {
 }
 
 model Inventory {
-  id           String          @id @default(cuid())
-  name         String
-  description  String?
-  status       InventoryStatus @default(OPEN)
-  startedById  String
-  startedBy    User            @relation(fields: [startedById], references: [id])
-  concludedAt  DateTime?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  items        InventoryItem[]
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  status      InventoryStatus @default(OPEN)
+  startedById String
+  startedBy   User            @relation(fields: [startedById], references: [id])
+  concludedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  items       InventoryItem[]
 }
 
 model InventoryItem {
-  id            String              @id @default(cuid())
-  expectedQty   Int
-  countedQty    Int?
-  difference    Int?
-  status        InventoryItemStatus @default(PENDING)
+  id          String              @id @default(cuid())
+  expectedQty Int
+  countedQty  Int?
+  difference  Int?
+  status      InventoryItemStatus @default(PENDING)
 
   inventoryId String
   inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
@@ -271,56 +525,277 @@ model InventoryItem {
 // ============================================================
 
 enum RequisitionStatus {
-  PENDING
+  DRAFT
+  REQUESTED
   IN_REVIEW
-  APPROVED
-  SEPARATION
-  CONCLUDED
-  REFUSED
+  WAITING_MATERIAL
+  RELEASED
+  IN_CUTTING
+  INSPECTION
+  COMPLETED
   CANCELLED
 }
 
 enum RequisitionItemStatus {
   PENDING
-  SEPARATED
-  CONCLUDED
+  CUTTING
+  CUT
+  INSPECTED
+}
+
+enum RequisitionPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum InspectionResult {
+  APPROVED
+  NEEDS_CORRECTION
 }
 
 model Requisition {
-  id          String            @id @default(cuid())
-  number      String            @unique // REQ-00001
-  sector      String?
-  destination String?
-  status      RequisitionStatus @default(PENDING)
-  note        String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  approvedAt  DateTime?
+  id               String              @id @default(cuid())
+  number           String              @unique // REQ-00001
+  sector           String?
+  destination      String?
+  status           RequisitionStatus   @default(DRAFT)
+  priority         RequisitionPriority @default(NORMAL)
+  note             String?
+  clientName       String?
+  projectReference String?
+  neededAt         DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  submittedAt      DateTime?
+  approvedAt       DateTime?
+  cuttingStartedAt DateTime?
+  inspectedAt      DateTime?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  inspectionResult InspectionResult?
+  inspectionNote   String?
 
   requesterId String
-  requester   User @relation("RequisitionCreator", fields: [requesterId], references: [id])
+  requester   User   @relation("RequisitionCreator", fields: [requesterId], references: [id])
 
   approvedById String?
   approvedBy   User?   @relation("RequisitionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
 
-  items     RequisitionItem[]
-  movements StockMovement[]
+  responsibleId String?
+  responsible   User?   @relation("RequisitionResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+
+  cutterId String?
+  cutter   User?   @relation("RequisitionCutter", fields: [cutterId], references: [id], onDelete: SetNull)
+
+  inspectorId String?
+  inspector   User?   @relation("RequisitionInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
+
+  items        RequisitionItem[]
+  movements    StockMovement[]
+  reservations StockReservation[]
+  history      RequisitionHistory[]
+  attachments  RequisitionAttachment[]
+  agendaEvents AgendaEvent[]
 
   @@index([status])
+  @@index([priority])
+  @@index([neededAt])
+  @@index([requesterId])
+  @@index([responsibleId])
+  @@index([cutterId])
+  @@index([inspectorId])
 }
 
 model RequisitionItem {
-  id            String              @id @default(cuid())
-  quantity      Int
-  status        RequisitionItemStatus @default(PENDING)
+  id          String                @id @default(cuid())
+  quantity    Int
+  status      RequisitionItemStatus @default(PENDING)
+  description String
+  material    String?
+  thickness   Decimal?              @db.Decimal(10, 2)
+  length      Decimal?              @db.Decimal(10, 2)
+  width       Decimal?              @db.Decimal(10, 2)
+  unit        Unit                  @default(UNIT)
+  edgeFinish  String?
+  note        String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 
   requisitionId String
   requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
 
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  reservations StockReservation[]
 
-  @@unique([requisitionId, productId])
+  @@index([requisitionId])
+  @@index([productId])
+}
+
+model RequisitionHistory {
+  id            String      @id @default(cuid())
+  action        String
+  fromValue     Json?
+  toValue       Json?
+  note          String?
+  createdAt     DateTime    @default(now())
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([requisitionId, createdAt])
+  @@index([userId])
+}
+
+model RequisitionAttachment {
+  id            String      @id @default(cuid())
+  name          String
+  url           String
+  mimeType      String?
+  size          Int?
+  createdAt     DateTime    @default(now())
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@index([requisitionId])
+}
+
+// ============================================================
+// AGENDA
+// ============================================================
+
+enum AgendaEventStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum AgendaVisibility {
+  PRIVATE
+  TEAM
+  ORGANIZATION
+  CLIENT
+}
+
+model AgendaEventType {
+  id             String        @id @default(cuid())
+  name           String
+  color          String        @default("amber")
+  icon           String?
+  active         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events         AgendaEvent[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, active])
+}
+
+model AgendaEvent {
+  id               String               @id @default(cuid())
+  title            String
+  description      String?              @db.Text
+  startAt          DateTime
+  endAt            DateTime
+  allDay           Boolean              @default(false)
+  team             String?
+  clientName       String?
+  projectReference String?
+  location         String?
+  status           AgendaEventStatus    @default(SCHEDULED)
+  visibility       AgendaVisibility     @default(TEAM)
+  notes            String?              @db.Text
+  conflictOverride Boolean              @default(false)
+  cancelledAt      DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  organizationId   String
+  organization     Organization         @relation(fields: [organizationId], references: [id])
+  typeId           String
+  type             AgendaEventType      @relation(fields: [typeId], references: [id])
+  responsibleId    String
+  responsible      User                 @relation("AgendaResponsible", fields: [responsibleId], references: [id])
+  createdById      String
+  createdBy        User                 @relation("AgendaCreator", fields: [createdById], references: [id])
+  requisitionId    String?
+  requisition      Requisition?         @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  taskId           String?
+  assistanceId     String?
+  participants     AgendaParticipant[]
+  reminders        AgendaReminder[]
+  attachments      AgendaAttachment[]
+  history          AgendaEventHistory[]
+  activities       Activity[]
+
+  @@index([organizationId, startAt])
+  @@index([organizationId, status, startAt])
+  @@index([responsibleId, startAt, endAt])
+  @@index([typeId])
+  @@index([createdById])
+  @@index([requisitionId])
+  @@index([clientName])
+  @@index([projectReference])
+}
+
+model AgendaParticipant {
+  eventId   String
+  userId    String
+  event     AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@id([eventId, userId])
+  @@index([userId])
+}
+
+model AgendaReminder {
+  id            String      @id @default(cuid())
+  minutesBefore Int
+  remindAt      DateTime
+  sentAt        DateTime?
+  eventId       String
+  event         AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId, minutesBefore])
+  @@index([userId, remindAt, sentAt])
+}
+
+model AgendaAttachment {
+  id        String      @id @default(cuid())
+  name      String
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime    @default(now())
+  eventId   String
+  event     AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
+
+model AgendaEventHistory {
+  id        String      @id @default(cuid())
+  action    String
+  fromValue Json?
+  toValue   Json?
+  createdAt DateTime    @default(now())
+  eventId   String
+  event     AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([eventId, createdAt])
+  @@index([userId])
 }
 
 // ============================================================
@@ -336,6 +811,7 @@ enum NotificationType {
   INVENTORY_PENDING
   MOVEMENT
   INFO
+  AGENDA
 }
 
 model Notification {

@@ -18,6 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 const productSchema = z.object({
   name: z.string().min(2, "Nome obrigatório"),
   sku: z.string().optional().or(z.literal("")),
+  barcode: z.string().optional().or(z.literal("")),
+  qrCode: z.string().optional().or(z.literal("")),
   description: z.string().optional().or(z.literal("")),
   unit: z.string().min(1, "Unidade obrigatória"),
   minStock: z.coerce.number().int().min(0, "Mínimo não pode ser negativo"),
@@ -37,10 +39,14 @@ export function ProductFormDialog({
   open,
   onOpenChange,
   product,
+  initialBarcode,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   product?: Product | null;
+  initialBarcode?: string;
+  onCreated?: (product: Product) => void;
 }) {
   const queryClient = useQueryClient();
   const isEdit = Boolean(product);
@@ -59,14 +65,16 @@ export function ProductFormDialog({
   } = useForm<ProductFormValues>({ resolver: zodResolver(productSchema), defaultValues: defaultValues(product) });
 
   useEffect(() => {
-    if (open) reset(defaultValues(product ?? null));
-  }, [open, product, reset]);
+    if (open) reset({ ...defaultValues(product ?? null), barcode: product?.barcode ?? initialBarcode ?? "" });
+  }, [open, product, initialBarcode, reset]);
 
   const mutation = useMutation({
     mutationFn: (values: ProductFormValues) => {
       const payload = {
         name: values.name,
         sku: values.sku || null,
+        barcode: values.barcode || null,
+        qrCode: values.qrCode || null,
         description: values.description || null,
         unit: values.unit as Unit,
         minStock: Number(values.minStock || 0),
@@ -79,12 +87,15 @@ export function ProductFormDialog({
         shelf: values.shelf || null,
         position: values.position || null,
       };
-      return isEdit ? apiPut(`/products/${product!.id}`, payload) : apiPost("/products", payload);
+      return isEdit
+        ? apiPut<{ data: Product }>(`/products/${product!.id}`, payload)
+        : apiPost<{ data: Product }>("/products", payload);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success(isEdit ? "Produto atualizado com sucesso" : "Produto cadastrado com sucesso");
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      if (!isEdit) onCreated?.(result.data);
       onOpenChange(false);
     },
     onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao salvar produto"),
@@ -130,6 +141,17 @@ export function ProductFormDialog({
                 </SelectContent>
               </Select>
               {errors.unit && <p className="text-xs text-destructive">{errors.unit.message}</p>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="barcode">Código de barras</Label>
+              <Input id="barcode" placeholder="EAN, UPC ou código do leitor" {...register("barcode")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="qrCode">Conteúdo do QR Code</Label>
+              <Input id="qrCode" placeholder="Código ou conteúdo do QR" {...register("qrCode")} />
             </div>
           </div>
 
@@ -236,6 +258,8 @@ function defaultValues(product?: Product | null): ProductFormValues {
   return {
     name: product?.name ?? "",
     sku: product?.sku ?? "",
+    barcode: product?.barcode ?? "",
+    qrCode: product?.qrCode ?? "",
     description: product?.description ?? "",
     unit: product?.unit ?? "UNIT",
     minStock: product?.minStock ?? 0,

@@ -2,7 +2,8 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 
-const uploadDir = path.resolve(process.cwd(), "uploads");
+// Vercel Functions têm filesystem somente-leitura; /tmp é o espaço gravável.
+const uploadDir = process.env.VERCEL ? path.join("/tmp", "uploads") : path.resolve(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -22,5 +23,24 @@ export const uploadImage = multer({
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Arquivo deve ser uma imagem"));
+  },
+});
+
+const attachmentMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "text/csv",
+]);
+
+export const uploadAttachment = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/") || attachmentMimeTypes.has(file.mimetype)) cb(null, true);
+    else cb(new Error("Formato de arquivo não permitido"));
   },
 });

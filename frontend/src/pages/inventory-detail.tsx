@@ -27,6 +27,7 @@ export function InventoryDetailPage() {
   const { can } = useAuth();
   const queryClient = useQueryClient();
   const [adjusting, setAdjusting] = useState<{ itemId: string; reason: string } | null>(null);
+  const [counts, setCounts] = useState<Record<string, string>>({});
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["inventory", id],
@@ -71,8 +72,6 @@ export function InventoryDetailPage() {
   const progress = inv.itemCount > 0 ? Math.round(((inv.counted ?? 0) / inv.itemCount) * 100) : 0;
   const nextAction = STATUS_ACTIONS[inv.status];
   const editable = inv.status !== "CONCLUDED" && inv.status !== "CANCELLED";
-
-  const [counts, setCounts] = useState<Record<string, string>>({});
 
   return (
     <div className="space-y-6">

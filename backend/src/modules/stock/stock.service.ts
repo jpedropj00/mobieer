@@ -47,6 +47,14 @@ export async function createEntry(input: EntryInput, actorId: string, actorName:
         where: { id: item.productId },
         data: { stock: { increment: item.quantity } },
       });
+      const warehouseId = item.warehouseId ?? product.warehouseId;
+      if (warehouseId) {
+        await tx.productWarehouseStock.upsert({
+          where: { productId_warehouseId: { productId: item.productId, warehouseId } },
+          create: { productId: item.productId, warehouseId, quantity: item.quantity },
+          update: { quantity: { increment: item.quantity } },
+        });
+      }
 
       const movement = await tx.stockMovement.create({
         data: {
@@ -59,6 +67,7 @@ export async function createEntry(input: EntryInput, actorId: string, actorName:
           supplierId: input.supplierId ?? null,
           invoiceNumber: input.invoiceNumber ?? null,
           batch: item.batch ?? null,
+          destinationWarehouseId: warehouseId,
           responsibleId: actorId,
         },
       });
@@ -115,65 +124,97 @@ async function checkLowStockWith(tx: Tx, productId: string) {
   }
 }
 
-export async function createExit(input: ExitInput, actorId: string, actorName: string, allowNegative = false) {
+async function createExitWithClient(
+  tx: Tx,
+  input: ExitInput,
+  actorId: string,
+  actorName: string,
+  allowNegative = false
+) {
   if (!input.items.length) throw new BadRequestError("Adicione ao menos um produto");
 
-  const movements = await prisma.$transaction(async (tx) => {
-    const created: { id: string; productId: string; productName: string; quantity: number }[] = [];
+  const created: { id: string; productId: string; productName: string; quantity: number }[] = [];
 
-    for (const item of input.items) {
-      const product = await tx.product.findUnique({ where: { id: item.productId } });
-      if (!product) throw new NotFoundError("Produto não encontrado");
+  for (const item of input.items) {
+    const product = await tx.product.findUnique({ where: { id: item.productId } });
+    if (!product) throw new NotFoundError("Produto não encontrado");
 
-      if (product.stock < item.quantity && !allowNegative) {
-        throw new BadRequestError(
-          `Estoque insuficiente para "${product.name}". Disponível: ${product.stock}, solicitado: ${item.quantity}`
-        );
-      }
-
+    if (allowNegative) {
       await tx.product.update({
         where: { id: item.productId },
         data: { stock: { decrement: item.quantity } },
       });
-
-      const movement = await tx.stockMovement.create({
-        data: {
-          type: "EXIT",
-          productId: item.productId,
-          quantity: item.quantity,
-          date: input.date ? new Date(input.date) : new Date(),
-          note: input.note ?? null,
-          requesterName: input.requesterName ?? null,
-          sector: input.sector ?? null,
-          destination: input.destination ?? null,
-          reason: input.reason ?? null,
-          responsibleId: actorId,
-          requisitionId: input.requisitionId ?? null,
-        },
-      });
-
-      created.push({ id: movement.id, productId: item.productId, productName: product.name, quantity: item.quantity });
+    } else {
+      const updated = await tx.$executeRaw`
+        UPDATE "Product"
+        SET "stock" = "stock" - ${item.quantity}, "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${item.productId}
+          AND ("stock" - "reservedStock") >= ${item.quantity}
+      `;
+      if (!updated) {
+        const current = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { stock: true },
+        });
+        throw new BadRequestError(
+          `Estoque disponível insuficiente para "${product.name}". Disponível: ${Math.max(0, (current?.stock ?? 0) - product.reservedStock)}, solicitado: ${item.quantity}`
+        );
+      }
     }
 
-    await tx.auditLog.create({
+    const warehouseId = item.warehouseId ?? product.warehouseId;
+    if (warehouseId) {
+      const balance = await tx.productWarehouseStock.updateMany({
+        where: allowNegative
+          ? { productId: item.productId, warehouseId }
+          : { productId: item.productId, warehouseId, quantity: { gte: item.quantity } },
+        data: { quantity: { decrement: item.quantity } },
+      });
+      if (!balance.count) throw new BadRequestError(`Saldo insuficiente de "${product.name}" no almoxarifado selecionado`);
+    }
+
+    const movement = await tx.stockMovement.create({
       data: {
-        userId: actorId,
-        action: "STOCK_EXIT",
-        entity: "StockMovement",
-        entityId: created.map((c) => c.id).join(","),
-        details: { items: created, requisitionId: input.requisitionId, sector: input.sector },
+        type: "EXIT",
+        productId: item.productId,
+        quantity: item.quantity,
+        date: input.date ? new Date(input.date) : new Date(),
+        note: input.note ?? null,
+        requesterName: input.requesterName ?? null,
+        sector: input.sector ?? null,
+        destination: input.destination ?? null,
+        reason: input.reason ?? null,
+        responsibleId: actorId,
+        requisitionId: input.requisitionId ?? null,
+        originWarehouseId: warehouseId,
       },
     });
 
-    for (const c of created) {
-      await checkLowStockWith(tx, c.productId);
-    }
+    created.push({ id: movement.id, productId: item.productId, productName: product.name, quantity: item.quantity });
+  }
 
-    return created;
+  await tx.auditLog.create({
+    data: {
+      userId: actorId,
+      action: "STOCK_EXIT",
+      entity: "StockMovement",
+      entityId: created.map((c) => c.id).join(","),
+      details: { items: created, requisitionId: input.requisitionId, sector: input.sector },
+    },
   });
 
-  return { movements, count: movements.reduce((acc, m) => acc + m.quantity, 0), actor: actorName };
+  for (const c of created) {
+    await checkLowStockWith(tx, c.productId);
+  }
+
+  return { movements: created, count: created.reduce((acc, m) => acc + m.quantity, 0), actor: actorName };
 }
+
+export async function createExit(input: ExitInput, actorId: string, actorName: string, allowNegative = false) {
+  return prisma.$transaction((tx) => createExitWithClient(tx, input, actorId, actorName, allowNegative));
+}
+
+export { createExitWithClient };
 
 export async function adjustStock(input: AdjustInput, actorId: string, actorName: string) {
   const product = await prisma.product.findUnique({ where: { id: input.productId } });
@@ -265,6 +306,8 @@ export async function listMovements(params: {
       responsible: { select: { id: true, name: true } },
       supplier: { select: { id: true, name: true } },
       requisition: { select: { id: true, number: true } },
+      originWarehouse: { select: { id: true, name: true, code: true } },
+      destinationWarehouse: { select: { id: true, name: true, code: true } },
     },
     orderBy: { date: "desc" },
     skip: (params.page - 1) * params.perPage,
@@ -289,6 +332,9 @@ export async function listMovements(params: {
       responsible: m.responsible,
       supplier: m.supplier,
       requisition: m.requisition,
+      originWarehouse: m.originWarehouse,
+      destinationWarehouse: m.destinationWarehouse,
+      operationCode: m.operationCode,
     })),
     meta: { page: params.page, perPage: params.perPage, total, pages },
   };

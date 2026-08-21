@@ -17,9 +17,12 @@ export function serializeProduct(p: {
   name: string;
   code: string;
   sku: string | null;
+  barcode: string | null;
+  qrCode: string | null;
   description: string | null;
   unit: string;
   stock: number;
+  reservedStock: number;
   minStock: number;
   maxStock: number | null;
   unitValue: { toNumber(): number } | null;
@@ -32,15 +35,20 @@ export function serializeProduct(p: {
   category: { id: string; name: string } | null;
   supplier: { id: string; name: string } | null;
   warehouse: { id: string; name: string; code: string } | null;
+  warehouseStocks?: { quantity: number; warehouse: { id: string; name: string; code: string } }[];
 }) {
   return {
     id: p.id,
     name: p.name,
     code: p.code,
     sku: p.sku,
+    barcode: p.barcode,
+    qrCode: p.qrCode,
     description: p.description,
     unit: p.unit,
     stock: p.stock,
+    reservedStock: p.reservedStock,
+    availableStock: p.stock - p.reservedStock,
     minStock: p.minStock,
     maxStock: p.maxStock,
     unitValue: p.unitValue ? Number(p.unitValue.toNumber()) : null,
@@ -60,6 +68,7 @@ export function serializeProduct(p: {
     supplier: p.supplier,
     stockStatus: computeStockStatus(p.stock, p.minStock),
     createdAt: p.createdAt,
+    warehouseStocks: p.warehouseStocks ?? [],
   };
 }
 
@@ -67,6 +76,7 @@ const include = {
   category: { select: { id: true, name: true } },
   supplier: { select: { id: true, name: true } },
   warehouse: { select: { id: true, name: true, code: true } },
+  warehouseStocks: { include: { warehouse: { select: { id: true, name: true, code: true } } } },
 };
 
 export async function listProducts(params: {
@@ -85,6 +95,8 @@ export async function listProducts(params: {
       { name: { contains: params.search, mode: "insensitive" as const } },
       { code: { contains: params.search, mode: "insensitive" as const } },
       { sku: { contains: params.search, mode: "insensitive" as const } },
+      { barcode: { contains: params.search, mode: "insensitive" as const } },
+      { qrCode: { contains: params.search, mode: "insensitive" as const } },
     ];
   }
   if (params.categoryId) where.categoryId = params.categoryId;
@@ -118,7 +130,10 @@ export async function getProduct(id: string) {
 }
 
 export async function getProductByCode(code: string) {
-  const product = await prisma.product.findUnique({ where: { code }, include });
+  const product = await prisma.product.findFirst({
+    where: { OR: [{ code }, { sku: code }, { barcode: code }, { qrCode: code }] },
+    include,
+  });
   if (!product) throw new NotFoundError("Produto não encontrado");
   return serializeProduct(product);
 }
@@ -131,6 +146,8 @@ export async function createProduct(input: ProductInput, actorId: string) {
       name: input.name,
       code,
       sku: input.sku ?? null,
+      barcode: input.barcode ?? null,
+      qrCode: input.qrCode ?? null,
       description: input.description ?? null,
       unit: input.unit,
       stock: 0,
@@ -144,6 +161,9 @@ export async function createProduct(input: ProductInput, actorId: string) {
       corridor: input.corridor ?? null,
       shelf: input.shelf ?? null,
       position: input.position ?? null,
+      warehouseStocks: input.warehouseId
+        ? { create: { warehouseId: input.warehouseId, quantity: 0 } }
+        : undefined,
     },
     include,
   });
@@ -169,6 +189,8 @@ export async function updateProduct(id: string, input: Partial<ProductInput>, ac
     data: {
       name: input.name,
       sku: input.sku === undefined ? undefined : input.sku,
+      barcode: input.barcode === undefined ? undefined : input.barcode,
+      qrCode: input.qrCode === undefined ? undefined : input.qrCode,
       description: input.description,
       unit: input.unit,
       minStock: input.minStock,

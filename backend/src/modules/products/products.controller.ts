@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ok } from "../../utils/response";
 import * as productsService from "./products.service";
-import { productListQuery, productSchema } from "./products.schema";
+import { productCodeSchema, productListQuery, productSchema } from "./products.schema";
 
 export const listProducts = asyncHandler(async (req: Request, res: Response) => {
   const q = productListQuery.parse(req.query);
@@ -18,6 +18,11 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 export const getProductByCode = asyncHandler(async (req: Request, res: Response) => {
   const product = await productsService.getProductByCode(req.params.code);
   return ok(res, product);
+});
+
+export const scanProduct = asyncHandler(async (req: Request, res: Response) => {
+  const { code } = productCodeSchema.parse(req.query);
+  return ok(res, await productsService.getProductByCode(code));
 });
 
 export const createProduct = asyncHandler(async (req: Request, res: Response) => {

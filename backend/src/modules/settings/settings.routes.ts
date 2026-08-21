@@ -7,7 +7,7 @@ import { ok } from "../../utils/response";
 import { prisma } from "../../prisma";
 
 const DEFAULT_SETTINGS = {
-  companyName: "MOBIEER",
+  companyName: "Gestium",
   companyDocument: "",
   lowStockAlertDays: "0",
   notificationsEnabled: "true",
