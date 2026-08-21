@@ -6,6 +6,8 @@ export type AuthUser = {
   email: string;
   role: string;
   roleLabel: string;
+  organizationId: string;
+  sector: string | null;
   permissions: string[];
 };
 

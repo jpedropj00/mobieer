@@ -2,6 +2,7 @@ import { MovementType, Prisma, RequisitionStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { daysAgo, num, previousMonthRange, startOfDay } from "../../utils/helpers";
 import type { ChartPeriod } from "./dashboard.schema";
+import { indicators as activityIndicators } from "../activities/activities.service";
 
 const PERIOD_DAYS: Record<ChartPeriod, number> = {
   "7d": 7,
@@ -30,7 +31,7 @@ async function monthMovements(from: Date, to: Date) {
   );
 }
 
-export async function getDashboard() {
+export async function getDashboard(organizationId = "default-org") {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const prev = previousMonthRange();
@@ -64,6 +65,7 @@ export async function getDashboard() {
   const prevEntries = prevMonth.entries;
   const prevExits = prevMonth.exits;
   const reqCount = Object.fromEntries(requisitionsByStatus.map((row) => [row.status, row._count]));
+  const activities = await activityIndicators(organizationId);
 
   const percent = (currentVal: number, previousVal: number): number | null => {
     if (previousVal === 0) return currentVal > 0 ? 100 : null;
@@ -93,6 +95,7 @@ export async function getDashboard() {
       overdue: overdueRequisitions,
       recentlyCompleted,
     },
+    activities,
     recentMovements: recentMovements.map((m) => ({
       id: m.id,
       type: m.type,

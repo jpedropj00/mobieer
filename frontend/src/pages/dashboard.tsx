@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ArrowRight, Boxes, ClipboardList, Package, Scale, Scissors } from "lucide-react";
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, ArrowRight, Boxes, ClipboardList, FileClock, Package, Scale, Scissors } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet } from "@/services/api";
 import type { Dashboard } from "@/types";
@@ -46,7 +46,7 @@ export function DashboardPage() {
     );
   }
 
-  const { kpis, recentMovements, balance, requisitions } = data.data;
+  const { kpis, recentMovements, balance, requisitions, activities } = data.data;
 
   return (
     <div className="space-y-6">
@@ -70,6 +70,8 @@ export function DashboardPage() {
       </div>
 
       {can("requisitions.read") && <Card><CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" />Requisições de Peças</CardTitle><Link to="/requisicoes" className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">Ver requisições <ArrowRight className="h-3.5 w-3.5" /></Link></CardHeader><CardContent><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6"><MiniMetric label="Abertas" value={requisitions.open} /><MiniMetric label="Aguard. material" value={requisitions.waitingMaterial} /><MiniMetric label="Liberadas" value={requisitions.released} /><MiniMetric label="Em corte" value={requisitions.inCutting} icon={<Scissors className="h-4 w-4" />} /><MiniMetric label="Atrasadas" value={requisitions.overdue} danger /><MiniMetric label="Concluídas (30d)" value={requisitions.recentlyCompleted} /></div></CardContent></Card>}
+
+      {can("activities.read") && <Card><CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle className="flex items-center gap-2"><FileClock className="h-4 w-4 text-primary" />Relatórios de Atividades</CardTitle><Link to="/atividades" className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">Ver atividades <ArrowRight className="h-3.5 w-3.5" /></Link></CardHeader><CardContent><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><MiniMetric label="Realizadas hoje" value={activities.today} /><MiniMetric label="Em andamento" value={activities.inProgress} /><MiniMetric label="Concluídas" value={activities.completed} /><MiniMetric label="Com problemas" value={activities.withProblems} danger /><MiniMetric label="Horas registradas" value={activities.hours} /></div></CardContent></Card>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard title="Itens cadastrados" value={formatNumber(kpis.totalItems)} icon={Package} iconBg="bg-primary/10" />

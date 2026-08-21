@@ -15,6 +15,21 @@ export type AuthUser = {
 
 export type Unit = "UNIT" | "BOX" | "PACKAGE" | "METER" | "LITER" | "KILO" | "ROLL" | "PAIR";
 
+export type ActivityStatus = "DRAFT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type ActivityAttachment = { id?: string; name: string; url: string; mimeType?: string | null; size?: number | null; kind: "PHOTO" | "FILE" | "PROBLEM_PHOTO" };
+export type ActivityMaterial = { id?: string; name: string; productId?: string | null; product?: Pick<Product, "id" | "name" | "code" | "unit"> | null; quantity: number; unit: Unit; note?: string | null };
+export type ActivityProblem = { id?: string; description: string; note?: string | null; priority: "LOW" | "NORMAL" | "HIGH" | "URGENT"; attachments: ActivityAttachment[] };
+export type Activity = {
+  id: string; number: string; status: ActivityStatus; date: string; startTime: string | null; endTime: string | null; sector: string | null;
+  clientName: string | null; projectReference: string | null; service: string; description: string; problemsSummary: string | null; observations: string | null;
+  signatureRequired: boolean; completedAt: string | null; cancelledAt: string | null; createdAt: string; updatedAt: string;
+  employeeId: string; employee: { id: string; name: string; sector: string | null; position?: string | null }; createdBy?: { id: string; name: string };
+  materials: ActivityMaterial[]; problems: ActivityProblem[]; attachments: ActivityAttachment[];
+  signatures: { id: string; role: "EMPLOYEE" | "CLIENT" | "INSPECTOR"; signerName: string; dataUrl: string; signedAt: string }[];
+  history: { id: string; action: string; details?: Record<string, unknown>; createdAt: string; user?: { id: string; name: string } | null }[];
+  _count?: { materials: number; problems: number; attachments: number };
+};
+
 export type StockStatus = "NORMAL" | "ATENCAO" | "CRITICO" | "SEM_ESTOQUE";
 
 export type Product = {
@@ -220,6 +235,7 @@ export type Dashboard = {
   };
   balance: number;
   requisitions: { open: number; waitingMaterial: number; released: number; inCutting: number; overdue: number; recentlyCompleted: number };
+  activities: { today: number; inProgress: number; completed: number; withProblems: number; hours: number; bySector: { sector: string; total: number }[] };
   recentMovements: {
     id: string;
     type: MovementType;

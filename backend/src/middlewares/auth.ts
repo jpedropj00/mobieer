@@ -42,6 +42,8 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       email: user.email,
       role: user.role.name,
       roleLabel: user.role.label,
+      organizationId: user.organizationId,
+      sector: user.sector,
       permissions: user.role.permissions.map((rp) => rp.permission.code),
     };
 

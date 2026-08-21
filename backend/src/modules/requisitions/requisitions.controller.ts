@@ -15,6 +15,11 @@ export const indicators = asyncHandler(async (req: Request, res: Response) => ok
 export const cuttingBoard = asyncHandler(async (_req: Request, res: Response) => ok(res, await service.listCuttingBoard()));
 export const getRequisition = asyncHandler(async (req: Request, res: Response) => { const requisition = await service.getRequisition(req.params.id); if (!req.user!.permissions.includes("requisitions.read.all") && requisition.requester.id !== req.user!.id) throw new ForbiddenError("Você não pode acessar esta requisição"); return ok(res, requisition); });
 export const createRequisition = asyncHandler(async (req: Request, res: Response) => ok(res, await service.createRequisition(createRequisitionSchema.parse(req.body), req.user!.id), "Requisição criada"));
+export const uploadAttachment = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) return res.status(400).json({ success: false, message: "Selecione um arquivo" });
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  return ok(res, { name: req.file.originalname, url: `${baseUrl}/uploads/${req.file.filename}`, mimeType: req.file.mimetype, size: req.file.size }, "Arquivo enviado");
+});
 export const updateRequisition = asyncHandler(async (req: Request, res: Response) => ok(res, await service.updateRequisition(req.params.id, updateRequisitionSchema.parse(req.body), req.user!.id, req.user!.permissions), "Requisição atualizada"));
 export const updateStatus = asyncHandler(async (req: Request, res: Response) => { const input = updateStatusSchema.parse(req.body); return ok(res, await service.updateRequisitionStatus(req.params.id, input.status, input.note ?? null, req.user!.id, req.user!.permissions, input.responsibleId), "Status atualizado"); });
 export const updateItemStatus = asyncHandler(async (req: Request, res: Response) => { const input = updateItemStatusSchema.parse(req.body); return ok(res, await service.updateItemStatus(req.params.id, req.params.itemId, input.status, req.user!.id, input.note), "Peça atualizada"); });

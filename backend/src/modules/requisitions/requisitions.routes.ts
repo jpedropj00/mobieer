@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authenticate } from "../../middlewares/auth";
 import { requireAnyPermission, requirePermission } from "../../middlewares/rbac";
+import { uploadAttachment } from "../../middlewares/upload";
 import * as controller from "./requisitions.controller";
 
 const router = Router();
@@ -8,6 +9,7 @@ router.use(authenticate);
 router.get("/indicators", requirePermission("requisitions.read"), controller.indicators);
 router.get("/cutting-board", requirePermission("requisitions.cut"), controller.cuttingBoard);
 router.get("/", requirePermission("requisitions.read"), controller.listRequisitions);
+router.post("/attachments", requirePermission("requisitions.create"), uploadAttachment.single("file"), controller.uploadAttachment);
 router.post("/", requirePermission("requisitions.create"), controller.createRequisition);
 router.get("/:id", requirePermission("requisitions.read"), controller.getRequisition);
 router.patch("/:id", requireAnyPermission(["requisitions.edit", "requisitions.edit.all"]), controller.updateRequisition);

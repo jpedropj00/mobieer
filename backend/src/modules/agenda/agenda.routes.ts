@@ -1,0 +1,18 @@
+import { Router } from "express";
+import { authenticate } from "../../middlewares/auth";
+import { requireAnyPermission, requirePermission } from "../../middlewares/rbac";
+import { uploadAttachment } from "../../middlewares/upload";
+import * as c from "./agenda.controller";
+const router=Router(); router.use(authenticate);
+router.get("/metrics",requirePermission("agenda.read"),c.metrics);
+router.get("/types",requirePermission("agenda.read"),c.types);
+router.post("/types",requirePermission("agenda.types.manage"),c.createType);
+router.get("/employees",requirePermission("agenda.read"),c.employees);
+router.post("/attachments",requirePermission("agenda.create"),uploadAttachment.single("file"),c.upload);
+router.get("/",requirePermission("agenda.read"),c.list);
+router.post("/",requirePermission("agenda.create"),c.create);
+router.get("/:id",requirePermission("agenda.read"),c.get);
+router.put("/:id",requireAnyPermission(["agenda.edit","agenda.edit.all"]),c.update);
+router.patch("/:id/move",requireAnyPermission(["agenda.edit","agenda.edit.all"]),c.move);
+router.patch("/:id/status",requireAnyPermission(["agenda.edit","agenda.edit.all","agenda.cancel"]),c.changeStatus);
+export default router;

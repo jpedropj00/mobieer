@@ -25,7 +25,7 @@ export const reportQuery = z.object({
 });
 
 export const exportQuery = z.object({
-  format: z.enum(["pdf", "xlsx", "csv"]).default("csv"),
+  format: z.enum(["pdf", "xlsx"]).default("pdf"),
   productId: z.string().optional(),
 });
 

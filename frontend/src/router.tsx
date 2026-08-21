@@ -24,6 +24,10 @@ const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.U
 const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })));
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
 const StockOperationsPage = lazy(() => import("@/pages/stock-operations").then((m) => ({ default: m.StockOperationsPage })));
+const ActivitiesPage = lazy(() => import("@/pages/activities").then((m) => ({ default: m.ActivitiesPage })));
+const ActivityFormPage = lazy(() => import("@/pages/activity-form").then((m) => ({ default: m.ActivityFormPage })));
+const ActivityDetailPage = lazy(() => import("@/pages/activity-detail").then((m) => ({ default: m.ActivityDetailPage })));
+const AgendaPage = lazy(() => import("@/pages/agenda").then((m) => ({ default: m.AgendaPage })));
 
 function LazyBoundary({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Carregando...</div>}>{children}</Suspense>;
@@ -54,6 +58,11 @@ export const router = createBrowserRouter([
           { path: "/inventario/:id", element: <PermissionGate permission="inventory.read"><InventoryDetailPage /></PermissionGate> },
           { path: "/requisicoes", element: <PermissionGate permission="requisitions.read"><RequisitionsPage /></PermissionGate> },
           { path: "/requisicoes/:id", element: <PermissionGate permission="requisitions.read"><RequisitionDetailPage /></PermissionGate> },
+          { path: "/atividades", element: <PermissionGate permission="activities.read"><ActivitiesPage /></PermissionGate> },
+          { path: "/atividades/nova", element: <PermissionGate permission="activities.create"><ActivityFormPage /></PermissionGate> },
+          { path: "/atividades/:id", element: <PermissionGate permission="activities.read"><ActivityDetailPage /></PermissionGate> },
+          { path: "/atividades/:id/editar", element: <PermissionGate permission="activities.edit"><ActivityFormPage /></PermissionGate> },
+          { path: "/agenda", element: <PermissionGate permission="agenda.read"><AgendaPage /></PermissionGate> },
           { path: "/alertas", element: <PermissionGate permission="stock.read"><AlertsPage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },

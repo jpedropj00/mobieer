@@ -19,6 +19,8 @@ import auditRoutes from "./modules/audit/audit.routes";
 import searchRoutes from "./modules/search/search.routes";
 import settingsRoutes from "./modules/settings/settings.routes";
 import stockOperationsRoutes from "./modules/stock-operations/stock-operations.routes";
+import activitiesRoutes from "./modules/activities/activities.routes";
+import agendaRoutes from "./modules/agenda/agenda.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -35,7 +37,8 @@ export function createApp() {
 
   app.get("/health", (_req, res) => res.json({ success: true, message: "MOBIEER API OK" }));
 
-  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+  const uploadsDir = process.env.VERCEL ? path.join("/tmp", "uploads") : path.resolve(process.cwd(), "uploads");
+  app.use("/uploads", express.static(uploadsDir));
 
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
@@ -47,6 +50,8 @@ export function createApp() {
   app.use("/api/stock-operations", stockOperationsRoutes);
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/requisitions", requisitionsRoutes);
+  app.use("/api/activities", activitiesRoutes);
+  app.use("/api/agenda", agendaRoutes);
   app.use("/api/reports", reportsRoutes);
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/notifications", notificationsRoutes);

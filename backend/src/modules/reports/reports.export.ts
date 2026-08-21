@@ -54,29 +54,15 @@ function rowToString(value: unknown): string {
   return String(value);
 }
 
-function collectColumns(rows: Record<string, unknown>[]): string[] {
+function collectExportColumns(rows: Record<string, unknown>[]): string[] {
   const cols = new Set<string>();
   rows.forEach((r) => Object.keys(r).forEach((k) => cols.add(k)));
-  return [...cols];
-}
-
-export function exportCsv(res: Response, data: unknown[], filename: string): Response {
-  const rows = data as Record<string, unknown>[];
-  const cols = collectColumns(rows);
-  const escape = (v: string) => (v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v);
-  const lines = [
-    cols.map((c) => escape(HEADER_LABELS[c] ?? c)).join(","),
-    ...rows.map((r) => cols.map((c) => escape(rowToString(r[c]))).join(",")),
-  ];
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}.csv"`);
-  res.status(200).send("\uFEFF" + lines.join("\n"));
-  return res;
+  return [...cols].filter((column) => column !== "id" && !column.endsWith("Id"));
 }
 
 export async function exportXlsx(res: Response, data: unknown[], filename: string): Promise<Response> {
   const rows = data as Record<string, unknown>[];
-  const cols = collectColumns(rows);
+  const cols = collectExportColumns(rows);
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Relatório");
   sheet.columns = cols.map((c) => ({
@@ -101,7 +87,7 @@ const FONT = "Helvetica";
 
 export function exportPdf(res: Response, data: unknown[], filename: string, type: string): Response {
   const rows = data as Record<string, unknown>[];
-  const cols = collectColumns(rows).slice(0, 6);
+  const cols = collectExportColumns(rows).slice(0, 6);
   const doc = new PDFDocument({ size: "A4", margin: PDF_MARGIN, bufferPages: true });
 
   res.setHeader("Content-Type", "application/pdf");

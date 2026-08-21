@@ -76,3 +76,16 @@ export const apiPost = <T>(path: string, body?: unknown) => api<T>(path, { metho
 export const apiPut = <T>(path: string, body?: unknown) => api<T>(path, { method: "PUT", body });
 export const apiPatch = <T>(path: string, body?: unknown) => api<T>(path, { method: "PATCH", body });
 export const apiDelete = <T>(path: string) => api<T>(path, { method: "DELETE" });
+
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    body: form,
+  });
+  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  if (!response.ok) throw new ApiError(response.status, payload?.message ?? `Erro ${response.status}`);
+  return payload as T;
+}

@@ -5,7 +5,9 @@ import {
   ArrowLeftRight,
   ArrowUpFromLine,
   BarChart3,
+  CalendarDays,
   ClipboardCheck,
+  FileClock,
   LayoutDashboard,
   Package,
   ScrollText,
@@ -57,6 +59,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Requisições e produção",
     items: [
       { label: "Requisições de Peças", to: "/requisicoes", icon: Scissors, permission: "requisitions.read" },
+      { label: "Atividades", to: "/atividades", icon: FileClock, permission: "activities.read" },
+      { label: "Agenda", to: "/agenda", icon: CalendarDays, permission: "agenda.read" },
     ],
   },
   {
