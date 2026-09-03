@@ -1,0 +1,28 @@
+node_modules/
+dist/
+build/
+*.log
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/
+coverage/
+backend/test-dist/
+backend/uploads/*
+!backend/uploads/.gitkeep
+frontend/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/backend/
+desktop/frontend/
+desktop/release/
+*.db
+*.sqlite
+
+# backups
+*.bak
+
+# seed usa docs/ na raiz
+backend/prisma/seed-assets/
