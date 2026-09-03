@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://mobieer-api.vercel.app/api/:path*"
+      "destination": "https://mobieer-api-backend.vercel.app/api/:path*"
     },
     {
       "source": "/:path*",
