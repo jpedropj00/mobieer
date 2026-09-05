@@ -125,10 +125,73 @@ router.get(
         ...sellerScope(req),
         ...(req.query.status ? { status: req.query.status as never } : {}),
       },
-      include: { seller: { select: { id: true, name: true } }, _count: { select: { opportunities: true, interactions: true } } },
+      include: {
+        seller: { select: { id: true, name: true } },
+        briefing: { select: { id: true, submittedAt: true, environments: true, origin: true } },
+        _count: { select: { opportunities: true, interactions: true } },
+      },
       orderBy: [{ status: "asc" }, { enteredAt: "desc" }],
     });
     return ok(res, rows);
+  })
+);
+
+const briefingBody = z.object({
+  address: nullable(400),
+  investmentEstimate: z.coerce.number().min(0).optional().nullable(),
+  investmentText: nullable(120),
+  hasProject: z.boolean().default(false),
+  environments: z.array(z.string().trim().max(60)).max(20).default([]),
+  userCount: z.coerce.number().int().min(0).max(999).optional().nullable(),
+  discoveryChannel: nullable(60),
+  notes: nullable(5000),
+});
+
+router.get(
+  "/leads/:id/briefing",
+  requirePermission("commercial.read"),
+  asyncHandler(async (req, res) => {
+    const lead = await prisma.commercialLead.findFirst({
+      where: { id: req.params.id, organizationId: req.user!.organizationId },
+      include: { briefing: true },
+    });
+    if (!lead) throw new NotFoundError("Lead não encontrado");
+    return ok(res, {
+      lead: { id: lead.id, name: lead.name, phone: lead.phone, email: lead.email },
+      briefing: lead.briefing
+        ? { ...lead.briefing, investmentEstimate: lead.briefing.investmentEstimate == null ? null : Number(lead.briefing.investmentEstimate) }
+        : null,
+    });
+  })
+);
+
+router.post(
+  "/leads/:id/briefing",
+  requirePermission("commercial.leads.manage"),
+  asyncHandler(async (req, res) => {
+    const lead = await prisma.commercialLead.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId } });
+    if (!lead) throw new NotFoundError("Lead não encontrado");
+    const input = briefingBody.parse(req.body);
+    const data = {
+      address: nn(input.address),
+      investmentEstimate: input.investmentEstimate == null ? null : new Prisma.Decimal(Number(input.investmentEstimate).toFixed(2)),
+      investmentText: nn(input.investmentText),
+      hasProject: input.hasProject,
+      environments: input.environments,
+      userCount: input.userCount ?? null,
+      discoveryChannel: nn(input.discoveryChannel),
+      notes: nn(input.notes),
+      origin: "CONSULTANT" as const,
+    };
+    const briefing = await prisma.leadBriefing.upsert({
+      where: { leadId: lead.id },
+      create: { leadId: lead.id, ...data },
+      update: data,
+    });
+    if (input.discoveryChannel && !lead.source) {
+      await prisma.commercialLead.update({ where: { id: lead.id }, data: { source: input.discoveryChannel } });
+    }
+    return ok(res, briefing, "Briefing salvo");
   })
 );
 

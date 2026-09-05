@@ -1396,10 +1396,35 @@ model CommercialLead {
   interactions      CommercialInteraction[]
   history           CommercialHistory[]
   kanbanTasks       KanbanTask[]
+  briefing          LeadBriefing?
 
   @@index([organizationId, status, enteredAt])
   @@index([sellerId, nextContactAt])
   @@index([convertedClientId])
+}
+
+enum BriefingOrigin {
+  PUBLIC
+  CONSULTANT
+}
+
+/// Briefing inicial do cliente (form público que alimenta o CRM).
+model LeadBriefing {
+  id                 String         @id @default(cuid())
+  leadId             String         @unique
+  lead               CommercialLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  address            String?
+  investmentEstimate Decimal?       @db.Decimal(14, 2)
+  investmentText     String? // texto livre caso não seja um número
+  hasProject         Boolean        @default(false)
+  environments       String[] // ex.: ["Cozinha", "Sala"]
+  userCount          Int?
+  discoveryChannel   String? // Instagram | Indicação | Google | Site | Arquiteto | Parceiros | Outro
+  notes              String?        @db.Text
+  origin             BriefingOrigin @default(PUBLIC)
+  submittedAt        DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 }
 
 model CommercialOpportunity {

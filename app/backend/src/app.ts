@@ -29,6 +29,7 @@ import hrRoutes from "./modules/hr/hr.routes";
 import financeRoutes from "./modules/finance/finance.routes";
 import templatesRoutes from "./modules/templates/templates.routes";
 import commercialRoutes from "./modules/commercial/commercial.routes";
+import briefingRoutes from "./modules/briefing/briefing.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -74,6 +75,7 @@ export function createApp() {
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial", commercialRoutes);
+  app.use("/api/briefing", briefingRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {
