@@ -952,6 +952,69 @@ async function main() {
     });
   }
 
+  console.log("[SEED] Criando funil de vendas (etapas + leads + oportunidades)...");
+  const STAGES = [
+    { name: "Novo contato", position: 1, probability: 10 },
+    { name: "Qualificação", position: 2, probability: 25 },
+    { name: "Medição / Projeto", position: 3, probability: 45 },
+    { name: "Proposta enviada", position: 4, probability: 65 },
+    { name: "Negociação", position: 5, probability: 80 },
+    { name: "Ganho", position: 6, probability: 100, isWon: true },
+    { name: "Perdido", position: 7, probability: 0, isLost: true },
+  ];
+  const stageIds: Record<string, string> = {};
+  for (const s of STAGES) {
+    const st = await prisma.salesStage.create({ data: { ...s, organizationId: ORG_ID } });
+    stageIds[s.name] = st.id;
+  }
+  const sellerId = userIds["Marcos Vinícius"] ?? adminId;
+
+  const LEADS = [
+    { name: "Fernanda Aragão", phone: "(85) 98111-2020", interest: "Cozinha + área gourmet", source: "Instagram", status: "NEW" as const },
+    { name: "Escritório Contábil Prisma", phone: "(85) 3255-7788", interest: "Estações de trabalho (6 lugares)", source: "Indicação", status: "CONTACTED" as const },
+    { name: "Dr. Henrique Sales", phone: "(85) 99640-1234", interest: "Home office + closet", source: "Site", status: "QUALIFIED" as const },
+  ];
+  for (const l of LEADS) {
+    await prisma.commercialLead.create({
+      data: { organizationId: ORG_ID, name: l.name, phone: l.phone, interest: l.interest, source: l.source, status: l.status, sellerId, nextContactAt: addDays(today, 2) },
+    });
+  }
+
+  const OPPS = [
+    { title: "Cozinha planejada — Ap. Meireles", stage: "Qualificação", value: 42000, days: 25 },
+    { title: "Escritório advocacia (fase 2) — Juliana", stage: "Medição / Projeto", value: 68000, days: 18, clientId: juliana.id },
+    { title: "Dormitório casal + closet — Cond. Dunas", stage: "Proposta enviada", value: 31500, days: 12 },
+    { title: "Corporativo 12 estações — Studio Alfa", stage: "Negociação", value: 96000, days: 8 },
+    { title: "Sala + home theater — Aldeota", stage: "Novo contato", value: 27000, days: 40 },
+  ];
+  for (const [i, o] of OPPS.entries()) {
+    const opp = await prisma.commercialOpportunity.create({
+      data: {
+        organizationId: ORG_ID,
+        title: o.title,
+        stageId: stageIds[o.stage],
+        probability: STAGES.find((s) => s.name === o.stage)!.probability,
+        estimatedValue: o.value.toFixed(2),
+        expectedCloseAt: addDays(today, o.days),
+        position: i,
+        clientId: o.clientId ?? null,
+        sellerId,
+        nextAction: i % 2 === 0 ? "Ligar para retomar" : "Enviar revisão da proposta",
+        nextActionAt: addDays(today, (i % 3) + 1),
+      },
+    });
+    await prisma.commercialInteraction.create({
+      data: {
+        type: i % 2 === 0 ? "CALL" : "WHATSAPP",
+        summary: "Contato inicial — cliente demonstrou interesse e pediu proposta.",
+        occurredAt: addDays(today, -(i + 1)),
+        opportunityId: opp.id,
+        clientId: o.clientId ?? null,
+        responsibleId: sellerId,
+      },
+    });
+  }
+
   const totalProducts = await prisma.product.count();
   const totalStock = await prisma.product.aggregate({ _sum: { stock: true } });
   console.log(`[SEED] Concluído! ${totalProducts} produtos, ${totalStock._sum.stock} unidades em estoque.`);
