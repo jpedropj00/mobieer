@@ -25,6 +25,11 @@ const LEAD_STATUS: Record<string, string> = {
 const INTERACTION_TYPES = [
   ["CALL", "Ligação"], ["WHATSAPP", "WhatsApp"], ["EMAIL", "E-mail"], ["MEETING", "Reunião"], ["VISIT", "Visita"], ["OTHER", "Outro"],
 ] as const;
+const LEAD_SOURCES = ["Instagram", "Indicação", "Google", "Site", "Arquiteto", "Parceiros", "Outro"];
+const LOST_REASONS = [
+  ["PRECO", "Preço"], ["PRAZO", "Prazo"], ["CONCORRENCIA", "Concorrência"], ["SEM_RESPOSTA", "Sem resposta"],
+  ["DESISTIU", "Desistiu"], ["ESCOPO", "Escopo"], ["OUTRO", "Outro"],
+] as const;
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
 const scoreColor = (s: number) => (s >= 70 ? "text-success" : s >= 40 ? "text-warning" : "text-muted-foreground");
@@ -42,10 +47,11 @@ export function CommercialPage() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["commercial"] });
 
-  const [dialog, setDialog] = useState<null | "opp" | "lead" | "convert" | "interaction" | "move" | "briefing">(null);
+  const [dialog, setDialog] = useState<null | "opp" | "lead" | "convert" | "interaction" | "move" | "briefing" | "lose">(null);
   const [active, setActive] = useState<Opportunity | null>(null);
   const [convertLead, setConvertLead] = useState<CommercialLead | null>(null);
   const [briefLead, setBriefLead] = useState<string | null>(null);
+  const [loseForm, setLoseForm] = useState({ code: "SEM_RESPOSTA", note: "" });
 
   const [oppForm, setOppForm] = useState({ title: "", stageId: "", estimatedValue: "", expectedCloseAt: "", nextAction: "" });
   const [leadForm, setLeadForm] = useState({ name: "", phone: "", email: "", source: "", interest: "" });
@@ -216,10 +222,22 @@ export function CommercialPage() {
                   <span>Previsão total ponderada</span>
                   <span className="tabular-nums text-success">{formatCurrency(p.forecast)}</span>
                 </div>
-                <div className="flex gap-6 pt-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-6 pt-1 text-xs text-muted-foreground">
                   <span>Ganhos: {p.wonCount} · {formatCurrency(p.wonValue)}</span>
                   <span>Perdidos: {p.lostCount}</span>
+                  <span>Ticket médio: {formatCurrency(p.ticketMedio)}</span>
                 </div>
+                {p.lostReasons.length > 0 && (
+                  <div className="pt-3">
+                    <p className="mb-1 text-xs font-semibold text-muted-foreground">Motivos de perda</p>
+                    {p.lostReasons.map((r) => (
+                      <div key={r.code} className="flex items-center justify-between border-b border-border py-1.5 text-sm last:border-0">
+                        <span>{r.label}</span>
+                        <span className="tabular-nums text-muted-foreground">{r.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -260,7 +278,12 @@ export function CommercialPage() {
             <Field label="Nome" className="sm:col-span-2"><Input value={leadForm.name} onChange={(e) => setLeadForm({ ...leadForm, name: e.target.value })} /></Field>
             <Field label="Telefone"><Input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} /></Field>
             <Field label="E-mail"><Input type="email" value={leadForm.email} onChange={(e) => setLeadForm({ ...leadForm, email: e.target.value })} /></Field>
-            <Field label="Origem"><Input value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} placeholder="Instagram, indicação…" /></Field>
+            <Field label="Origem">
+              <Select value={leadForm.source || "NONE"} onValueChange={(v) => setLeadForm({ ...leadForm, source: v === "NONE" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent><SelectItem value="NONE">—</SelectItem>{LEAD_SOURCES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
             <Field label="Interesse"><Input value={leadForm.interest} onChange={(e) => setLeadForm({ ...leadForm, interest: e.target.value })} /></Field>
           </div>
           <DialogFooter>
@@ -322,7 +345,7 @@ export function CommercialPage() {
                     <Button size="sm" disabled={patchOpp.isPending || moveStage === active.stage.id} onClick={() => patchOpp.mutate({ stageId: moveStage })}>Mover</Button>
                     <Button size="sm" variant="outline" onClick={() => setDialog("interaction")}>Registrar interação</Button>
                     <Button size="sm" variant="outline" className="text-success" onClick={() => patchOpp.mutate({ action: "win" })}>Marcar ganho</Button>
-                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { const r = prompt("Motivo da perda:"); if (r !== null) patchOpp.mutate({ action: "lose", lostReason: r }); }}>Marcar perdido</Button>
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { setLoseForm({ code: "SEM_RESPOSTA", note: "" }); setDialog("lose"); }}>Marcar perdido</Button>
                   </div>
                 </>
               )}
@@ -351,6 +374,27 @@ export function CommercialPage() {
             <Button variant="outline" onClick={() => setDialog("move")}>Voltar</Button>
             <Button disabled={logInteraction.isPending || intForm.summary.length < 2} onClick={() => logInteraction.mutate()}>
               {logInteraction.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Registrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "lose"} onOpenChange={(v) => !v && setDialog("move")}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Marcar como perdida</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Field label="Motivo da perda">
+              <Select value={loseForm.code} onValueChange={(v) => setLoseForm({ ...loseForm, code: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{LOST_REASONS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Detalhe (opcional)"><Textarea rows={2} value={loseForm.note} onChange={(e) => setLoseForm({ ...loseForm, note: e.target.value })} /></Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialog("move")}>Voltar</Button>
+            <Button variant="destructive" disabled={patchOpp.isPending} onClick={() => patchOpp.mutate({ action: "lose", lostReasonCode: loseForm.code, lostReason: loseForm.note || (LOST_REASONS.find(([v]) => v === loseForm.code)?.[1] ?? loseForm.code) })}>
+              {patchOpp.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirmar perda
             </Button>
           </DialogFooter>
         </DialogContent>

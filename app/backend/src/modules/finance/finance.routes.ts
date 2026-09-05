@@ -8,10 +8,12 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import taxRoutes from "./tax.routes";
+import extrasRoutes from "./extras.routes";
 
 const router = Router();
 router.use(authenticate);
 router.use("/tax", taxRoutes);
+router.use("/", extrasRoutes);
 
 const txSchema = z.object({
   type: z.enum(["RECEITA", "DESPESA"]),

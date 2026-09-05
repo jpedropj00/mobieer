@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Area, ComposedChart, Bar, BarChart, CartesianGrid, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownCircle, ArrowUpCircle, Calculator, Loader2, Plus, Trash2, Wallet } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIcon, Layers, Loader2, Plus, Target, Trash2, Upload, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
@@ -16,10 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, formatCurrency } from "@/lib/utils";
-import type { CashflowPoint, Dre, FinanceSummary, FinanceTransaction, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
+import type { BreakEven, CardAnalysis, CardStatementDetail, CashflowPoint, CreditCard, Dre, FinanceSummary, FinanceTransaction, InstallmentGroup, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
 
 const REGIME_LABEL: Record<RegimeTributario, string> = {
   SIMPLES_NACIONAL: "Simples Nacional",
@@ -31,6 +31,8 @@ const CATEGORIES: Record<"RECEITA" | "DESPESA", string[]> = {
   RECEITA: ["Contrato — sinal", "Contrato — parcela", "Assistência técnica", "Venda avulsa", "Outros"],
   DESPESA: ["Matéria-prima", "Ferragens", "Acabamento", "Folha de pagamento", "Frete", "Impostos", "Aluguel", "Serviços de terceiros", "Outros"],
 };
+
+const CARD_EXPENSE_CATEGORIES = ["Matéria-prima", "Ferragens", "Acabamento", "Combustível", "Alimentação", "Ferramentas", "Software / assinaturas", "Marketing", "Viagem", "Manutenção", "Outros"];
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
 const monthLabel = (m: string) => {
@@ -69,6 +71,10 @@ export function FinancePage() {
   });
   const company = useQuery({ queryKey: ["finance", "tax", "company"], queryFn: () => apiGet<{ data: TaxCompany }>("/finance/tax/company") });
   const rules = useQuery({ queryKey: ["finance", "tax", "rules"], queryFn: () => apiGet<{ data: TaxRule[] }>("/finance/tax/rules") });
+  const breakEven = useQuery({ queryKey: ["finance", "break-even"], queryFn: () => apiGet<{ data: BreakEven }>("/finance/break-even") });
+  const cards = useQuery({ queryKey: ["finance", "cards"], queryFn: () => apiGet<{ data: CreditCard[] }>("/finance/cards") });
+  const cardAnalysis = useQuery({ queryKey: ["finance", "cards", "analysis"], queryFn: () => apiGet<{ data: CardAnalysis }>("/finance/cards/analysis") });
+  const installments = useQuery({ queryKey: ["finance", "installments"], queryFn: () => apiGet<{ data: InstallmentGroup[] }>("/finance/installments") });
 
   const [comp, setComp] = useState<TaxCompany | null>(null);
   const currentComp = comp ?? company.data?.data ?? null;
@@ -149,6 +155,97 @@ export function FinancePage() {
     onError: (e) => toast.error(errorMessage(e, "Falha ao remover")),
   });
 
+  // ---- Ponto de equilíbrio ----
+  const [beForm, setBeForm] = useState<{ fixedCostMonthly: string; contributionMarginPct: string } | null>(null);
+  const be = breakEven.data?.data;
+  const beEdit = beForm ?? (be ? { fixedCostMonthly: String(be.fixedCostMonthly), contributionMarginPct: String(be.contributionMarginPct) } : { fixedCostMonthly: "", contributionMarginPct: "" });
+  const saveBreakEven = useMutation({
+    mutationFn: () => apiPatch("/finance/break-even", { fixedCostMonthly: Number(beEdit.fixedCostMonthly || 0), contributionMarginPct: Number(beEdit.contributionMarginPct || 0) }),
+    onSuccess: () => { toast.success("Ponto de equilíbrio atualizado"); setBeForm(null); qc.invalidateQueries({ queryKey: ["finance", "break-even"] }); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao salvar")),
+  });
+
+  // ---- Compra parcelada ----
+  const [instDialog, setInstDialog] = useState(false);
+  const instBlank = { category: "", description: "", supplierId: "", firstDueDate: new Date().toISOString().slice(0, 10), installments: "12", totalAmount: "", method: "Cartão de crédito" };
+  const [instForm, setInstForm] = useState(instBlank);
+  const createInstallments = useMutation({
+    mutationFn: () => apiPost("/finance/installments", {
+      category: instForm.category,
+      description: instForm.description || null,
+      supplierId: instForm.supplierId || null,
+      firstDueDate: instForm.firstDueDate,
+      installments: Number(instForm.installments),
+      totalAmount: Number(instForm.totalAmount),
+      method: instForm.method || null,
+    }),
+    onSuccess: () => { toast.success("Compra parcelada lançada"); setInstDialog(false); setInstForm(instBlank); refresh(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao lançar")),
+  });
+
+  // ---- Cartões ----
+  const [cardDialog, setCardDialog] = useState<null | "card" | "statement" | "expense">(null);
+  const [cardForm, setCardForm] = useState({ name: "", lastDigits: "", closingDay: "", dueDay: "" });
+  const [stmtForm, setStmtForm] = useState<{ cardId: string; referenceMonth: string; file: File | null }>({ cardId: "", referenceMonth: new Date().toISOString().slice(0, 7), file: null });
+  const [openStatementId, setOpenStatementId] = useState<string | null>(null);
+  const [expForm, setExpForm] = useState({ description: "", category: "", amount: "", date: new Date().toISOString().slice(0, 10), installment: "" });
+
+  const statementDetail = useQuery({
+    queryKey: ["finance", "cards", "statement", openStatementId],
+    queryFn: () => apiGet<{ data: CardStatementDetail }>(`/finance/cards/statements/${openStatementId}`),
+    enabled: Boolean(openStatementId),
+  });
+  const refreshCards = () => qc.invalidateQueries({ queryKey: ["finance", "cards"] });
+
+  const createCard = useMutation({
+    mutationFn: () => apiPost("/finance/cards", {
+      name: cardForm.name,
+      lastDigits: cardForm.lastDigits || null,
+      closingDay: cardForm.closingDay ? Number(cardForm.closingDay) : null,
+      dueDay: cardForm.dueDay ? Number(cardForm.dueDay) : null,
+    }),
+    onSuccess: () => { toast.success("Cartão cadastrado"); setCardDialog(null); setCardForm({ name: "", lastDigits: "", closingDay: "", dueDay: "" }); refreshCards(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao cadastrar")),
+  });
+  const uploadStatement = useMutation({
+    mutationFn: () => {
+      const fd = new FormData();
+      fd.append("referenceMonth", stmtForm.referenceMonth);
+      if (stmtForm.file) fd.append("file", stmtForm.file);
+      return apiPostForm(`/finance/cards/${stmtForm.cardId}/statements`, fd);
+    },
+    onSuccess: (r: unknown) => {
+      toast.success("Fatura registrada");
+      setCardDialog(null);
+      const id = (r as { data?: { id?: string } })?.data?.id ?? null;
+      setOpenStatementId(id);
+      setStmtForm({ cardId: "", referenceMonth: new Date().toISOString().slice(0, 7), file: null });
+      refreshCards();
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao enviar fatura")),
+  });
+  const addExpense = useMutation({
+    mutationFn: () => apiPost(`/finance/cards/statements/${openStatementId}/expenses`, {
+      description: expForm.description,
+      category: expForm.category,
+      amount: Number(expForm.amount),
+      date: expForm.date,
+      installment: expForm.installment || null,
+    }),
+    onSuccess: () => {
+      toast.success("Despesa adicionada");
+      setExpForm({ description: "", category: "", amount: "", date: new Date().toISOString().slice(0, 10), installment: "" });
+      statementDetail.refetch();
+      qc.invalidateQueries({ queryKey: ["finance", "cards"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao adicionar")),
+  });
+  const removeExpense = useMutation({
+    mutationFn: (id: string) => apiDelete(`/finance/cards/expenses/${id}`),
+    onSuccess: () => { statementDetail.refetch(); qc.invalidateQueries({ queryKey: ["finance", "cards"] }); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao remover")),
+  });
+
   if (summary.isLoading) return <PageSkeleton />;
   const s = summary.data?.data;
   const rows = txs.data?.data ?? [];
@@ -168,6 +265,7 @@ export function FinancePage() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
           <TabsTrigger value="lancamentos">Lançamentos ({rows.length})</TabsTrigger>
+          <TabsTrigger value="cartoes">Cartões ({cards.data?.data.length ?? 0})</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
           <TabsTrigger value="dre">DRE</TabsTrigger>
           <TabsTrigger value="impostos">Impostos</TabsTrigger>
@@ -231,6 +329,45 @@ export function FinancePage() {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Target className="h-4 w-4" /> Ponto de equilíbrio</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Custo fixo mensal (R$)">
+                  <Input type="number" min="0" disabled={!canManage} value={beEdit.fixedCostMonthly}
+                    onChange={(e) => setBeForm({ ...beEdit, fixedCostMonthly: e.target.value })} />
+                </Field>
+                <Field label="Margem de contribuição (%)">
+                  <Input type="number" min="0" max="100" disabled={!canManage} value={beEdit.contributionMarginPct}
+                    onChange={(e) => setBeForm({ ...beEdit, contributionMarginPct: e.target.value })} />
+                </Field>
+              </div>
+              {canManage && (
+                <Button size="sm" disabled={!beForm || saveBreakEven.isPending} onClick={() => saveBreakEven.mutate()}>
+                  {saveBreakEven.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar parâmetros
+                </Button>
+              )}
+              {be && (
+                <div className="space-y-2 rounded-lg border border-border p-3 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Faturamento de equilíbrio</span><span className="font-semibold tabular-nums">{be.breakEvenRevenue > 0 ? formatCurrency(be.breakEvenRevenue) : "— defina a margem"}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Receita realizada no mês</span><span className="tabular-nums">{formatCurrency(be.currentMonthRevenue)}</span></div>
+                  <div className="flex justify-between border-t border-border pt-2 font-medium">
+                    <span>{be.reached ? "Acima do equilíbrio" : "Falta para o equilíbrio"}</span>
+                    <span className={`tabular-nums ${be.reached ? "text-success" : "text-destructive"}`}>{be.reached ? `+${formatCurrency(-be.gap)}` : formatCurrency(be.gap)}</span>
+                  </div>
+                  {be.breakEvenRevenue > 0 && (
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div className={`h-full ${be.reached ? "bg-success" : "bg-warning"}`} style={{ width: `${Math.min(100, Math.round((be.currentMonthRevenue / be.breakEvenRevenue) * 100))}%` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">Faturamento de equilíbrio = custo fixo ÷ margem de contribuição. Considera as receitas pagas do mês atual.</p>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ---- Lançamentos ---- */}
@@ -256,7 +393,32 @@ export function FinancePage() {
                 <SelectItem value="PAGO">Pagos</SelectItem>
               </SelectContent>
             </Select>
+            {canManage && (
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setInstForm(instBlank); setInstDialog(true); }}>
+                <Layers className="mr-2 h-4 w-4" /> Compra parcelada
+              </Button>
+            )}
           </div>
+
+          {(installments.data?.data ?? []).length > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Compras parceladas em aberto</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                {installments.data!.data.map((g) => (
+                  <div key={g.group} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2 text-sm last:border-0">
+                    <div>
+                      <p className="font-medium">{g.category}{g.supplier ? ` · ${g.supplier}` : ""}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {g.count}x · pago {formatCurrency(g.paid)} de {formatCurrency(g.total)}
+                        {g.nextDue ? ` · próxima ${fmtDate(g.nextDue)}` : ""}
+                      </p>
+                    </div>
+                    <span className="tabular-nums font-semibold">{formatCurrency(g.total - g.paid)}<span className="ml-1 text-xs font-normal text-muted-foreground">restante</span></span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {txs.isLoading ? (
             <PageSkeleton />
@@ -325,6 +487,89 @@ export function FinancePage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ---- Cartões ---- */}
+        <TabsContent value="cartoes" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Faturas de cartão de crédito e gastos por categoria.</p>
+            {canManage && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => { setStmtForm({ cardId: cards.data?.data[0]?.id ?? "", referenceMonth: new Date().toISOString().slice(0, 7), file: null }); setCardDialog("statement"); }} disabled={!cards.data?.data.length}>
+                  <Upload className="mr-2 h-4 w-4" /> Enviar fatura
+                </Button>
+                <Button size="sm" onClick={() => { setCardForm({ name: "", lastDigits: "", closingDay: "", dueDay: "" }); setCardDialog("card"); }}>
+                  <Plus className="mr-2 h-4 w-4" /> Cartão
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {cards.isLoading ? (
+            <PageSkeleton />
+          ) : (cards.data?.data ?? []).length === 0 ? (
+            <EmptyState title="Nenhum cartão" description="Cadastre um cartão para acompanhar as faturas." />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {cards.data!.data.map((c) => (
+                <Card key={c.id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center justify-between text-base">
+                      <span className="flex items-center gap-2"><CreditCardIcon className="h-4 w-4" /> {c.name}</span>
+                      {!c.active && <Badge variant="muted">Inativo</Badge>}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <p className="text-xs text-muted-foreground">
+                      {c.lastDigits ? `final ${c.lastDigits}` : "sem final"}
+                      {c.closingDay ? ` · fecha dia ${c.closingDay}` : ""}
+                      {c.dueDay ? ` · vence dia ${c.dueDay}` : ""}
+                    </p>
+                    {c.statements.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Nenhuma fatura enviada.</p>
+                    ) : (
+                      c.statements.map((st) => (
+                        <button key={st.id} onClick={() => setOpenStatementId(st.id)} className="flex w-full items-center justify-between rounded-md border border-border px-2 py-1.5 text-left text-sm transition-colors hover:border-primary/50">
+                          <span>{st.referenceMonth}</span>
+                          <span className="tabular-nums font-medium">{formatCurrency(st.total)}</span>
+                        </button>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {cardAnalysis.data?.data && cardAnalysis.data.data.total > 0 && (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <Card>
+                <CardHeader><CardTitle className="text-base">Gasto por categoria</CardTitle></CardHeader>
+                <CardContent className="space-y-1.5">
+                  {cardAnalysis.data.data.byCategory.map((r) => (
+                    <div key={r.key} className="flex items-center justify-between text-sm">
+                      <span>{r.key}</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(r.total)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold">
+                    <span>Total</span><span className="tabular-nums">{formatCurrency(cardAnalysis.data.data.total)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-base">Gasto por cartão</CardTitle></CardHeader>
+                <CardContent className="space-y-1.5">
+                  {cardAnalysis.data.data.byCard.map((r) => (
+                    <div key={r.key} className="flex items-center justify-between text-sm">
+                      <span>{r.key}</span>
+                      <span className="font-medium tabular-nums">{formatCurrency(r.total)}</span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
             </div>
           )}
         </TabsContent>
@@ -708,6 +953,161 @@ export function FinancePage() {
               Registrar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- Compra parcelada ---- */}
+      <Dialog open={instDialog} onOpenChange={setInstDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Compra parcelada</DialogTitle></DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Categoria">
+              <Select value={instForm.category || "NONE"} onValueChange={(v) => setInstForm({ ...instForm, category: v === "NONE" ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Selecione</SelectItem>
+                  {CATEGORIES.DESPESA.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Fornecedor (opcional)">
+              <Picker value={instForm.supplierId} onChange={(v) => setInstForm({ ...instForm, supplierId: v })} items={suppliers.data?.data ?? []} />
+            </Field>
+            <Field label="Valor total (R$)">
+              <Input type="number" step="0.01" min="0" value={instForm.totalAmount} onChange={(e) => setInstForm({ ...instForm, totalAmount: e.target.value })} />
+            </Field>
+            <Field label="Nº de parcelas">
+              <Input type="number" min="2" max="120" value={instForm.installments} onChange={(e) => setInstForm({ ...instForm, installments: e.target.value })} />
+            </Field>
+            <Field label="1º vencimento">
+              <Input type="date" value={instForm.firstDueDate} onChange={(e) => setInstForm({ ...instForm, firstDueDate: e.target.value })} />
+            </Field>
+            <Field label="Forma de pagamento">
+              <Input value={instForm.method} onChange={(e) => setInstForm({ ...instForm, method: e.target.value })} />
+            </Field>
+            <Field label="Descrição" className="sm:col-span-2">
+              <Textarea rows={2} value={instForm.description} onChange={(e) => setInstForm({ ...instForm, description: e.target.value })} />
+            </Field>
+          </div>
+          {Number(instForm.totalAmount) > 0 && Number(instForm.installments) >= 2 && (
+            <p className="text-xs text-muted-foreground">
+              {instForm.installments}x de {formatCurrency(Number(instForm.totalAmount) / Number(instForm.installments))} — lança {instForm.installments} despesas pendentes mensais.
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInstDialog(false)}>Cancelar</Button>
+            <Button disabled={createInstallments.isPending || !instForm.category || !(Number(instForm.totalAmount) > 0) || !(Number(instForm.installments) >= 2)} onClick={() => createInstallments.mutate()}>
+              {createInstallments.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Lançar parcelas
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- Novo cartão ---- */}
+      <Dialog open={cardDialog === "card"} onOpenChange={(v) => !v && setCardDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Novo cartão</DialogTitle></DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Nome" className="sm:col-span-2"><Input value={cardForm.name} onChange={(e) => setCardForm({ ...cardForm, name: e.target.value })} placeholder="Ex.: Nubank PJ" /></Field>
+            <Field label="4 últimos dígitos"><Input maxLength={4} value={cardForm.lastDigits} onChange={(e) => setCardForm({ ...cardForm, lastDigits: e.target.value.replace(/\D/g, "") })} /></Field>
+            <div />
+            <Field label="Dia de fechamento"><Input type="number" min="1" max="31" value={cardForm.closingDay} onChange={(e) => setCardForm({ ...cardForm, closingDay: e.target.value })} /></Field>
+            <Field label="Dia de vencimento"><Input type="number" min="1" max="31" value={cardForm.dueDay} onChange={(e) => setCardForm({ ...cardForm, dueDay: e.target.value })} /></Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCardDialog(null)}>Cancelar</Button>
+            <Button disabled={createCard.isPending || cardForm.name.trim().length < 2} onClick={() => createCard.mutate()}>
+              {createCard.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Cadastrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- Enviar fatura ---- */}
+      <Dialog open={cardDialog === "statement"} onOpenChange={(v) => !v && setCardDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Enviar fatura</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Field label="Cartão">
+              <Select value={stmtForm.cardId} onValueChange={(v) => setStmtForm({ ...stmtForm, cardId: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>{(cards.data?.data ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Mês de referência"><Input type="month" value={stmtForm.referenceMonth} onChange={(e) => setStmtForm({ ...stmtForm, referenceMonth: e.target.value })} /></Field>
+            <Field label="Arquivo PDF (opcional)"><Input type="file" accept="application/pdf" onChange={(e) => setStmtForm({ ...stmtForm, file: e.target.files?.[0] ?? null })} /></Field>
+            <p className="text-xs text-muted-foreground">A leitura automática do PDF virá em uma evolução. Por enquanto as despesas são lançadas manualmente por categoria.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCardDialog(null)}>Cancelar</Button>
+            <Button disabled={uploadStatement.isPending || !stmtForm.cardId || !/^\d{4}-\d{2}$/.test(stmtForm.referenceMonth)} onClick={() => uploadStatement.mutate()}>
+              {uploadStatement.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Registrar fatura
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---- Detalhe da fatura ---- */}
+      <Dialog open={Boolean(openStatementId)} onOpenChange={(v) => { if (!v) setOpenStatementId(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              Fatura {statementDetail.data?.data.card ?? ""} — {statementDetail.data?.data.referenceMonth ?? ""}
+            </DialogTitle>
+          </DialogHeader>
+          {statementDetail.isLoading || !statementDetail.data ? (
+            <div className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Total da fatura</span>
+                <span className="font-semibold tabular-nums">{formatCurrency(statementDetail.data.data.total)}</span>
+              </div>
+
+              {statementDetail.data.data.expenses.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma despesa lançada.</p>
+              ) : (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                  {statementDetail.data.data.expenses.map((e) => (
+                    <div key={e.id} className="flex items-center justify-between gap-2 border-b border-border py-1.5 text-sm last:border-0">
+                      <div className="min-w-0">
+                        <p className="truncate">{e.description}</p>
+                        <p className="text-xs text-muted-foreground">{e.category} · {fmtDate(e.date)}{e.installment ? ` · ${e.installment}` : ""}</p>
+                      </div>
+                      <span className="tabular-nums">{formatCurrency(e.amount)}</span>
+                      {canManage && (
+                        <Button size="sm" variant="ghost" onClick={() => removeExpense.mutate(e.id)}><Trash2 className="h-4 w-4" /></Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {canManage && (
+                <div className="space-y-3 rounded-lg border border-border p-3">
+                  <p className="text-xs font-semibold text-muted-foreground">Adicionar despesa</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Descrição" className="sm:col-span-2"><Input value={expForm.description} onChange={(e) => setExpForm({ ...expForm, description: e.target.value })} /></Field>
+                    <Field label="Categoria">
+                      <Select value={expForm.category || "NONE"} onValueChange={(v) => setExpForm({ ...expForm, category: v === "NONE" ? "" : v })}>
+                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NONE">Selecione</SelectItem>
+                          {CARD_EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Valor (R$)"><Input type="number" step="0.01" min="0" value={expForm.amount} onChange={(e) => setExpForm({ ...expForm, amount: e.target.value })} /></Field>
+                    <Field label="Data"><Input type="date" value={expForm.date} onChange={(e) => setExpForm({ ...expForm, date: e.target.value })} /></Field>
+                    <Field label="Parcela (ex.: 2/10)"><Input value={expForm.installment} onChange={(e) => setExpForm({ ...expForm, installment: e.target.value })} /></Field>
+                  </div>
+                  <Button size="sm" disabled={addExpense.isPending || !expForm.description || !expForm.category || !(Number(expForm.amount) > 0)} onClick={() => addExpense.mutate()}>
+                    {addExpense.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Adicionar
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

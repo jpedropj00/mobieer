@@ -573,6 +573,55 @@ export type PipelineSummary = {
   forecast: number;
   wonCount: number;
   wonValue: number;
+  ticketMedio: number;
   lostCount: number;
+  lostReasons: { code: string; label: string; count: number }[];
   winRate: number;
+};
+
+// ---- Financeiro: parcelas, cartões, ponto de equilíbrio ----
+export type InstallmentGroup = {
+  group: string;
+  category: string;
+  supplier: string | null;
+  total: number;
+  paid: number;
+  count: number;
+  nextDue: string | null;
+  installments: { id: string; number: number; total: number; amount: number; dueDate: string | null; status: string }[];
+};
+
+export type CreditCard = {
+  id: string;
+  name: string;
+  lastDigits: string | null;
+  closingDay: number | null;
+  dueDay: number | null;
+  active: boolean;
+  statements: { id: string; referenceMonth: string; total: number }[];
+};
+
+export type CardStatementDetail = {
+  id: string;
+  card: string;
+  referenceMonth: string;
+  total: number;
+  hasFile: boolean;
+  expenses: { id: string; description: string; category: string; amount: number; date: string; installment: string | null }[];
+};
+
+export type CardAnalysis = {
+  total: number;
+  byCategory: { key: string; total: number }[];
+  byCard: { key: string; total: number }[];
+  byMonth: { key: string; total: number }[];
+};
+
+export type BreakEven = {
+  fixedCostMonthly: number;
+  contributionMarginPct: number;
+  breakEvenRevenue: number;
+  currentMonthRevenue: number;
+  gap: number;
+  reached: boolean;
 };

@@ -445,6 +445,8 @@ router.patch(
         position: z.coerce.number().int().min(0).optional(),
         action: z.enum(["win", "lose", "reopen"]).optional(),
         lostReason: nullable(300),
+        lostReasonCode: z.enum(["PRECO", "PRAZO", "CONCORRENCIA", "SEM_RESPOSTA", "DESISTIU", "ESCOPO", "OUTRO"]).optional(),
+        generateReceivable: z.boolean().optional(),
       })
       .parse(req.body);
 
@@ -473,10 +475,35 @@ router.patch(
     if (input.action === "lose") {
       data.status = "LOST";
       data.lostReason = nn(input.lostReason);
+      if (input.lostReasonCode) data.lostReasonCode = input.lostReasonCode;
     }
     if (input.action === "reopen") data.status = "OPEN";
 
     const opp = await prisma.commercialOpportunity.update({ where: { id: cur.id }, data, include: oppInclude });
+
+    // Contrato ganho -> gera o recebível no financeiro (uma vez).
+    const becameWon = opp.status === "WON" && cur.status !== "WON";
+    if (becameWon && input.generateReceivable !== false && opp.client) {
+      const exists = await prisma.financeTransaction.findFirst({ where: { originOpportunityId: opp.id }, select: { id: true } });
+      if (!exists) {
+        await prisma.financeTransaction.create({
+          data: {
+            organizationId: req.user!.organizationId,
+            type: "RECEITA",
+            category: "Contrato — venda",
+            amount: new Prisma.Decimal(money(opp.estimatedValue).toFixed(2)),
+            date: new Date(),
+            dueDate: opp.expectedCloseAt ?? new Date(Date.now() + 30 * 86400000),
+            description: `Oportunidade ganha: ${opp.title}`,
+            status: "PENDENTE",
+            clientId: opp.client.id,
+            originOpportunityId: opp.id,
+            createdById: req.user!.id,
+          },
+        });
+      }
+    }
+
     await audit(req.user!.id, "COMMERCIAL_OPPORTUNITY_UPDATED", "CommercialOpportunity", opp.id, {
       from: cur.stageId,
       to: opp.stageId,
@@ -564,7 +591,7 @@ router.get(
     });
     const opps = await prisma.commercialOpportunity.findMany({
       where: { organizationId: req.user!.organizationId, ...sellerScope(req) },
-      select: { stageId: true, status: true, estimatedValue: true, probability: true, createdAt: true },
+      select: { stageId: true, status: true, estimatedValue: true, probability: true, createdAt: true, lostReasonCode: true },
     });
 
     const open = opps.filter((o) => o.status !== "WON" && o.status !== "LOST");
@@ -578,6 +605,21 @@ router.get(
     const won = opps.filter((o) => o.status === "WON");
     const lost = opps.filter((o) => o.status === "LOST");
     const closed = won.length + lost.length;
+    const wonValue = won.reduce((a, o) => a + money(o.estimatedValue), 0);
+
+    const LOST_LABELS: Record<string, string> = {
+      PRECO: "Preço", PRAZO: "Prazo", CONCORRENCIA: "Concorrência", SEM_RESPOSTA: "Sem resposta",
+      DESISTIU: "Desistiu", ESCOPO: "Escopo", OUTRO: "Outro",
+    };
+    const lostReasons = Object.entries(
+      lost.reduce<Record<string, number>>((acc, o) => {
+        const k = o.lostReasonCode ?? "OUTRO";
+        acc[k] = (acc[k] ?? 0) + 1;
+        return acc;
+      }, {})
+    )
+      .map(([code, count]) => ({ code, label: LOST_LABELS[code] ?? code, count }))
+      .sort((a, b) => b.count - a.count);
 
     return ok(res, {
       byStage,
@@ -585,8 +627,10 @@ router.get(
       openValue: Math.round(open.reduce((a, o) => a + money(o.estimatedValue), 0)),
       forecast: Math.round(open.reduce((a, o) => a + money(o.estimatedValue) * (o.probability / 100), 0)),
       wonCount: won.length,
-      wonValue: Math.round(won.reduce((a, o) => a + money(o.estimatedValue), 0)),
+      wonValue: Math.round(wonValue),
+      ticketMedio: won.length ? Math.round(wonValue / won.length) : 0,
       lostCount: lost.length,
+      lostReasons,
       winRate: closed > 0 ? Math.round((won.length / closed) * 100) : 0,
     });
   })

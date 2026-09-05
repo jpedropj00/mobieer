@@ -914,6 +914,61 @@ async function main() {
     });
   }
 
+  console.log("[SEED] Criando ponto de equilíbrio, compra parcelada e cartão de crédito...");
+  await prisma.setting.upsert({ where: { key: "finance.breakeven.fixedCostMonthly" }, create: { key: "finance.breakeven.fixedCostMonthly", value: "38000" }, update: { value: "38000" } });
+  await prisma.setting.upsert({ where: { key: "finance.breakeven.contributionMarginPct" }, create: { key: "finance.breakeven.contributionMarginPct", value: "42" }, update: { value: "42" } });
+
+  // Compra parcelada de exemplo (máquina de corte em 10x)
+  const instGroup = crypto.randomUUID();
+  const instFirstDue = new Date(today.getFullYear(), today.getMonth() - 1, 10);
+  const instRows = Array.from({ length: 10 }, (_, i) => {
+    const due = new Date(instFirstDue.getFullYear(), instFirstDue.getMonth() + i, 10);
+    return {
+      organizationId: ORG_ID,
+      type: "DESPESA" as const,
+      category: "Ferramentas",
+      amount: (1250).toFixed(2),
+      date: due,
+      dueDate: due,
+      description: `Seccionadora Bosch — máquina de corte (${i + 1}/10)`,
+      status: (i < 2 ? "PAGO" : "PENDENTE") as "PAGO" | "PENDENTE",
+      paidAt: i < 2 ? due : null,
+      method: "Parcelado",
+      supplierId: supplierIds["Fixadores do Brasil Ltda"] ?? null,
+      installmentGroup: instGroup,
+      installmentNumber: i + 1,
+      installmentTotal: 10,
+      createdById: adminId,
+    };
+  });
+  await prisma.financeTransaction.createMany({ data: instRows });
+
+  const card = await prisma.creditCard.create({
+    data: { organizationId: ORG_ID, name: "Nubank PJ", lastDigits: "4417", closingDay: 3, dueDay: 10 },
+  });
+  const stmtMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 7);
+  const cardExpenses = [
+    { description: "Posto Shell — diesel van", category: "Combustível", amount: 420.9, day: 4 },
+    { description: "Leroy Merlin — parafusos e buchas", category: "Ferragens", amount: 318.4, day: 9 },
+    { description: "Figma (assinatura anual 3/12)", category: "Software / assinaturas", amount: 176.0, day: 12, installment: "3/12" },
+    { description: "Almoço equipe montagem", category: "Alimentação", amount: 214.7, day: 15 },
+    { description: "Impulsionamento Instagram", category: "Marketing", amount: 300.0, day: 20 },
+  ];
+  const stmtTotal = cardExpenses.reduce((a, e) => a + e.amount, 0);
+  const statement = await prisma.cardStatement.create({
+    data: { organizationId: ORG_ID, cardId: card.id, referenceMonth: stmtMonth, total: stmtTotal.toFixed(2), importedById: adminId },
+  });
+  await prisma.cardExpense.createMany({
+    data: cardExpenses.map((e) => ({
+      statementId: statement.id,
+      description: e.description,
+      category: e.category,
+      amount: e.amount.toFixed(2),
+      date: new Date(today.getFullYear(), today.getMonth() - 1, e.day),
+      installment: e.installment ?? null,
+    })),
+  });
+
   console.log("[SEED] Criando regras fiscais (dados de desenvolvimento — trocar por regras oficiais)...");
   type RuleSeed = { regimeTributario: "SIMPLES_NACIONAL" | "LUCRO_PRESUMIDO" | "LUCRO_REAL"; tipoImposto: "DAS" | "IRPJ" | "CSLL" | "PIS" | "COFINS" | "ISS" | "ICMS"; aliquota: number; reducaoBase?: number; faixaFaturamentoMin?: number; faixaFaturamentoMax?: number; descricao: string };
   const TAX_RULES: RuleSeed[] = [
