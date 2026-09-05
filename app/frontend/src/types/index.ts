@@ -526,7 +526,22 @@ export type CommercialLead = {
   enteredAt: string;
   nextContactAt: string | null;
   seller: { id: string; name: string } | null;
+  briefing: { id: string; submittedAt: string; environments: string[]; origin: "PUBLIC" | "CONSULTANT" } | null;
   _count: { opportunities: number; interactions: number };
+};
+
+export type LeadBriefing = {
+  id: string;
+  address: string | null;
+  investmentEstimate: number | null;
+  investmentText: string | null;
+  hasProject: boolean;
+  environments: string[];
+  userCount: number | null;
+  discoveryChannel: string | null;
+  notes: string | null;
+  origin: "PUBLIC" | "CONSULTANT";
+  submittedAt: string;
 };
 
 export type Opportunity = {

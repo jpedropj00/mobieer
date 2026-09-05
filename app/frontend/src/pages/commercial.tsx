@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Loader2, Plus, Target, TrendingUp, UserPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -42,9 +42,10 @@ export function CommercialPage() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["commercial"] });
 
-  const [dialog, setDialog] = useState<null | "opp" | "lead" | "convert" | "interaction" | "move">(null);
+  const [dialog, setDialog] = useState<null | "opp" | "lead" | "convert" | "interaction" | "move" | "briefing">(null);
   const [active, setActive] = useState<Opportunity | null>(null);
   const [convertLead, setConvertLead] = useState<CommercialLead | null>(null);
+  const [briefLead, setBriefLead] = useState<string | null>(null);
 
   const [oppForm, setOppForm] = useState({ title: "", stageId: "", estimatedValue: "", expectedCloseAt: "", nextAction: "" });
   const [leadForm, setLeadForm] = useState({ name: "", phone: "", email: "", source: "", interest: "" });
@@ -171,12 +172,18 @@ export function CommercialPage() {
               {leadList.map((l) => (
                 <div key={l.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{l.name}</p>
+                    <p className="truncate text-sm font-medium">
+                      {l.name}
+                      {l.briefing && <Badge variant="secondary" className="ml-2 align-middle text-[10px]">briefing</Badge>}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {[l.phone, l.interest, l.source].filter(Boolean).join(" · ") || "—"}
                     </p>
                   </div>
                   <Badge variant="secondary">{LEAD_STATUS[l.status] ?? l.status}</Badge>
+                  <Button size="sm" variant="ghost" onClick={() => { setBriefLead(l.id); setDialog("briefing"); }}>
+                    {l.briefing ? "Ver briefing" : "Briefing"}
+                  </Button>
                   {canLeads && l.status !== "CONVERTED" && l.status !== "LOST" && (
                     <Button size="sm" variant="outline" onClick={() => { setConvertLead(l); setConvForm({ title: l.interest ? `${l.name} — ${l.interest}` : l.name, estimatedValue: "", stageId: "" }); setDialog("convert"); }}>
                       Converter <ArrowRight className="ml-1 h-3.5 w-3.5" />
@@ -348,8 +355,109 @@ export function CommercialPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={dialog === "briefing"} onOpenChange={(v) => { if (!v) { setDialog(null); setBriefLead(null); } }}>
+        <DialogContent>
+          {briefLead && <BriefingDialog leadId={briefLead} canEdit={canLeads} onSaved={() => { setDialog(null); setBriefLead(null); refresh(); }} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+const ENV_LIST = ["Suíte Master", "Cozinha", "Sala", "Suíte Hóspede", "Suíte Filhos", "Banheiro", "Varanda", "Ambiente Corporativo", "Ambiente Comercial", "Área de Serviço", "Lavabo", "Outro"];
+const CHANNELS = ["Instagram", "Indicação", "Google", "Site", "Arquiteto", "Parceiros", "Outro"];
+
+function BriefingDialog({ leadId, canEdit, onSaved }: { leadId: string; canEdit: boolean; onSaved: () => void }) {
+  const q = useQuery({ queryKey: ["commercial", "briefing", leadId], queryFn: () => apiGet<{ data: { lead: { name: string }; briefing: BriefingData | null } }>(`/commercial/leads/${leadId}/briefing`) });
+  const [f, setF] = useState<BriefingForm>({ address: "", investmentText: "", hasProject: false, environments: [], userCount: "", discoveryChannel: "", notes: "" });
+  const [editing, setEditing] = useState(false);
+
+  const b = q.data?.data.briefing ?? null;
+  useMemoInit(b, setF, setEditing);
+
+  const save = useMutation({
+    mutationFn: () => apiPost(`/commercial/leads/${leadId}/briefing`, {
+      address: f.address || null,
+      investmentText: f.investmentText || null,
+      investmentEstimate: parseFloat(f.investmentText.replace(/[^\d.,-]/g, "").replace(",", ".")) || null,
+      hasProject: f.hasProject,
+      environments: f.environments,
+      userCount: f.userCount ? Number(f.userCount) : null,
+      discoveryChannel: f.discoveryChannel || null,
+      notes: f.notes || null,
+    }),
+    onSuccess: () => { toast.success("Briefing salvo"); onSaved(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao salvar")),
+  });
+
+  if (q.isLoading) return <div className="py-8 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>;
+
+  const show = b && !editing;
+  return (
+    <>
+      <DialogHeader><DialogTitle>Briefing — {q.data?.data.lead.name}</DialogTitle></DialogHeader>
+      {show ? (
+        <div className="space-y-2 text-sm">
+          <Row k="Endereço" v={b!.address} />
+          <Row k="Investimento" v={b!.investmentText ?? (b!.investmentEstimate ? formatCurrency(b!.investmentEstimate) : null)} />
+          <Row k="Já tem projeto" v={b!.hasProject ? "Sim" : "Não"} />
+          <Row k="Ambientes" v={b!.environments.join(", ")} />
+          <Row k="Nº de pessoas" v={b!.userCount != null ? String(b!.userCount) : null} />
+          <Row k="Como conheceu" v={b!.discoveryChannel} />
+          <Row k="Observações" v={b!.notes} />
+          <p className="pt-1 text-xs text-muted-foreground">Enviado em {new Date(b!.submittedAt).toLocaleDateString("pt-BR")} · {b!.origin === "PUBLIC" ? "formulário público" : "consultor"}</p>
+          {canEdit && <DialogFooter><Button size="sm" variant="outline" onClick={() => setEditing(true)}>Editar</Button></DialogFooter>}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Field label="Endereço"><Input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Investimento"><Input value={f.investmentText} onChange={(e) => setF({ ...f, investmentText: e.target.value })} placeholder="R$ 45.000" /></Field>
+            <Field label="Nº de pessoas"><Input type="number" value={f.userCount} onChange={(e) => setF({ ...f, userCount: e.target.value })} /></Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.hasProject} onChange={(e) => setF({ ...f, hasProject: e.target.checked })} /> Já tem projeto de arquiteto</label>
+          <Field label="Ambientes">
+            <div className="grid grid-cols-2 gap-1.5">
+              {ENV_LIST.map((e) => (
+                <label key={e} className="flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={f.environments.includes(e)} onChange={() => setF({ ...f, environments: f.environments.includes(e) ? f.environments.filter((x) => x !== e) : [...f.environments, e] })} />
+                  {e}
+                </label>
+              ))}
+            </div>
+          </Field>
+          <Field label="Como conheceu">
+            <Select value={f.discoveryChannel || "NONE"} onValueChange={(v) => setF({ ...f, discoveryChannel: v === "NONE" ? "" : v })}>
+              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent><SelectItem value="NONE">—</SelectItem>{CHANNELS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+            </Select>
+          </Field>
+          <Field label="Observações"><Textarea rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+          <DialogFooter>
+            {b && <Button variant="outline" onClick={() => setEditing(false)}>Cancelar</Button>}
+            <Button disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar</Button>
+          </DialogFooter>
+        </div>
+      )}
+    </>
+  );
+}
+
+type BriefingData = { address: string | null; investmentEstimate: number | null; investmentText: string | null; hasProject: boolean; environments: string[]; userCount: number | null; discoveryChannel: string | null; notes: string | null; origin: "PUBLIC" | "CONSULTANT"; submittedAt: string };
+type BriefingForm = { address: string; investmentText: string; hasProject: boolean; environments: string[]; userCount: string; discoveryChannel: string; notes: string };
+
+function useMemoInit(b: BriefingData | null, setF: (f: BriefingForm) => void, setEditing: (v: boolean) => void) {
+  const key = b ? b.submittedAt : "new";
+  useEffect(() => {
+    if (b) setF({ address: b.address ?? "", investmentText: b.investmentText ?? "", hasProject: b.hasProject, environments: b.environments, userCount: b.userCount != null ? String(b.userCount) : "", discoveryChannel: b.discoveryChannel ?? "", notes: b.notes ?? "" });
+    else setEditing(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+}
+
+function Row({ k, v }: { k: string; v: string | null }) {
+  return <div className="flex gap-2"><span className="w-32 shrink-0 text-muted-foreground">{k}</span><span className="font-medium">{v || "—"}</span></div>;
 }
 
 function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
