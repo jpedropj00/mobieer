@@ -32,18 +32,9 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
 
   console.error("[ERROR]", err);
-  // DEBUG TEMPORÁRIO: expõe nome/código/mensagem do erro na resposta para
-  // diagnosticar o deploy. REMOVER depois de resolver o 500.
-  const e = err as { name?: string; code?: string; message?: string; clientVersion?: string };
   return res.status(500).json({
     success: false,
     message: "Erro interno do servidor",
-    debug: {
-      name: e?.name ?? null,
-      code: e?.code ?? null,
-      clientVersion: e?.clientVersion ?? null,
-      message: (e?.message ?? String(err)).slice(0, 1500),
-    },
   });
 }
 
