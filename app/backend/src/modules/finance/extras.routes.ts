@@ -17,7 +17,8 @@ router.use(authenticate);
 const money = (d: Prisma.Decimal | number | null | undefined) => (d == null ? 0 : Number(d));
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const D = (n: number) => new Prisma.Decimal(n.toFixed(2));
-const addMonths = (d: Date, m: number) => new Date(d.getFullYear(), d.getMonth() + m, d.getDate());
+// UTC para não perder 1 dia quando a data chega como "YYYY-MM-DD" (meia-noite UTC).
+const addMonths = (d: Date, m: number) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + m, d.getUTCDate()));
 
 // ============================================================
 // COMPRAS PARCELADAS

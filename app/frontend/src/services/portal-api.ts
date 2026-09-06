@@ -55,6 +55,8 @@ export async function portalApi<T = unknown>(path: string, options: Options = {}
 
 export const portalGet = <T>(path: string) => portalApi<T>(path);
 export const portalPost = <T>(path: string, body?: unknown) => portalApi<T>(path, { method: "POST", body });
+export const portalPatch = <T>(path: string, body?: unknown) => portalApi<T>(path, { method: "PATCH", body });
+export const portalDelete = <T>(path: string) => portalApi<T>(path, { method: "DELETE" });
 
 /** Baixa um documento autenticado (o backend responde com redirect assinado ou o arquivo). */
 export async function portalDownload(path: string, fileName: string) {

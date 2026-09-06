@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Download, ExternalLink, FileSignature, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, ExternalLink, FileSignature, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { SignaturePad } from "@/components/signature-pad";
 import { errorMessage } from "@/lib/utils";
 import { portalDownload, portalGet, portalPost } from "@/services/portal-api";
+import { PortalApplianceSheet } from "./appliance-sheet";
+import { PortalMeasurement } from "./measurement";
+import { PortalTechApproval } from "./tech-approval";
 
 type Doc = {
   id: string;
@@ -51,6 +54,7 @@ type ProjectDetail = {
   completedAt: string | null;
   feedbackFormUrl: string | null;
   manager: { name: string } | null;
+  technicalApproval: { status: string; approvedAt: string | null } | null;
   documents: Doc[];
   assistances: Assistance[];
 };
@@ -215,9 +219,22 @@ export function PortalProjectPage() {
         </div>
       </div>
 
+      {p.technicalApproval?.status === "APPROVED" && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <p>
+            Projeto técnico aprovado em <strong>{fmtDate(p.technicalApproval.approvedAt)}</strong>. A partir daqui,
+            alterações no projeto podem gerar <strong>custo adicional</strong> e <strong>novo prazo</strong> de produção e entrega.
+          </p>
+        </div>
+      )}
+
       <Tabs defaultValue="cronograma">
         <TabsList className="flex-wrap">
           <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
+          <TabsTrigger value="medicao">Medição</TabsTrigger>
+          <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
+          <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="fotos">Fotos</TabsTrigger>
           <TabsTrigger value="garantia">Garantia</TabsTrigger>
@@ -236,6 +253,18 @@ export function PortalProjectPage() {
           </Card>
           {p.description && <p className="whitespace-pre-line text-sm text-muted-foreground">{p.description}</p>}
           <DocList docs={byType("CRONOGRAMA")} empty="Cronograma detalhado ainda não publicado." projectId={p.id} />
+        </TabsContent>
+
+        <TabsContent value="medicao">
+          <PortalMeasurement projectId={p.id} />
+        </TabsContent>
+
+        <TabsContent value="projeto">
+          <PortalTechApproval projectId={p.id} />
+        </TabsContent>
+
+        <TabsContent value="ficha">
+          <PortalApplianceSheet projectId={p.id} />
         </TabsContent>
 
         <TabsContent value="documentos">

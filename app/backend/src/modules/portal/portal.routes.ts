@@ -11,6 +11,9 @@ import { ok } from "../../utils/response";
 import { sendMail, renderResetEmail } from "../../lib/mailer";
 import { storage } from "../../lib/storage";
 import { recomputeSignatureStatus } from "../documents/documents.routes";
+import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
+import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
+import { approvalInclude, getOrCreateApproval, serializeApproval } from "../techproject/techproject.service";
 
 const router = Router();
 
@@ -196,6 +199,7 @@ router.get(
         completedAt: true,
         feedbackFormUrl: true,
         manager: { select: { name: true } },
+        technicalApproval: { select: { status: true, approvedAt: true } },
         assistances: {
           select: {
             id: true,
@@ -227,8 +231,10 @@ router.get(
       orderBy: { createdAt: "desc" },
     });
 
+    const ta = project.technicalApproval;
     return ok(res, {
       ...project,
+      technicalApproval: ta && ta.status !== "DRAFT" ? ta : null,
       feedbackFormUrl: project.feedbackFormUrl || env.clientFeedbackFormUrl || null,
       documents: docs.map((d) => ({
         ...d,
@@ -305,6 +311,319 @@ router.get(
       orderBy: { createdAt: "desc" },
     });
     return ok(res, items);
+  })
+);
+
+// ============================================================
+// FICHA DE ELETRODOMÉSTICOS (cliente preenche)
+// ============================================================
+
+async function portalProject(projectId: string, clientId: string) {
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, clientId },
+    select: { id: true, organizationId: true, code: true, name: true, managerId: true },
+  });
+  if (!project) throw new NotFoundError("Projeto não encontrado");
+  return project;
+}
+
+async function portalItem(itemId: string, clientId: string) {
+  const item = await prisma.applianceItem.findFirst({
+    where: { id: itemId, sheet: { project: { clientId } } },
+    include: { sheet: { select: { id: true, status: true } } },
+  });
+  if (!item) throw new NotFoundError("Item não encontrado");
+  if (item.sheet.status === "REVIEWED") throw new BadRequestError("A ficha já foi conferida pela equipe e está bloqueada para edição");
+  return item;
+}
+
+const portalDim = z.coerce.number().min(0).max(9999).optional().nullable();
+const portalNn = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
+const portalDec = (v: number | null | undefined) => (v == null ? null : Number(v).toFixed(1));
+
+router.get(
+  "/projects/:id/appliance-sheet",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const sheet = await getOrCreateSheet(project.id, project.organizationId);
+    const full = await prisma.applianceSheet.findUniqueOrThrow({
+      where: { id: sheet.id },
+      include: {
+        items: { orderBy: [{ position: "asc" }, { name: "asc" }] },
+        project: { select: { id: true, code: true, name: true } },
+      },
+    });
+    return ok(res, serializeSheet(full));
+  })
+);
+
+router.patch(
+  "/projects/:id/appliance-sheet",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const sheet = await getOrCreateSheet(project.id, project.organizationId);
+    if (sheet.status === "REVIEWED") throw new BadRequestError("A ficha já foi conferida e está bloqueada");
+    const input = z
+      .object({
+        ambientes: z.string().trim().max(500).optional().nullable().or(z.literal("")),
+        notes: z.string().trim().max(5000).optional().nullable().or(z.literal("")),
+      })
+      .parse(req.body);
+    await prisma.applianceSheet.update({
+      where: { id: sheet.id },
+      data: {
+        ambientes: input.ambientes === undefined ? undefined : portalNn(input.ambientes),
+        notes: input.notes === undefined ? undefined : portalNn(input.notes),
+      },
+    });
+    const full = await prisma.applianceSheet.findUniqueOrThrow({
+      where: { id: sheet.id },
+      include: { items: { orderBy: [{ position: "asc" }, { name: "asc" }] }, project: { select: { id: true, code: true, name: true } } },
+    });
+    return ok(res, serializeSheet(full), "Ficha atualizada");
+  })
+);
+
+router.post(
+  "/projects/:id/appliance-sheet/items",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const sheet = await getOrCreateSheet(project.id, project.organizationId);
+    if (sheet.status === "REVIEWED") throw new BadRequestError("A ficha já foi conferida e está bloqueada");
+    const input = z.object({ category: z.enum(APPLIANCE_CATEGORIES), name: z.string().trim().min(2).max(120) }).parse(req.body);
+    const max = await prisma.applianceItem.aggregate({ where: { sheetId: sheet.id }, _max: { position: true } });
+    const item = await prisma.applianceItem.create({
+      data: { sheetId: sheet.id, category: input.category, name: input.name, custom: true, position: (max._max.position ?? 0) + 1 },
+    });
+    return ok(res, serializeItem(item), "Item adicionado");
+  })
+);
+
+router.patch(
+  "/appliance-items/:itemId",
+  asyncHandler(async (req, res) => {
+    const item = await portalItem(req.params.itemId, req.portal!.clientId);
+    const input = z
+      .object({
+        owned: z.boolean().optional(),
+        willBuy: z.boolean().optional(),
+        brandModel: z.string().trim().max(200).optional().nullable().or(z.literal("")),
+        widthCm: portalDim,
+        heightCm: portalDim,
+        depthCm: portalDim,
+        referenceUrl: z.string().trim().max(500).optional().nullable().or(z.literal("")),
+        notes: z.string().trim().max(500).optional().nullable().or(z.literal("")),
+      })
+      .parse(req.body);
+    const updated = await prisma.applianceItem.update({
+      where: { id: item.id },
+      data: {
+        owned: input.owned,
+        willBuy: input.willBuy,
+        brandModel: input.brandModel === undefined ? undefined : portalNn(input.brandModel),
+        widthCm: input.widthCm === undefined ? undefined : portalDec(input.widthCm),
+        heightCm: input.heightCm === undefined ? undefined : portalDec(input.heightCm),
+        depthCm: input.depthCm === undefined ? undefined : portalDec(input.depthCm),
+        referenceUrl: input.referenceUrl === undefined ? undefined : portalNn(input.referenceUrl),
+        notes: input.notes === undefined ? undefined : portalNn(input.notes),
+      },
+    });
+    return ok(res, serializeItem(updated), "Item atualizado");
+  })
+);
+
+router.delete(
+  "/appliance-items/:itemId",
+  asyncHandler(async (req, res) => {
+    const item = await portalItem(req.params.itemId, req.portal!.clientId);
+    if (!item.custom) throw new BadRequestError("Só é possível remover itens adicionados por você");
+    await prisma.applianceItem.delete({ where: { id: item.id } });
+    return ok(res, { id: item.id }, "Item removido");
+  })
+);
+
+router.post(
+  "/projects/:id/appliance-sheet/submit",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const sheet = await getOrCreateSheet(project.id, project.organizationId);
+    if (sheet.status === "REVIEWED") throw new BadRequestError("A ficha já foi conferida");
+    await prisma.applianceSheet.update({ where: { id: sheet.id }, data: { status: "SUBMITTED", submittedAt: new Date() } });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Ficha de eletrodomésticos enviada",
+          message: `${project.code} — ${project.name}: o cliente enviou a ficha de eletrodomésticos.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, { status: "SUBMITTED" }, "Ficha enviada. Obrigado!");
+  })
+);
+
+// ============================================================
+// AGENDAMENTO DA MEDIÇÃO (cliente solicita)
+// ============================================================
+
+router.get(
+  "/projects/:id/measurement",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const visit = await prisma.measurementVisit.findFirst({
+      where: { projectId: project.id },
+      include: visitInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, visit ? serializeVisit(visit) : null);
+  })
+);
+
+const measurementRequestSchema = z.object({
+  preferredDates: z.array(z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1).max(3),
+  preferredPeriod: z.enum(MEASUREMENT_PERIODS).optional().nullable(),
+  clientNotes: z.string().trim().max(2000).optional().nullable().or(z.literal("")),
+});
+
+router.post(
+  "/projects/:id/measurement",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const open = await prisma.measurementVisit.findFirst({
+      where: { projectId: project.id, status: { in: ["REQUESTED", "SCHEDULED"] } },
+      select: { id: true },
+    });
+    if (open) throw new BadRequestError("Já existe uma solicitação de medição em andamento para este projeto");
+    const input = measurementRequestSchema.parse(req.body);
+    const visit = await prisma.measurementVisit.create({
+      data: {
+        organizationId: project.organizationId,
+        projectId: project.id,
+        status: "REQUESTED",
+        preferredDates: input.preferredDates,
+        preferredPeriod: input.preferredPeriod ?? null,
+        clientNotes: input.clientNotes?.trim() || null,
+      },
+      include: visitInclude,
+    });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Medição solicitada pelo cliente",
+          message: `${project.code} — ${project.name}: o cliente solicitou a medição. Datas sugeridas: ${input.preferredDates.join(", ")}.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, serializeVisit(visit), "Solicitação enviada. A equipe vai confirmar a data.");
+  })
+);
+
+router.patch(
+  "/measurement/:id",
+  asyncHandler(async (req, res) => {
+    const visit = await prisma.measurementVisit.findFirst({
+      where: { id: req.params.id, project: { clientId: req.portal!.clientId } },
+      select: { id: true, status: true },
+    });
+    if (!visit) throw new NotFoundError("Medição não encontrada");
+    if (visit.status !== "REQUESTED") throw new BadRequestError("A equipe já está tratando esta solicitação");
+    const input = measurementRequestSchema.partial().parse(req.body);
+    const updated = await prisma.measurementVisit.update({
+      where: { id: visit.id },
+      data: {
+        preferredDates: input.preferredDates ?? undefined,
+        preferredPeriod: input.preferredPeriod === undefined ? undefined : input.preferredPeriod ?? null,
+        clientNotes: input.clientNotes === undefined ? undefined : input.clientNotes?.trim() || null,
+      },
+      include: visitInclude,
+    });
+    return ok(res, serializeVisit(updated), "Solicitação atualizada");
+  })
+);
+
+// ============================================================
+// APROVAÇÃO DO PROJETO TÉCNICO (cliente aprova / pede mudanças)
+// ============================================================
+
+router.get(
+  "/projects/:id/tech-approval",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const approval = await prisma.technicalProjectApproval.findUnique({
+      where: { projectId: project.id },
+      include: approvalInclude,
+    });
+    if (!approval || approval.status === "DRAFT") return ok(res, null);
+    return ok(res, serializeApproval(approval, { includeSignature: true }));
+  })
+);
+
+router.post(
+  "/projects/:id/tech-approval/approve",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const approval = await getOrCreateApproval(project.id, project.organizationId);
+    if (approval.status === "DRAFT") throw new NotFoundError("Projeto técnico ainda não disponível");
+    if (approval.status === "APPROVED") throw new BadRequestError("Este projeto técnico já foi aprovado");
+    const input = z
+      .object({
+        approvedByName: z.string().trim().min(2).max(160),
+        signatureDataUrl: z.string().startsWith("data:image/").max(2_000_000),
+      })
+      .parse(req.body);
+
+    const updated = await prisma.technicalProjectApproval.update({
+      where: { id: approval.id },
+      data: {
+        status: "APPROVED",
+        approvedAt: new Date(),
+        approvedByName: input.approvedByName,
+        signatureDataUrl: input.signatureDataUrl,
+        signedByClientAccountId: req.portal!.accountId,
+        clientComment: null,
+      },
+      include: approvalInclude,
+    });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Projeto técnico aprovado",
+          message: `${project.code} — ${project.name}: o cliente aprovou o projeto técnico. Liberado para produção.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, serializeApproval(updated, { includeSignature: true }), "Projeto técnico aprovado. Obrigado!");
+  })
+);
+
+router.post(
+  "/projects/:id/tech-approval/request-changes",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const approval = await getOrCreateApproval(project.id, project.organizationId);
+    if (approval.status !== "IN_REVIEW") throw new BadRequestError("Não há projeto técnico aguardando sua avaliação");
+    const input = z.object({ comment: z.string().trim().min(3).max(3000) }).parse(req.body);
+    const updated = await prisma.technicalProjectApproval.update({
+      where: { id: approval.id },
+      data: { status: "CHANGES_REQUESTED", clientComment: input.comment },
+      include: approvalInclude,
+    });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Projeto técnico — ajustes solicitados",
+          message: `${project.code} — ${project.name}: o cliente pediu ajustes no projeto técnico.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, serializeApproval(updated, { includeSignature: true }), "Enviamos seu pedido de ajustes à equipe");
   })
 );
 

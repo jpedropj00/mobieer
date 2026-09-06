@@ -30,6 +30,9 @@ import financeRoutes from "./modules/finance/finance.routes";
 import templatesRoutes from "./modules/templates/templates.routes";
 import commercialRoutes from "./modules/commercial/commercial.routes";
 import briefingRoutes from "./modules/briefing/briefing.routes";
+import appliancesRoutes from "./modules/appliances/appliances.routes";
+import measurementsRoutes from "./modules/measurements/measurements.routes";
+import techProjectRoutes from "./modules/techproject/techproject.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -76,6 +79,9 @@ export function createApp() {
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial", commercialRoutes);
   app.use("/api/briefing", briefingRoutes);
+  app.use("/api/appliances", appliancesRoutes);
+  app.use("/api/measurements", measurementsRoutes);
+  app.use("/api/tech-approval", techProjectRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {
