@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Factory, Loader2, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { ArrowRight, Factory, Loader2, Play, Plus, RotateCcw, Scissors, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,12 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api";
+import { apiDelete, apiGet, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
-import { cn, errorMessage } from "@/lib/utils";
+import { errorMessage } from "@/lib/utils";
 
 export const SECTORS = ["CORTE", "FITA_BORDA", "FURACAO", "PRE_MONTAGEM", "EMBALAGEM", "EXPEDICAO"] as const;
 export type Sector = (typeof SECTORS)[number];
@@ -119,7 +118,15 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
     queryKey: ["promob", projectId],
     queryFn: () => apiGet<{ data: { id: string; fileName: string; status: string; itemCount: number }[] }>(`/promob/projects/${projectId}/imports`),
   });
-  const invalidate = () => qc.invalidateQueries({ queryKey: key });
+  const reqKey = ["production-requisitions", projectId];
+  const requisitions = useQuery({
+    queryKey: reqKey,
+    queryFn: () => apiGet<{ data: { id: string; number: string; status: string; itemCount: number; createdAt: string }[] }>(`/production/projects/${projectId}/requisitions`),
+  });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: key });
+    qc.invalidateQueries({ queryKey: reqKey });
+  };
 
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ descricao: "", ambiente: "", referencia: "", quantidade: "1", material: "" });
@@ -133,11 +140,18 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
     onSuccess: (r: unknown) => { toast.success((r as { message?: string })?.message ?? "Itens gerados"); invalidate(); },
     onError: (e) => toast.error(errorMessage(e, "Falha ao gerar itens")),
   });
+  const genReq = useMutation({
+    mutationFn: () => apiPost(`/production/projects/${projectId}/requisition`, {}),
+    onSuccess: (r: unknown) => { toast.success((r as { message?: string })?.message ?? "Requisição criada"); invalidate(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao gerar a requisição")),
+  });
 
   if (q.isLoading) return <PageSkeleton />;
   const items = q.data?.data.items ?? [];
   const summary = q.data?.data.summary;
   const parsedImports = (imports.data?.data ?? []).filter((i) => i.status === "PARSED" && i.itemCount > 0);
+  const reqs = requisitions.data?.data ?? [];
+  const activeItems = items.filter((i) => i.status !== "CANCELLED").length;
 
   return (
     <div className="space-y-4">
@@ -168,6 +182,23 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
                   {fromImport.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Factory className="mr-1 h-4 w-4" />}
                   Gerar de “{imp.fileName}”
                 </Button>
+              ))}
+              {activeItems > 0 && (
+                <Button size="sm" variant="outline" disabled={genReq.isPending} onClick={() => genReq.mutate()}>
+                  {genReq.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Scissors className="mr-1 h-4 w-4" />}
+                  Gerar requisição de corte
+                </Button>
+              )}
+            </div>
+          )}
+          {reqs.length > 0 && (
+            <div className="space-y-1 pt-1">
+              <p className="text-xs font-medium text-muted-foreground">Requisições geradas</p>
+              {reqs.map((r) => (
+                <Link key={r.id} to={`/requisicoes/${r.id}`} className="flex items-center justify-between rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted/50">
+                  <span className="font-medium">{r.number}</span>
+                  <span className="text-muted-foreground">{r.itemCount} peça(s) · {r.status}</span>
+                </Link>
               ))}
             </div>
           )}

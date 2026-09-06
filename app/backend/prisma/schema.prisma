@@ -709,6 +709,9 @@ model Requisition {
   inspectorId String?
   inspector   User?   @relation("RequisitionInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
 
+  productionOrderId String?
+  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
+
   items        RequisitionItem[]
   movements    StockMovement[]
   reservations StockReservation[]
@@ -718,6 +721,7 @@ model Requisition {
   kanbanTasks  KanbanTask[]
 
   @@index([status])
+  @@index([productionOrderId])
   @@index([priority])
   @@index([neededAt])
   @@index([requesterId])
@@ -2421,6 +2425,7 @@ model ProductionOrder {
   updatedAt           DateTime               @updatedAt
   events              ProductionStageEvent[]
   items               ProductionItem[]
+  requisitions        Requisition[]
 
   @@index([organizationId, stage])
 }

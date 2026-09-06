@@ -1001,6 +1001,30 @@ async function main() {
         },
       });
     }
+
+    // Requisição de corte gerada da produção do 402-1 (rascunho).
+    await prisma.requisition.create({
+      data: {
+        number: "REQ-00001",
+        status: "DRAFT",
+        priority: "NORMAL",
+        clientName: juliana.name,
+        projectReference: proj402.code,
+        note: `Gerada da produção — ${proj402.code} ${proj402.name}`,
+        requesterId: userIds["Marcos Vinícius"] ?? adminId,
+        productionOrderId: order402.id,
+        createdAt: new Date(Date.now() - 3 * D),
+        items: {
+          create: floor.map((it) => ({
+            description: it.descricao,
+            material: "MDF Branco 18mm",
+            quantity: 1,
+            unit: "UNIT" as const,
+            note: it.ambiente,
+          })),
+        },
+      },
+    });
   }
 
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");

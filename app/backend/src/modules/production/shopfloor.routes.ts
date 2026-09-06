@@ -8,6 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { getOrCreateOrder } from "./production.service";
+import { createRequisition } from "../requisitions/requisitions.service";
 import {
   PRODUCTION_SECTORS,
   SECTOR_LABEL,
@@ -154,6 +155,96 @@ router.post(
     if (toCreate.length === 0) throw new BadRequestError("Todos os itens deste import já foram gerados");
     await prisma.productionItem.createMany({ data: toCreate });
     return ok(res, { created: toCreate.length, skipped: itens.length - toCreate.length }, `${toCreate.length} item(ns) gerado(s)`);
+  })
+);
+
+// GET /api/production/projects/:projectId/requisitions
+// Requisições de corte já geradas a partir da produção deste projeto.
+router.get(
+  "/projects/:projectId/requisitions",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const project = await ensureProject(req.params.projectId, req.user!.organizationId);
+    const order = await prisma.productionOrder.findUnique({ where: { projectId: project.id }, select: { id: true } });
+    if (!order) return ok(res, []);
+    const rows = await prisma.requisition.findMany({
+      where: { productionOrderId: order.id },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        priority: true,
+        createdAt: true,
+        neededAt: true,
+        _count: { select: { items: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(
+      res,
+      rows.map((r) => ({
+        id: r.id,
+        number: r.number,
+        status: r.status,
+        priority: r.priority,
+        itemCount: r._count.items,
+        createdAt: r.createdAt,
+        neededAt: r.neededAt,
+      }))
+    );
+  })
+);
+
+// POST /api/production/projects/:projectId/requisition
+// Gera uma requisição de corte (DRAFT) com os itens ativos da produção.
+router.post(
+  "/projects/:projectId/requisition",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const project = await prisma.project.findFirst({
+      where: { id: req.params.projectId, organizationId: req.user!.organizationId },
+      select: { id: true, code: true, name: true, client: { select: { name: true } } },
+    });
+    if (!project) throw new NotFoundError("Projeto não encontrado");
+    const order = await getOrCreateOrder(project.id, req.user!.organizationId, req.user!.id);
+
+    const items = await prisma.productionItem.findMany({
+      where: { orderId: order.id, status: { not: "CANCELLED" } },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    });
+    if (items.length === 0) throw new BadRequestError("Não há itens de produção para requisitar");
+    if (items.length > 200) throw new BadRequestError("Muitos itens (máx. 200 por requisição). Gere em lotes.");
+
+    const created = await createRequisition(
+      {
+        clientName: project.client?.name ?? null,
+        projectReference: project.code,
+        priority: "NORMAL",
+        note: `Gerada da produção — ${project.code} ${project.name}`.slice(0, 3000),
+        submit: false,
+        attachments: [],
+        sector: null,
+        destination: null,
+        neededAt: null,
+        responsibleId: null,
+        items: items.map((it) => ({
+          description: it.descricao.slice(0, 200),
+          material: it.material ? it.material.slice(0, 150) : null,
+          quantity: it.quantidade,
+          unit: "UNIT" as const,
+          note: [it.ambiente, it.referencia].filter(Boolean).join(" · ").slice(0, 1000) || null,
+          productId: null,
+          thickness: null,
+          length: null,
+          width: null,
+          edgeFinish: null,
+        })),
+      },
+      req.user!.id
+    );
+
+    await prisma.requisition.update({ where: { id: created.id }, data: { productionOrderId: order.id } });
+    return ok(res, { id: created.id, number: created.number, itemCount: items.length }, `Requisição ${created.number} criada com ${items.length} peça(s)`);
   })
 );
 
