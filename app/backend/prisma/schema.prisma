@@ -95,6 +95,7 @@ model User {
   publishedTechApprovals   TechnicalProjectApproval[] @relation("TechApprovalPublisher")
   productionStageEvents    ProductionStageEvent[] @relation("ProductionStageEventAuthor")
   productionItemEvents     ProductionItemEvent[] @relation("ProductionItemEventAuthor")
+  productionTimeLogs       ProductionTimeLog[]   @relation("ProductionTimeLogOperator")
   createdFiscalInvoices    FiscalInvoice[]        @relation("FiscalInvoiceCreator")
   promobImports            PromobImport[]         @relation("PromobImportCreator")
   workspaceNotes           WorkspaceNote[]       @relation("WorkspaceNoteOwner")
@@ -185,6 +186,7 @@ model Organization {
   technicalApprovals  TechnicalProjectApproval[]
   productionOrders    ProductionOrder[]
   productionItems     ProductionItem[]
+  productionTimeLogs  ProductionTimeLog[]
   fiscalInvoices      FiscalInvoice[]
   promobImports       PromobImport[]
   workspaceNotes      WorkspaceNote[]
@@ -2430,6 +2432,8 @@ model ProductionOrder {
   scheduleJson        Json? // cronograma gerado (etapas + datas + observações)
   scheduleSource      String? // AI | HEURISTIC
   scheduleGeneratedAt DateTime?
+  cutPlanImportId     String? // PromobImport marcado como o plano de corte oficial do pedido
+  cutPlanImport       PromobImport?          @relation("OrderCutPlan", fields: [cutPlanImportId], references: [id], onDelete: SetNull)
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   events              ProductionStageEvent[]
@@ -2520,6 +2524,7 @@ model PromobImport {
   createdBy      User?        @relation("PromobImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
   generatedItems ProductionItem[]
+  cutPlanForOrders ProductionOrder[] @relation("OrderCutPlan")
 
   @@index([organizationId])
   @@index([projectId])
@@ -2571,6 +2576,7 @@ model ProductionItem {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   events         ProductionItemEvent[]
+  timeLogs       ProductionTimeLog[]
 
   @@index([organizationId, status, sector])
   @@index([orderId])
@@ -2670,4 +2676,32 @@ model HourBankAdjustment {
   createdAt      DateTime     @default(now())
 
   @@index([employeeId, date])
+}
+
+// ============================================================
+// FASE 3.4 — Apontamento de horas na produção
+// Cada item registra o tempo trabalhado por setor e por operador.
+// Serve para custo/produtividade; NÃO alimenta o banco de horas do ponto
+// (que é baseado nas marcações do relógio) para evitar dupla contagem.
+// ============================================================
+
+model ProductionTimeLog {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  itemId         String
+  item           ProductionItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sector         ProductionSector
+  userId         String
+  user           User             @relation("ProductionTimeLogOperator", fields: [userId], references: [id], onDelete: Cascade)
+  startedAt      DateTime
+  endedAt        DateTime? // null enquanto o cronômetro está rodando
+  minutes        Int? // preenchido ao parar (ou na entrada manual)
+  manual         Boolean          @default(false)
+  note           String?
+  createdAt      DateTime         @default(now())
+
+  @@index([itemId])
+  @@index([organizationId, startedAt])
+  @@index([userId, endedAt])
 }

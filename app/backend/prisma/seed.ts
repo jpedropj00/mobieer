@@ -985,8 +985,9 @@ async function main() {
       { descricao: "Rack suspenso", ambiente: "Home", sector: null, status: "PENDING" },
       { descricao: "Adega climatizada (nicho)", ambiente: "Cozinha", sector: null, status: "PENDING" },
     ];
+    let firstInProgressItemId: string | null = null;
     for (const [i, it] of floor.entries()) {
-      await prisma.productionItem.create({
+      const created = await prisma.productionItem.create({
         data: {
           organizationId: ORG_ID,
           orderId: order402.id,
@@ -999,6 +1000,19 @@ async function main() {
           position: i,
           startedAt: it.status === "IN_PROGRESS" ? new Date(Date.now() - 3 * D) : null,
         },
+      });
+      if (it.status === "IN_PROGRESS" && !firstInProgressItemId) firstInProgressItemId = created.id;
+    }
+
+    // Apontamentos de horas de exemplo no 1º item em produção.
+    if (firstInProgressItemId) {
+      const opId = userIds["J. Silva"] ?? adminId;
+      const t0 = new Date(Date.now() - 2 * D);
+      await prisma.productionTimeLog.createMany({
+        data: [
+          { organizationId: ORG_ID, itemId: firstInProgressItemId, sector: "CORTE", userId: opId, startedAt: t0, endedAt: new Date(t0.getTime() + 95 * 60000), minutes: 95, manual: false, note: "Corte das peças" },
+          { organizationId: ORG_ID, itemId: firstInProgressItemId, sector: "FITA_BORDA", userId: opId, startedAt: new Date(t0.getTime() + 120 * 60000), endedAt: new Date(t0.getTime() + 175 * 60000), minutes: 55, manual: true, note: null },
+        ],
       });
     }
 

@@ -80,12 +80,27 @@ router.patch(
       .object({
         estimatedDeliveryAt: z.coerce.date().optional().nullable(),
         notes: z.string().trim().max(5000).optional().nullable().or(z.literal("")),
+        cutPlanImportId: z.string().min(1).optional().nullable(),
       })
       .parse(req.body);
+
+    if (input.cutPlanImportId) {
+      const imp = await prisma.promobImport.findFirst({
+        where: { id: input.cutPlanImportId, organizationId: req.user!.organizationId, projectId: project.id },
+        select: { id: true },
+      });
+      if (!imp) throw new BadRequestError("Importação inválida para este projeto");
+    }
 
     const data: Prisma.ProductionOrderUpdateInput = {
       estimatedDeliveryAt: input.estimatedDeliveryAt === undefined ? undefined : input.estimatedDeliveryAt,
       notes: input.notes === undefined ? undefined : nn(input.notes),
+      cutPlanImport:
+        input.cutPlanImportId === undefined
+          ? undefined
+          : input.cutPlanImportId
+            ? { connect: { id: input.cutPlanImportId } }
+            : { disconnect: true },
     };
     await prisma.productionOrder.update({ where: { projectId: project.id }, data });
     const order = await prisma.productionOrder.findUniqueOrThrow({ where: { projectId: project.id }, include: orderInclude });

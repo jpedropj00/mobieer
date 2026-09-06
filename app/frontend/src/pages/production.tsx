@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, CalendarRange, CheckCircle2, Factory, Loader2, PackageCheck, Sparkles, Truck } from "lucide-react";
+import { ArrowRight, CalendarRange, CheckCircle2, Download, Factory, Loader2, PackageCheck, Scissors, Sparkles, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiGet, apiPatch, apiPost } from "@/services/api";
+import { apiDownload, apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
 import { ProductionItemsPanel } from "./production-items";
@@ -41,6 +41,7 @@ export type ProductionOrder = {
   estimatedDeliveryAt: string | null;
   daysToEstimatedDelivery: number | null;
   notes: string | null;
+  cutPlan: { importId: string; fileName: string; format: string; downloadUrl: string } | null;
   schedule: Schedule | null;
   scheduleSource: "AI" | "HEURISTIC" | null;
   scheduleGeneratedAt: string | null;
@@ -109,7 +110,7 @@ function useProductionActions(projectId: string, invalidate: () => void) {
     onError: (e) => toast.error(errorMessage(e, "Falha ao atualizar a etapa")),
   });
   const patch = useMutation({
-    mutationFn: (body: { estimatedDeliveryAt?: string | null; notes?: string | null }) =>
+    mutationFn: (body: { estimatedDeliveryAt?: string | null; notes?: string | null; cutPlanImportId?: string | null }) =>
       apiPatch(`/production/projects/${projectId}`, body),
     onSuccess: () => {
       toast.success("Ordem de produção atualizada");
@@ -126,6 +127,70 @@ function useProductionActions(projectId: string, invalidate: () => void) {
     onError: (e) => toast.error(errorMessage(e, "Falha ao gerar o cronograma")),
   });
   return { advance, patch, schedule };
+}
+
+/* ============================ cut plan ============================ */
+
+function CutPlanCard({
+  projectId,
+  canManage,
+  cutPlan,
+  onChange,
+  saving,
+}: {
+  projectId: string;
+  canManage: boolean;
+  cutPlan: { importId: string; fileName: string; downloadUrl: string } | null;
+  onChange: (importId: string | null) => void;
+  saving: boolean;
+}) {
+  const imports = useQuery({
+    queryKey: ["promob", projectId],
+    queryFn: () => apiGet<{ data: { id: string; fileName: string; format: string }[] }>(`/promob/projects/${projectId}/imports`),
+  });
+  const list = imports.data?.data ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm"><Scissors className="h-4 w-4" /> Plano de corte</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {cutPlan ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+            <span className="text-sm">{cutPlan.fileName}</span>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => apiDownload(cutPlan.downloadUrl.replace(/^\/api/, ""), cutPlan.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
+                <Download className="mr-1 h-4 w-4" /> Baixar
+              </Button>
+              {canManage && (
+                <Button size="sm" variant="ghost" className="text-destructive" disabled={saving} onClick={() => onChange(null)}>Remover</Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">Nenhum plano de corte definido para este pedido.</p>
+        )}
+        {canManage && list.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Usar importação do Promob:</span>
+            <Select value={cutPlan?.importId ?? "NONE"} onValueChange={(v) => onChange(v === "NONE" ? null : v)} disabled={saving}>
+              <SelectTrigger className="h-8 w-64 text-xs"><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NONE">Nenhum</SelectItem>
+                {list.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>{i.fileName} ({i.format})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {canManage && list.length === 0 && (
+          <p className="text-xs text-muted-foreground">Envie o arquivo na aba <strong>Promob</strong> para poder vinculá-lo aqui.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /* ============================ per-project panel ============================ */
@@ -280,6 +345,8 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
           )}
         </CardContent>
       </Card>
+
+      <CutPlanCard projectId={projectId} canManage={canManage} cutPlan={o.cutPlan} onChange={(id) => patch.mutate({ cutPlanImportId: id })} saving={patch.isPending} />
 
       <ProductionItemsPanel projectId={projectId} canManage={canManage} />
 

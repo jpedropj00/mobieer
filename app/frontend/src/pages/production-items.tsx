@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, Factory, Loader2, Play, Plus, RotateCcw, Scissors, Trash2, X } from "lucide-react";
+import { ArrowRight, Factory, Loader2, Play, Plus, RotateCcw, Scissors, Square, Timer, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,10 +38,14 @@ export type ProductionItem = {
   sectorLabel: string | null;
   nextSector: Sector | null;
   daysInSector: number | null;
+  timeMinutes: number;
+  timerRunning: boolean;
   notes: string | null;
   events: { id: string; sectorLabel: string | null; action: string; note: string | null; createdAt: string; author: string | null }[];
   project?: { id: string; code: string; name: string };
 };
+type RunningLog = { id: string; sectorLabel: string; minutes: number; item: { id: string; descricao: string; projectCode: string | null } | null };
+const hhmm = (m: number) => (m <= 0 ? "—" : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`);
 type SectorLoad = {
   sector: Sector;
   label: string;
@@ -83,7 +87,64 @@ function useItemActions(invalidate: () => void) {
     onSuccess: () => { toast.success("Item removido"); done(); },
     onError: (e) => toast.error(errorMessage(e, "Falha ao remover")),
   });
-  return { advance, remove };
+  const timeDone = () => { done(); qc.invalidateQueries({ queryKey: ["prod-time-running"] }); };
+  const startTimer = useMutation({
+    mutationFn: (id: string) => apiPost(`/production/items/${id}/time/start`, {}),
+    onSuccess: () => timeDone(),
+    onError: (e) => toast.error(errorMessage(e, "Falha ao iniciar")),
+  });
+  const stopTimer = useMutation({
+    mutationFn: (logId: string) => apiPost(`/production/time/${logId}/stop`, {}),
+    onSuccess: (r: unknown) => { toast.success((r as { message?: string })?.message ?? "Encerrado"); timeDone(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao encerrar")),
+  });
+  const addTime = useMutation({
+    mutationFn: ({ id, minutes, sector }: { id: string; minutes: number; sector?: Sector }) =>
+      apiPost(`/production/items/${id}/time`, { minutes, sector }),
+    onSuccess: () => { toast.success("Apontamento registrado"); timeDone(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao registrar")),
+  });
+  return { advance, remove, startTimer, stopTimer, addTime };
+}
+
+function TimeControls({ item, running, invalidate }: { item: ProductionItem; running: RunningLog | null; invalidate: () => void }) {
+  const { startTimer, stopTimer, addTime } = useItemActions(invalidate);
+  const runningHere = running && running.item?.id === item.id;
+  const runningElsewhere = running && running.item?.id !== item.id;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="text-muted-foreground">⏱ {hhmm(item.timeMinutes)}</span>
+      {runningHere ? (
+        <Button size="sm" variant="destructive" disabled={stopTimer.isPending} onClick={() => stopTimer.mutate(running!.id)}>
+          {stopTimer.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Square className="mr-1 h-3.5 w-3.5" />}
+          Parar ({hhmm(running!.minutes)})
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={startTimer.isPending || Boolean(runningElsewhere)}
+          title={runningElsewhere ? "Finalize o apontamento em andamento primeiro" : undefined}
+          onClick={() => startTimer.mutate(item.id)}
+        >
+          {startTimer.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Timer className="mr-1 h-3.5 w-3.5" />}
+          Apontar
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2 text-xs text-muted-foreground"
+        onClick={() => {
+          const v = window.prompt("Minutos trabalhados neste item:");
+          const m = v ? parseInt(v, 10) : NaN;
+          if (m > 0) addTime.mutate({ id: item.id, minutes: m, sector: item.sector ?? undefined });
+        }}
+      >
+        + manual
+      </Button>
+    </div>
+  );
 }
 
 function AdvanceButtons({ item, canManage, invalidate }: { item: ProductionItem; canManage: boolean; invalidate: () => void }) {
@@ -136,6 +197,11 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
     queryKey: reqKey,
     queryFn: () => apiGet<{ data: { id: string; number: string; status: string; itemCount: number; createdAt: string }[] }>(`/production/projects/${projectId}/requisitions`),
   });
+  const running = useQuery({
+    queryKey: ["prod-time-running"],
+    queryFn: () => apiGet<{ data: RunningLog | null }>("/production/time/running"),
+    refetchInterval: 60_000,
+  });
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: key });
     qc.invalidateQueries({ queryKey: reqKey });
@@ -166,8 +232,16 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
   const reqs = requisitions.data?.data ?? [];
   const activeItems = items.filter((i) => i.status !== "CANCELLED").length;
 
+  const run = running.data?.data ?? null;
+
   return (
     <div className="space-y-4">
+      {run && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-xs">
+          <Timer className="h-4 w-4 text-primary" />
+          <span>Apontamento em andamento: <strong>{run.item?.descricao ?? "—"}</strong> · {run.sectorLabel} · {hhmm(run.minutes)}</span>
+        </div>
+      )}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
@@ -239,8 +313,11 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
                   <Badge variant={STATUS_BADGE[it.status].variant}>{STATUS_BADGE[it.status].label}</Badge>
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                 <AdvanceButtons item={it} canManage={canManage} invalidate={invalidate} />
+                {canManage && it.status !== "DONE" && it.status !== "CANCELLED" && (
+                  <TimeControls item={it} running={running.data?.data ?? null} invalidate={invalidate} />
+                )}
               </div>
             </div>
           ))}

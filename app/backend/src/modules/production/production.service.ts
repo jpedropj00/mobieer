@@ -50,6 +50,7 @@ export const orderInclude = {
     include: { createdBy: { select: { id: true, name: true } } },
   },
   project: { select: { id: true, code: true, name: true, managerId: true, status: true, client: { select: { name: true } } } },
+  cutPlanImport: { select: { id: true, fileName: true, format: true, createdAt: true } },
 } as const;
 
 type OrderRow = StageTimestamps & {
@@ -60,6 +61,7 @@ type OrderRow = StageTimestamps & {
   scheduleJson?: unknown;
   scheduleSource?: string | null;
   scheduleGeneratedAt?: Date | null;
+  cutPlanImport?: { id: string; fileName: string; format: string; createdAt: Date } | null;
   createdAt: Date;
   updatedAt: Date;
   events?: {
@@ -101,6 +103,9 @@ export function serializeOrder(o: OrderRow) {
     schedule: o.scheduleJson ?? null,
     scheduleSource: o.scheduleSource ?? null,
     scheduleGeneratedAt: o.scheduleGeneratedAt ?? null,
+    cutPlan: o.cutPlanImport
+      ? { importId: o.cutPlanImport.id, fileName: o.cutPlanImport.fileName, format: o.cutPlanImport.format, downloadUrl: `/api/promob/imports/${o.cutPlanImport.id}/download` }
+      : null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
     timeline: PRODUCTION_STAGES.map((s) => ({

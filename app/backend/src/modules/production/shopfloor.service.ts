@@ -35,6 +35,7 @@ export const itemInclude = {
     include: { createdBy: { select: { id: true, name: true } } },
   },
   order: { select: { id: true, projectId: true, project: { select: { id: true, code: true, name: true } } } },
+  timeLogs: { select: { minutes: true, startedAt: true, endedAt: true } },
 } as const;
 
 type ItemRow = {
@@ -61,6 +62,7 @@ type ItemRow = {
     createdAt: Date;
     createdBy?: { id: string; name: string } | null;
   }[];
+  timeLogs?: { minutes: number | null; startedAt: Date; endedAt: Date | null }[];
   order?: { id: string; projectId: string; project?: { id: string; code: string; name: string } | null } | null;
 };
 
@@ -76,6 +78,12 @@ function enteredSectorAt(i: ItemRow): Date | null {
 export function serializeItem(i: ItemRow) {
   const enteredAt = enteredSectorAt(i);
   const daysInSector = enteredAt ? Math.floor((Date.now() - enteredAt.getTime()) / DAY) : null;
+  const logs = i.timeLogs ?? [];
+  const timeMinutes = logs.reduce(
+    (s, l) => s + (l.minutes ?? (l.endedAt ? 0 : Math.round((Date.now() - l.startedAt.getTime()) / 60000))),
+    0
+  );
+  const timerRunning = logs.some((l) => !l.endedAt);
   return {
     id: i.id,
     ambiente: i.ambiente,
@@ -95,6 +103,8 @@ export function serializeItem(i: ItemRow) {
     completedAt: i.completedAt,
     enteredSectorAt: enteredAt,
     daysInSector,
+    timeMinutes,
+    timerRunning,
     createdAt: i.createdAt,
     updatedAt: i.updatedAt,
     events:

@@ -262,6 +262,211 @@ router.post(
   })
 );
 
+// ============================================================
+// APONTAMENTO DE HORAS NA PRODUÇÃO
+// ============================================================
+
+const timeLogSelect = {
+  id: true,
+  sector: true,
+  startedAt: true,
+  endedAt: true,
+  minutes: true,
+  manual: true,
+  note: true,
+  user: { select: { id: true, name: true } },
+  item: { select: { id: true, descricao: true, order: { select: { project: { select: { id: true, code: true } } } } } },
+} as const;
+
+type TimeLogRow = {
+  id: string;
+  sector: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  minutes: number | null;
+  manual: boolean;
+  note: string | null;
+  user?: { id: string; name: string } | null;
+  item?: { id: string; descricao: string; order?: { project?: { id: string; code: string } | null } | null } | null;
+};
+const serializeLog = (l: TimeLogRow) => ({
+  id: l.id,
+  sector: l.sector,
+  sectorLabel: SECTOR_LABEL[l.sector as never] ?? l.sector,
+  startedAt: l.startedAt,
+  endedAt: l.endedAt,
+  minutes: l.minutes ?? (l.endedAt ? 0 : Math.round((Date.now() - l.startedAt.getTime()) / 60000)),
+  running: !l.endedAt,
+  manual: l.manual,
+  note: l.note,
+  user: l.user ?? null,
+  item: l.item ? { id: l.item.id, descricao: l.item.descricao, projectCode: l.item.order?.project?.code ?? null } : null,
+});
+
+// GET /api/production/time/running  -> apontamento em andamento do usuário atual
+router.get(
+  "/time/running",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const log = await prisma.productionTimeLog.findFirst({
+      where: { userId: req.user!.id, endedAt: null },
+      select: timeLogSelect,
+      orderBy: { startedAt: "desc" },
+    });
+    return ok(res, log ? serializeLog(log) : null);
+  })
+);
+
+// GET /api/production/time/summary?from&to&projectId  -> agregado por operador/setor/projeto
+router.get(
+  "/time/summary",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const now = new Date();
+    const from = req.query.from ? new Date(`${String(req.query.from)}T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = req.query.to ? new Date(`${String(req.query.to)}T23:59:59`) : now;
+    const rows = await prisma.productionTimeLog.findMany({
+      where: {
+        organizationId: req.user!.organizationId,
+        startedAt: { gte: from, lte: to },
+        ...(req.query.projectId ? { item: { order: { projectId: String(req.query.projectId) } } } : {}),
+      },
+      select: timeLogSelect,
+    });
+    const logs = rows.map(serializeLog);
+    const bucket = (arr: { key: string; label: string; minutes: number }[], key: string, label: string, minutes: number) => {
+      const found = arr.find((x) => x.key === key);
+      if (found) found.minutes += minutes;
+      else arr.push({ key, label, minutes });
+    };
+    const byUser: { key: string; label: string; minutes: number }[] = [];
+    const bySector: { key: string; label: string; minutes: number }[] = [];
+    const byProject: { key: string; label: string; minutes: number }[] = [];
+    let total = 0;
+    for (const l of logs) {
+      total += l.minutes;
+      bucket(byUser, l.user?.id ?? "?", l.user?.name ?? "—", l.minutes);
+      bucket(bySector, l.sector, l.sectorLabel, l.minutes);
+      bucket(byProject, l.item?.projectCode ?? "?", l.item?.projectCode ?? "—", l.minutes);
+    }
+    const sortDesc = (a: { minutes: number }, b: { minutes: number }) => b.minutes - a.minutes;
+    return ok(res, {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      totalMinutes: total,
+      logCount: logs.length,
+      byUser: byUser.sort(sortDesc),
+      bySector: bySector.sort(sortDesc),
+      byProject: byProject.sort(sortDesc),
+    });
+  })
+);
+
+// GET /api/production/items/:id/time  -> apontamentos do item
+router.get(
+  "/items/:id/time",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const item = await ensureItem(req.params.id, req.user!.organizationId);
+    const rows = await prisma.productionTimeLog.findMany({
+      where: { itemId: item.id },
+      select: timeLogSelect,
+      orderBy: { startedAt: "desc" },
+    });
+    const logs = rows.map(serializeLog);
+    return ok(res, { logs, totalMinutes: logs.reduce((s, l) => s + l.minutes, 0) });
+  })
+);
+
+// POST /api/production/items/:id/time/start  { sector? }  -> inicia cronômetro
+router.post(
+  "/items/:id/time/start",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const item = await ensureItem(req.params.id, req.user!.organizationId);
+    const input = z.object({ sector: z.enum(PRODUCTION_SECTORS).optional() }).parse(req.body);
+    const running = await prisma.productionTimeLog.findFirst({ where: { userId: req.user!.id, endedAt: null }, select: { id: true } });
+    if (running) throw new BadRequestError("Você já tem um apontamento em andamento. Finalize-o primeiro.");
+    const sector = input.sector ?? (item.sector as never) ?? PRODUCTION_SECTORS[0];
+    const log = await prisma.productionTimeLog.create({
+      data: { organizationId: req.user!.organizationId, itemId: item.id, sector, userId: req.user!.id, startedAt: new Date() },
+      select: timeLogSelect,
+    });
+    return ok(res, serializeLog(log), "Cronômetro iniciado");
+  })
+);
+
+// POST /api/production/time/:logId/stop  { note? }
+router.post(
+  "/time/:logId/stop",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const cur = await prisma.productionTimeLog.findFirst({
+      where: { id: req.params.logId, organizationId: req.user!.organizationId },
+    });
+    if (!cur) throw new NotFoundError("Apontamento não encontrado");
+    if (cur.endedAt) throw new BadRequestError("Este apontamento já foi encerrado");
+    if (cur.userId !== req.user!.id) throw new BadRequestError("Só quem iniciou pode encerrar este apontamento");
+    const input = z.object({ note: z.string().trim().max(500).optional().nullable().or(z.literal("")) }).parse(req.body);
+    const endedAt = new Date();
+    const minutes = Math.max(1, Math.round((endedAt.getTime() - cur.startedAt.getTime()) / 60000));
+    const log = await prisma.productionTimeLog.update({
+      where: { id: cur.id },
+      data: { endedAt, minutes, note: nn(input.note) },
+      select: timeLogSelect,
+    });
+    return ok(res, serializeLog(log), `Apontamento encerrado (${minutes} min)`);
+  })
+);
+
+// POST /api/production/items/:id/time  { sector?, minutes, startedAt?, note? }  -> lançamento manual
+router.post(
+  "/items/:id/time",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const item = await ensureItem(req.params.id, req.user!.organizationId);
+    const input = z
+      .object({
+        sector: z.enum(PRODUCTION_SECTORS).optional(),
+        minutes: z.number().int().min(1).max(24 * 60),
+        startedAt: z.coerce.date().optional(),
+        note: z.string().trim().max(500).optional().nullable().or(z.literal("")),
+      })
+      .parse(req.body);
+    const startedAt = input.startedAt ?? new Date();
+    const log = await prisma.productionTimeLog.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        itemId: item.id,
+        sector: input.sector ?? (item.sector as never) ?? PRODUCTION_SECTORS[0],
+        userId: req.user!.id,
+        startedAt,
+        endedAt: new Date(startedAt.getTime() + input.minutes * 60000),
+        minutes: input.minutes,
+        manual: true,
+        note: nn(input.note),
+      },
+      select: timeLogSelect,
+    });
+    return ok(res, serializeLog(log), "Apontamento registrado");
+  })
+);
+
+// DELETE /api/production/time/:logId
+router.delete(
+  "/time/:logId",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const cur = await prisma.productionTimeLog.findFirst({
+      where: { id: req.params.logId, organizationId: req.user!.organizationId },
+      select: { id: true },
+    });
+    if (!cur) throw new NotFoundError("Apontamento não encontrado");
+    await prisma.productionTimeLog.delete({ where: { id: cur.id } });
+    return ok(res, { id: cur.id }, "Apontamento removido");
+  })
+);
+
 // PATCH /api/production/items/:id
 router.patch(
   "/items/:id",
