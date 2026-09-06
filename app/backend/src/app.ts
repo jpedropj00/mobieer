@@ -33,6 +33,7 @@ import briefingRoutes from "./modules/briefing/briefing.routes";
 import appliancesRoutes from "./modules/appliances/appliances.routes";
 import measurementsRoutes from "./modules/measurements/measurements.routes";
 import techProjectRoutes from "./modules/techproject/techproject.routes";
+import productionRoutes from "./modules/production/production.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -82,6 +83,7 @@ export function createApp() {
   app.use("/api/appliances", appliancesRoutes);
   app.use("/api/measurements", measurementsRoutes);
   app.use("/api/tech-approval", techProjectRoutes);
+  app.use("/api/production", productionRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

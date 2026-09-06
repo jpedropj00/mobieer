@@ -14,6 +14,11 @@ import { recomputeSignatureStatus } from "../documents/documents.routes";
 import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
 import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "../techproject/techproject.service";
+import {
+  getOrCreateOrder as getOrCreateProductionOrder,
+  orderInclude as productionInclude,
+  serializeOrder as serializeProductionOrder,
+} from "../production/production.service";
 
 const router = Router();
 
@@ -200,6 +205,7 @@ router.get(
         feedbackFormUrl: true,
         manager: { select: { name: true } },
         technicalApproval: { select: { status: true, approvedAt: true } },
+        productionOrder: { select: { stage: true, estimatedDeliveryAt: true, deliveredAt: true } },
         assistances: {
           select: {
             id: true,
@@ -235,6 +241,8 @@ router.get(
     return ok(res, {
       ...project,
       technicalApproval: ta && ta.status !== "DRAFT" ? ta : null,
+      productionOrder: undefined,
+      production: project.productionOrder ?? null,
       feedbackFormUrl: project.feedbackFormUrl || env.clientFeedbackFormUrl || null,
       documents: docs.map((d) => ({
         ...d,
@@ -587,6 +595,8 @@ router.post(
       },
       include: approvalInclude,
     });
+    // Aprovado -> entra na esteira de produção (etapa "liberado").
+    await getOrCreateProductionOrder(project.id, project.organizationId);
     if (project.managerId) {
       await prisma.notification.create({
         data: {
@@ -624,6 +634,22 @@ router.post(
       });
     }
     return ok(res, serializeApproval(updated, { includeSignature: true }), "Enviamos seu pedido de ajustes à equipe");
+  })
+);
+
+// ============================================================
+// ESTEIRA DE PRODUÇÃO (cliente acompanha)
+// ============================================================
+
+router.get(
+  "/projects/:id/production",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const order = await prisma.productionOrder.findUnique({
+      where: { projectId: project.id },
+      include: productionInclude,
+    });
+    return ok(res, order ? serializeProductionOrder(order) : null);
   })
 );
 

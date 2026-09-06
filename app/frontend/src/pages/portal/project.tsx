@@ -17,6 +17,7 @@ import { portalDownload, portalGet, portalPost } from "@/services/portal-api";
 import { PortalApplianceSheet } from "./appliance-sheet";
 import { PortalMeasurement } from "./measurement";
 import { PortalTechApproval } from "./tech-approval";
+import { PortalProduction } from "./production";
 
 type Doc = {
   id: string;
@@ -55,6 +56,7 @@ type ProjectDetail = {
   feedbackFormUrl: string | null;
   manager: { name: string } | null;
   technicalApproval: { status: string; approvedAt: string | null } | null;
+  production: { stage: string; estimatedDeliveryAt: string | null; deliveredAt: string | null } | null;
   documents: Doc[];
   assistances: Assistance[];
 };
@@ -234,6 +236,7 @@ export function PortalProjectPage() {
           <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
+          <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="fotos">Fotos</TabsTrigger>
@@ -261,6 +264,10 @@ export function PortalProjectPage() {
 
         <TabsContent value="projeto">
           <PortalTechApproval projectId={p.id} />
+        </TabsContent>
+
+        <TabsContent value="producao">
+          <PortalProduction projectId={p.id} />
         </TabsContent>
 
         <TabsContent value="ficha">

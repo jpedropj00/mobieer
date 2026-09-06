@@ -873,6 +873,41 @@ async function main() {
     });
   }
 
+  console.log("[SEED] Criando esteira de produção do projeto piloto...");
+  {
+    const D = 86400000;
+    const released = new Date(Date.now() - 15 * D); // logo após a aprovação do projeto técnico
+    const stages: { stage: "RELEASED" | "IN_PRODUCTION" | "PRE_ASSEMBLY" | "OUT_FOR_DELIVERY" | "DELIVERED"; at: Date; note: string }[] = [
+      { stage: "RELEASED", at: released, note: "Projeto liberado para produção" },
+      { stage: "IN_PRODUCTION", at: new Date(released.getTime() + 2 * D), note: "Corte e usinagem iniciados" },
+      { stage: "PRE_ASSEMBLY", at: new Date(released.getTime() + 9 * D), note: "Módulos conferidos na fábrica" },
+      { stage: "OUT_FOR_DELIVERY", at: new Date(released.getTime() + 11 * D), note: "Equipe de montagem a caminho" },
+      { stage: "DELIVERED", at: new Date(released.getTime() + 12 * D), note: "Entrega e montagem concluídas" },
+    ];
+    await prisma.productionOrder.create({
+      data: {
+        organizationId: ORG_ID,
+        projectId: projeto.id,
+        stage: "DELIVERED",
+        releasedAt: stages[0].at,
+        productionStartedAt: stages[1].at,
+        preAssemblyAt: stages[2].at,
+        outForDeliveryAt: stages[3].at,
+        deliveredAt: stages[4].at,
+        estimatedDeliveryAt: new Date(released.getTime() + 12 * D),
+        notes: "Entrega dentro do prazo previsto.",
+        events: {
+          create: stages.map((s) => ({
+            stage: s.stage,
+            note: s.note,
+            createdAt: s.at,
+            createdById: userIds["Marcos Vinícius"] ?? adminId,
+          })),
+        },
+      },
+    });
+  }
+
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");
   const TEMPLATES: { file: string; name: string; type: "MANUAL_GARANTIA" | "VISTORIA_CHECKLIST" | "CRONOGRAMA" | "VISTORIA_FOTOGRAFICA"; requiresSignature: boolean; signerRoles: string[] }[] = [
     { file: "CERTIFICADO GARANTIA .pdf", name: "Manual de Uso e Certificado de Garantia", type: "MANUAL_GARANTIA", requiresSignature: true, signerRoles: ["MOBIEER", "CLIENTE"] },

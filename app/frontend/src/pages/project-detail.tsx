@@ -21,6 +21,7 @@ import { errorMessage } from "@/lib/utils";
 import { ApplianceSheetInternal } from "./appliance-sheet-internal";
 import { MeasurementProjectPanel } from "./measurements";
 import { TechApprovalInternal } from "./tech-approval-internal";
+import { ProductionProjectPanel } from "./production";
 
 type Project = {
   id: string;
@@ -183,6 +184,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
+          <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
 
@@ -293,6 +295,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="projeto">
           <TechApprovalInternal projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="producao">
+          <ProductionProjectPanel projectId={projectId} canManage={canManageAccounts} />
         </TabsContent>
 
         <TabsContent value="portal" className="space-y-4">

@@ -93,6 +93,7 @@ model User {
   reviewedApplianceSheets  ApplianceSheet[]      @relation("ApplianceSheetReviewer")
   measurementVisits        MeasurementVisit[]    @relation("MeasurementTechnician")
   publishedTechApprovals   TechnicalProjectApproval[] @relation("TechApprovalPublisher")
+  productionStageEvents    ProductionStageEvent[] @relation("ProductionStageEventAuthor")
 
   @@index([roleId])
   @@index([organizationId])
@@ -176,6 +177,7 @@ model Organization {
   applianceSheets     ApplianceSheet[]
   measurementVisits   MeasurementVisit[]
   technicalApprovals  TechnicalProjectApproval[]
+  productionOrders    ProductionOrder[]
 
   @@index([enterpriseId])
 }
@@ -977,6 +979,7 @@ model Project {
   applianceSheet ApplianceSheet?
   measurementVisits MeasurementVisit[]
   technicalApproval TechnicalProjectApproval?
+  productionOrder ProductionOrder?
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -2367,4 +2370,53 @@ model TechnicalProjectApproval {
   updatedAt               DateTime           @updatedAt
 
   @@index([organizationId, status])
+}
+
+// ============================================================
+// FASE 2 — Esteira de produção
+// Depois que o cliente aprova o projeto técnico, o pedido entra na
+// esteira: liberado -> em produção -> pré-montagem -> em entrega ->
+// entregue. A equipe avança as etapas; o cliente acompanha pelo portal.
+// ============================================================
+
+enum ProductionStage {
+  RELEASED // liberado para produção (projeto técnico aprovado)
+  IN_PRODUCTION // em produção na fábrica
+  PRE_ASSEMBLY // pré-montagem / conferência dos módulos
+  OUT_FOR_DELIVERY // em rota de entrega e montagem
+  DELIVERED // entregue e montado
+}
+
+model ProductionOrder {
+  id                  String                 @id @default(cuid())
+  organizationId      String
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId           String                 @unique
+  project             Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage               ProductionStage        @default(RELEASED)
+  releasedAt          DateTime? // entrou na esteira (projeto técnico aprovado)
+  productionStartedAt DateTime?
+  preAssemblyAt       DateTime?
+  outForDeliveryAt    DateTime?
+  deliveredAt         DateTime?
+  estimatedDeliveryAt DateTime? // previsão de entrega informada pela equipe
+  notes               String?                @db.Text
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  events              ProductionStageEvent[]
+
+  @@index([organizationId, stage])
+}
+
+model ProductionStageEvent {
+  id          String          @id @default(cuid())
+  orderId     String
+  order       ProductionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stage       ProductionStage
+  note        String?
+  createdAt   DateTime        @default(now())
+  createdById String?
+  createdBy   User?           @relation("ProductionStageEventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
 }
