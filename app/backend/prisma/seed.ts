@@ -898,7 +898,7 @@ async function main() {
         { stage: "DELIVERED", label: "Entregue", startAt: iso(stages[4].at), endAt: iso(stages[4].at), durationDays: 0, note: null },
       ],
     };
-    await prisma.productionOrder.create({
+    const order364 = await prisma.productionOrder.create({
       data: {
         organizationId: ORG_ID,
         projectId: projeto.id,
@@ -923,6 +923,84 @@ async function main() {
         },
       },
     });
+    // Itens do pedido 364-1 (todos concluídos — pedido já entregue).
+    for (const [i, it] of [
+      { ambiente: "Recepção", descricao: "Balcão de atendimento", material: "MDF Carvalho 18mm" },
+      { ambiente: "Recepção", descricao: "Painel ripado", material: "MDF Carvalho 18mm" },
+      { ambiente: "Copa", descricao: "Armário inferior 2 portas", material: "MDF Branco 18mm" },
+      { ambiente: "Copa", descricao: "Aéreo basculante", material: "MDF Branco 18mm" },
+      { ambiente: "Sala", descricao: "Guarda-volumes 8 portas", material: "MDF Branco 18mm" },
+    ].entries()) {
+      await prisma.productionItem.create({
+        data: {
+          organizationId: ORG_ID,
+          orderId: order364.id,
+          ambiente: it.ambiente,
+          descricao: it.descricao,
+          material: it.material,
+          quantidade: 1,
+          status: "DONE",
+          position: i,
+          startedAt: stages[1].at,
+          completedAt: stages[3].at,
+        },
+      });
+    }
+
+    // Segundo projeto EM PRODUÇÃO — abastece o quadro da fábrica.
+    const proj402 = await prisma.project.create({
+      data: {
+        organizationId: ORG_ID,
+        clientId: juliana.id,
+        code: "402-1",
+        name: "Apartamento — Cozinha e Home",
+        description: "Cozinha em L, ilha central e painel de home theater.",
+        status: "ACTIVE",
+        startAt: new Date(Date.now() - 6 * D),
+        managerId: userIds["Marcos Vinícius"] ?? adminId,
+      },
+    });
+    const order402 = await prisma.productionOrder.create({
+      data: {
+        organizationId: ORG_ID,
+        projectId: proj402.id,
+        stage: "IN_PRODUCTION",
+        releasedAt: new Date(Date.now() - 5 * D),
+        productionStartedAt: new Date(Date.now() - 4 * D),
+        estimatedDeliveryAt: new Date(Date.now() + 8 * D),
+        events: {
+          create: [
+            { stage: "RELEASED", note: "Projeto liberado para produção", createdAt: new Date(Date.now() - 5 * D), createdById: userIds["Marcos Vinícius"] ?? adminId },
+            { stage: "IN_PRODUCTION", note: "Corte iniciado", createdAt: new Date(Date.now() - 4 * D), createdById: userIds["Marcos Vinícius"] ?? adminId },
+          ],
+        },
+      },
+    });
+    const floor: { descricao: string; ambiente: string; sector: "CORTE" | "FITA_BORDA" | "FURACAO" | "PRE_MONTAGEM" | "EMBALAGEM" | "EXPEDICAO" | null; status: "PENDING" | "IN_PROGRESS" }[] = [
+      { descricao: "Ilha central", ambiente: "Cozinha", sector: "PRE_MONTAGEM", status: "IN_PROGRESS" },
+      { descricao: "Torre quente (forno + micro-ondas)", ambiente: "Cozinha", sector: "FURACAO", status: "IN_PROGRESS" },
+      { descricao: "Balcão em L", ambiente: "Cozinha", sector: "FITA_BORDA", status: "IN_PROGRESS" },
+      { descricao: "Aéreos 4 módulos", ambiente: "Cozinha", sector: "CORTE", status: "IN_PROGRESS" },
+      { descricao: "Painel ripado do home", ambiente: "Home", sector: "CORTE", status: "IN_PROGRESS" },
+      { descricao: "Rack suspenso", ambiente: "Home", sector: null, status: "PENDING" },
+      { descricao: "Adega climatizada (nicho)", ambiente: "Cozinha", sector: null, status: "PENDING" },
+    ];
+    for (const [i, it] of floor.entries()) {
+      await prisma.productionItem.create({
+        data: {
+          organizationId: ORG_ID,
+          orderId: order402.id,
+          ambiente: it.ambiente,
+          descricao: it.descricao,
+          material: "MDF Branco 18mm",
+          quantidade: 1,
+          status: it.status,
+          sector: it.sector,
+          position: i,
+          startedAt: it.status === "IN_PROGRESS" ? new Date(Date.now() - 3 * D) : null,
+        },
+      });
+    }
   }
 
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");

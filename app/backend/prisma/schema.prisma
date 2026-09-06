@@ -94,6 +94,7 @@ model User {
   measurementVisits        MeasurementVisit[]    @relation("MeasurementTechnician")
   publishedTechApprovals   TechnicalProjectApproval[] @relation("TechApprovalPublisher")
   productionStageEvents    ProductionStageEvent[] @relation("ProductionStageEventAuthor")
+  productionItemEvents     ProductionItemEvent[] @relation("ProductionItemEventAuthor")
   createdFiscalInvoices    FiscalInvoice[]        @relation("FiscalInvoiceCreator")
   promobImports            PromobImport[]         @relation("PromobImportCreator")
 
@@ -180,6 +181,7 @@ model Organization {
   measurementVisits   MeasurementVisit[]
   technicalApprovals  TechnicalProjectApproval[]
   productionOrders    ProductionOrder[]
+  productionItems     ProductionItem[]
   fiscalInvoices      FiscalInvoice[]
   promobImports       PromobImport[]
 
@@ -2418,6 +2420,7 @@ model ProductionOrder {
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   events              ProductionStageEvent[]
+  items               ProductionItem[]
 
   @@index([organizationId, stage])
 }
@@ -2502,7 +2505,73 @@ model PromobImport {
   createdById    String?
   createdBy      User?        @relation("PromobImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt      DateTime     @default(now())
+  generatedItems ProductionItem[]
 
   @@index([organizationId])
   @@index([projectId])
+}
+
+// ============================================================
+// FASE 3 — Produção (chão de fábrica)
+// A ProductionOrder (Fase 2) rastreia o pedido em nível macro. Aqui os
+// módulos/peças de cada pedido percorrem os setores da fábrica com
+// apontamento por operador: corte -> fita de borda -> furação ->
+// pré-montagem -> embalagem -> expedição.
+// ============================================================
+
+enum ProductionItemStatus {
+  PENDING // ainda não entrou na fábrica
+  IN_PROGRESS // em algum setor
+  DONE // passou por todos os setores
+  CANCELLED
+}
+
+enum ProductionSector {
+  CORTE
+  FITA_BORDA
+  FURACAO
+  PRE_MONTAGEM
+  EMBALAGEM
+  EXPEDICAO
+}
+
+model ProductionItem {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orderId        String
+  order          ProductionOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ambiente       String?
+  descricao      String
+  referencia     String? // referência do Promob, quando veio de um import
+  quantidade     Int                  @default(1)
+  material       String?
+  status         ProductionItemStatus @default(PENDING)
+  sector         ProductionSector? // setor atual (null se PENDING/DONE/CANCELLED)
+  sourceImportId String?
+  sourceImport   PromobImport?        @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  position       Int                  @default(0)
+  notes          String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  events         ProductionItemEvent[]
+
+  @@index([organizationId, status, sector])
+  @@index([orderId])
+}
+
+model ProductionItemEvent {
+  id          String            @id @default(cuid())
+  itemId      String
+  item        ProductionItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sector      ProductionSector? // setor concluído/afetado (null em criação/cancelamento)
+  action      String // ENTER | COMPLETE | JUMP | REOPEN | CANCEL | NOTE
+  note        String?
+  createdById String?
+  createdBy   User?             @relation("ProductionItemEventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now())
+
+  @@index([itemId])
 }

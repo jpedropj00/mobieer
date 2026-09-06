@@ -16,6 +16,7 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
+import { ProductionItemsPanel } from "./production-items";
 
 export const PRODUCTION_STAGES = ["RELEASED", "IN_PRODUCTION", "PRE_ASSEMBLY", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
@@ -279,6 +280,8 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
           )}
         </CardContent>
       </Card>
+
+      <ProductionItemsPanel projectId={projectId} canManage={canManage} />
 
       {o.events.length > 0 && (
         <Card>
