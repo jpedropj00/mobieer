@@ -8,7 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storage, buildStorageKey } from "../../lib/storage";
-import { detectFormat, parsePromobXml } from "./promob.service";
+import { decodeXmlBuffer, detectFormat, parsePromobXml } from "./promob.service";
 
 const router = Router();
 router.use(authenticate);
@@ -88,7 +88,7 @@ router.post(
 
     if (format === "XML") {
       try {
-        const p = parsePromobXml(req.file.buffer.toString("utf8"));
+        const p = parsePromobXml(decodeXmlBuffer(req.file.buffer));
         parsed = p;
         itemCount = p.totals.itens;
         status = p.totals.itens > 0 || p.totals.ambientes > 0 ? "PARSED" : "PARSE_FAILED";

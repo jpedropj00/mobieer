@@ -12,6 +12,7 @@ import { createRequisition } from "../requisitions/requisitions.service";
 import {
   PRODUCTION_SECTORS,
   SECTOR_LABEL,
+  computeFactoryLoad,
   itemInclude,
   nextSector,
   sectorIndex,
@@ -57,6 +58,19 @@ router.get(
       items: serial.filter((i) => i.sector === s),
     }));
     return ok(res, { columns });
+  })
+);
+
+// GET /api/production/load  -> carga da fábrica por setor (todos os projetos)
+router.get(
+  "/load",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const items = await prisma.productionItem.findMany({
+      where: { organizationId: req.user!.organizationId, status: { in: ["IN_PROGRESS", "PENDING"] } },
+      include: itemInclude,
+    });
+    return ok(res, computeFactoryLoad(items.map(serializeItem)));
   })
 );
 

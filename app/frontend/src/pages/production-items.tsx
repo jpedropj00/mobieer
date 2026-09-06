@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiGet, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
-import { errorMessage } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 
 export const SECTORS = ["CORTE", "FITA_BORDA", "FURACAO", "PRE_MONTAGEM", "EMBALAGEM", "EXPEDICAO"] as const;
 export type Sector = (typeof SECTORS)[number];
@@ -37,10 +37,22 @@ export type ProductionItem = {
   sector: Sector | null;
   sectorLabel: string | null;
   nextSector: Sector | null;
+  daysInSector: number | null;
   notes: string | null;
   events: { id: string; sectorLabel: string | null; action: string; note: string | null; createdAt: string; author: string | null }[];
   project?: { id: string; code: string; name: string };
 };
+type SectorLoad = {
+  sector: Sector;
+  label: string;
+  count: number;
+  upstream: number;
+  stale: number;
+  avgDaysInSector: number;
+  maxDaysInSector: number;
+  oldest: { id: string; descricao: string; projectCode: string | null; daysInSector: number } | null;
+};
+type FactoryLoad = { pending: number; inProgress: number; staleTotal: number; sectors: SectorLoad[] };
 type Summary = { total: number; pending: number; inProgress: number; done: number; cancelled: number; bySector: Record<string, number>; progress: number };
 
 const fmtDateTime = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -59,6 +71,7 @@ function useItemActions(invalidate: () => void) {
   const done = () => {
     invalidate();
     qc.invalidateQueries({ queryKey: ["factory-board"] });
+    qc.invalidateQueries({ queryKey: ["factory-load"] });
   };
   const advance = useMutation({
     mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => apiPost(`/production/items/${id}/advance`, body),
@@ -272,20 +285,60 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
 
 type BoardColumn = { sector: Sector; label: string; items: ProductionItem[] };
 
+const STALE_DAYS = 5;
+const agingTone = (d: number | null) =>
+  d == null ? "text-muted-foreground" : d >= STALE_DAYS ? "text-destructive" : d >= 3 ? "text-warning" : "text-muted-foreground";
+
 export function FactoryBoardPage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("organization.manage");
   const q = useQuery({ queryKey: ["factory-board"], queryFn: () => apiGet<{ data: { columns: BoardColumn[] } }>("/production/board") });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["factory-board"] });
+  const load = useQuery({ queryKey: ["factory-load"], queryFn: () => apiGet<{ data: FactoryLoad }>("/production/load") });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["factory-board"] });
+    qc.invalidateQueries({ queryKey: ["factory-load"] });
+  };
 
   const total = useMemo(() => (q.data?.data.columns ?? []).reduce((n, c) => n + c.items.length, 0), [q.data]);
   if (q.isLoading) return <PageSkeleton />;
   const columns = q.data?.data.columns ?? [];
+  const ld = load.data?.data;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Fábrica" description="Itens em produção por setor. Cada operador conclui o seu setor e o item avança." />
+
+      {ld && ld.inProgress + ld.pending > 0 && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="flex flex-wrap items-center gap-3 text-sm">
+              <span>Carga da fábrica</span>
+              <span className="font-normal text-muted-foreground">{ld.inProgress} em produção · {ld.pending} na fila</span>
+              {ld.staleTotal > 0 && (
+                <Badge variant="danger">{ld.staleTotal} parado(s) há {STALE_DAYS}+ dias</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {ld.sectors.map((s) => (
+                <div key={s.sector} className="rounded-lg border border-border p-2.5">
+                  <p className="text-xs font-medium">{s.label}</p>
+                  <p className="text-lg font-semibold">{s.count}</p>
+                  <p className="text-[11px] text-muted-foreground">{s.upstream} a caminho</p>
+                  {s.count > 0 && (
+                    <p className={cn("text-[11px]", agingTone(s.maxDaysInSector))}>
+                      máx {s.maxDaysInSector}d · méd {s.avgDaysInSector}d
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {total === 0 ? (
         <EmptyState title="Nada em produção" description="Os itens aparecem aqui quando entram na fábrica (aba Produção do projeto)." />
       ) : (
@@ -302,7 +355,12 @@ export function FactoryBoardPage() {
                 ) : (
                   col.items.map((it) => (
                     <div key={it.id} className="rounded-lg border border-border bg-card p-3">
-                      <p className="text-sm font-medium leading-tight">{it.descricao}{it.quantidade > 1 ? ` ×${it.quantidade}` : ""}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium leading-tight">{it.descricao}{it.quantidade > 1 ? ` ×${it.quantidade}` : ""}</p>
+                        {it.daysInSector != null && it.daysInSector >= 3 && (
+                          <span className={cn("shrink-0 text-[11px] font-medium", agingTone(it.daysInSector))}>{it.daysInSector}d</span>
+                        )}
+                      </div>
                       {it.project && (
                         <Link to={`/clientes-projetos/${it.project.id}`} className="text-xs text-muted-foreground hover:underline">
                           {it.project.code}

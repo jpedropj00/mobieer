@@ -18,6 +18,21 @@ export function detectFormat(fileName: string, mime: string): "XML" | "PDF" | "O
   return "OTHER";
 }
 
+/**
+ * Decodifica o buffer do XML respeitando a declaração `encoding=` do prólogo.
+ * O Promob costuma exportar ISO-8859-1 / Windows-1252 (acentos quebram em UTF-8).
+ * BOM UTF-8/UTF-16 também é tratado.
+ */
+export function decodeXmlBuffer(buf: Buffer): string {
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return buf.slice(3).toString("utf8");
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return buf.slice(2).toString("utf16le");
+  const head = buf.slice(0, 200).toString("latin1").toLowerCase();
+  const m = head.match(/encoding\s*=\s*["']([^"']+)["']/);
+  const enc = (m?.[1] ?? "utf-8").replace(/[^a-z0-9-]/g, "");
+  if (enc === "iso-8859-1" || enc === "latin1" || enc === "windows-1252" || enc === "cp1252") return buf.toString("latin1");
+  return buf.toString("utf8");
+}
+
 function attr(tag: string, name: string): string | null {
   const m = tag.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, "i"));
   return m ? m[1].trim() || null : null;

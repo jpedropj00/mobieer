@@ -64,7 +64,18 @@ type ItemRow = {
   order?: { id: string; projectId: string; project?: { id: string; code: string; name: string } | null } | null;
 };
 
+const DAY = 86400000;
+/** Quando o item entrou no setor atual = createdAt do último evento de movimento. */
+const MOVE_ACTIONS = new Set(["ENTER", "JUMP", "REOPEN", "COMPLETE"]);
+function enteredSectorAt(i: ItemRow): Date | null {
+  if (i.status !== "IN_PROGRESS" || !i.sector) return null;
+  const moves = (i.events ?? []).filter((e) => MOVE_ACTIONS.has(e.action));
+  return moves.length ? moves[moves.length - 1].createdAt : i.startedAt;
+}
+
 export function serializeItem(i: ItemRow) {
+  const enteredAt = enteredSectorAt(i);
+  const daysInSector = enteredAt ? Math.floor((Date.now() - enteredAt.getTime()) / DAY) : null;
   return {
     id: i.id,
     ambiente: i.ambiente,
@@ -82,6 +93,8 @@ export function serializeItem(i: ItemRow) {
     notes: i.notes,
     startedAt: i.startedAt,
     completedAt: i.completedAt,
+    enteredSectorAt: enteredAt,
+    daysInSector,
     createdAt: i.createdAt,
     updatedAt: i.updatedAt,
     events:
@@ -97,6 +110,58 @@ export function serializeItem(i: ItemRow) {
     project: i.order?.project
       ? { id: i.order.project.id, code: i.order.project.code, name: i.order.project.name }
       : undefined,
+  };
+}
+
+/** Dias a partir dos quais um item "parado" no setor vira alerta. */
+export const STALE_SECTOR_DAYS = 5;
+
+type SerializedItem = ReturnType<typeof serializeItem>;
+
+/**
+ * Carga da fábrica: para cada setor, quantos itens estão nele agora, quantos
+ * estão a caminho (setores anteriores + PENDING), e há quanto tempo os itens
+ * estão parados (média / máximo / mais antigo). Espera itens já serializados,
+ * apenas os ativos (não CANCELLED/DONE aparecem como carga; DONE é ignorado).
+ */
+export function computeFactoryLoad(items: SerializedItem[]) {
+  const active = items.filter((i) => i.status === "IN_PROGRESS" || i.status === "PENDING");
+  const pending = active.filter((i) => i.status === "PENDING").length;
+
+  const sectors = PRODUCTION_SECTORS.map((sector, idx) => {
+    const here = active.filter((i) => i.status === "IN_PROGRESS" && i.sector === sector);
+    const upstream = active.filter(
+      (i) => i.status === "PENDING" || (i.status === "IN_PROGRESS" && i.sectorIndex >= 0 && i.sectorIndex < idx)
+    ).length;
+    const days = here.map((i) => i.daysInSector ?? 0);
+    const oldestItem = here.reduce<SerializedItem | null>(
+      (acc, i) => (acc == null || (i.daysInSector ?? 0) > (acc.daysInSector ?? 0) ? i : acc),
+      null
+    );
+    return {
+      sector,
+      label: SECTOR_LABEL[sector],
+      count: here.length,
+      upstream,
+      stale: here.filter((i) => (i.daysInSector ?? 0) >= STALE_SECTOR_DAYS).length,
+      avgDaysInSector: days.length ? Math.round((days.reduce((a, b) => a + b, 0) / days.length) * 10) / 10 : 0,
+      maxDaysInSector: days.length ? Math.max(...days) : 0,
+      oldest: oldestItem
+        ? {
+            id: oldestItem.id,
+            descricao: oldestItem.descricao,
+            projectCode: oldestItem.project?.code ?? null,
+            daysInSector: oldestItem.daysInSector ?? 0,
+          }
+        : null,
+    };
+  });
+
+  return {
+    pending,
+    inProgress: active.length - pending,
+    staleTotal: sectors.reduce((n, s) => n + s.stale, 0),
+    sectors,
   };
 }
 
