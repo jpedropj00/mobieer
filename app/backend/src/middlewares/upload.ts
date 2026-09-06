@@ -56,6 +56,17 @@ export const uploadDocument = multer({
   },
 });
 
+// Exportação do Promob (orçamento / lista de ambientes). Filtro por extensão:
+// o Promob exporta XML, e às vezes o orçamento sai como PDF.
+export const uploadPromob = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/\.(xml|pdf|json|txt|promob)$/i.test(file.originalname)) cb(null, true);
+    else cb(new Error("Envie o arquivo exportado do Promob (.xml ou .pdf)"));
+  },
+});
+
 // Arquivos de dados (ex.: exportação do relógio de ponto): CSV/TXT/AFD.
 // Filtro por extensão, pois relógios baratos mandam mimetypes inconsistentes.
 export const uploadDataFile = multer({

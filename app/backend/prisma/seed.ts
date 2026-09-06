@@ -884,6 +884,20 @@ async function main() {
       { stage: "OUT_FOR_DELIVERY", at: new Date(released.getTime() + 11 * D), note: "Equipe de montagem a caminho" },
       { stage: "DELIVERED", at: new Date(released.getTime() + 12 * D), note: "Entrega e montagem concluídas" },
     ];
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const schedule = {
+      source: "HEURISTIC",
+      generatedAt: released.toISOString(),
+      summary: "Cronograma estimado a partir das durações padrão de produção.",
+      deliveryAt: iso(stages[4].at),
+      steps: [
+        { stage: "RELEASED", label: "Liberado para produção", startAt: iso(stages[0].at), endAt: iso(stages[0].at), durationDays: 0, note: "Projeto técnico aprovado" },
+        { stage: "IN_PRODUCTION", label: "Em produção", startAt: iso(stages[1].at), endAt: iso(stages[2].at), durationDays: 7, note: null },
+        { stage: "PRE_ASSEMBLY", label: "Pré-montagem", startAt: iso(stages[2].at), endAt: iso(stages[3].at), durationDays: 2, note: null },
+        { stage: "OUT_FOR_DELIVERY", label: "Em entrega e montagem", startAt: iso(stages[3].at), endAt: iso(stages[4].at), durationDays: 1, note: null },
+        { stage: "DELIVERED", label: "Entregue", startAt: iso(stages[4].at), endAt: iso(stages[4].at), durationDays: 0, note: null },
+      ],
+    };
     await prisma.productionOrder.create({
       data: {
         organizationId: ORG_ID,
@@ -896,6 +910,9 @@ async function main() {
         deliveredAt: stages[4].at,
         estimatedDeliveryAt: new Date(released.getTime() + 12 * D),
         notes: "Entrega dentro do prazo previsto.",
+        scheduleJson: schedule,
+        scheduleSource: "HEURISTIC",
+        scheduleGeneratedAt: released,
         events: {
           create: stages.map((s) => ({
             stage: s.stage,

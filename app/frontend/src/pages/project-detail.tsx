@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Download, FileSignature, Loader2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Download, FileSignature, Loader2, Send, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import { ApplianceSheetInternal } from "./appliance-sheet-internal";
 import { MeasurementProjectPanel } from "./measurements";
 import { TechApprovalInternal } from "./tech-approval-internal";
 import { ProductionProjectPanel } from "./production";
+import { PromobPanel } from "./promob-panel";
 
 type Project = {
   id: string;
@@ -44,6 +45,9 @@ type Doc = {
   requiresSignature: boolean;
   signerRoles: string[];
   signatureStatus: "NOT_REQUIRED" | "PENDING" | "SIGNED";
+  signatureProvider?: string | null;
+  signatureProviderUrl?: string | null;
+  signatureProviderStatus?: string | null;
   signatures: { id: string; role: string; signerName: string; signedAt: string }[];
   version: number;
   createdAt: string;
@@ -97,8 +101,35 @@ export function ProjectDetailPage() {
   const [formUrl, setFormUrl] = useState<string | null>(null);
   const [signDoc, setSignDoc] = useState<Doc | null>(null);
   const [signForm, setSignForm] = useState<{ role: string; signerName: string; dataUrl: string | null }>({ role: "", signerName: "", dataUrl: null });
+  const [provDoc, setProvDoc] = useState<Doc | null>(null);
+  const [provSigners, setProvSigners] = useState<Record<string, { name: string; email: string; phone: string }>>({});
 
   const refreshDocs = () => qc.invalidateQueries({ queryKey: ["project-docs", projectId] });
+
+  const sigConfig = useQuery({
+    queryKey: ["documents", "signature-config"],
+    queryFn: () => apiGet<{ data: { configured: boolean; provider: string } }>("/documents/signature/config"),
+  });
+  const requestSign = useMutation({
+    mutationFn: () => {
+      const roles = provDoc!.signerRoles.length ? provDoc!.signerRoles : ["MOBIEER", "CLIENTE"];
+      return apiPost(`/documents/${provDoc!.id}/request-signature`, {
+        signers: roles.map((role) => ({
+          role,
+          name: provSigners[role]?.name ?? "",
+          email: provSigners[role]?.email || null,
+          phone: provSigners[role]?.phone || null,
+        })),
+      });
+    },
+    onSuccess: () => {
+      toast.success("Documento enviado para assinatura online");
+      setProvDoc(null);
+      setProvSigners({});
+      refreshDocs();
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao enviar para assinatura")),
+  });
 
   const sign = useMutation({
     mutationFn: () => apiPost(`/documents/${signDoc!.id}/signatures`, { role: signForm.role, signerName: signForm.signerName, dataUrl: signForm.dataUrl }),
@@ -185,6 +216,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
+          <TabsTrigger value="promob">Promob</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
 
@@ -257,6 +289,16 @@ export function ProjectDetailPage() {
                           <FileSignature className="mr-1 h-4 w-4" /> Assinar
                         </Button>
                       )}
+                      {canManage && sigConfig.data?.data.configured && d.signatureStatus !== "SIGNED" && !d.signatureProvider && (
+                        <Button size="sm" variant="outline" onClick={() => { setProvDoc(d); setProvSigners({}); }}>
+                          <Send className="mr-1 h-4 w-4" /> Assinatura online
+                        </Button>
+                      )}
+                      {d.signatureProvider && d.signatureProviderUrl && (
+                        <a href={d.signatureProviderUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
+                          {d.signatureProviderStatus ?? "enviado"} ↗
+                        </a>
+                      )}
                       <Button size="sm" variant="outline" onClick={() => apiDownload(`/documents/${d.id}/download`, d.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
                         <Download className="h-4 w-4" />
                       </Button>
@@ -299,6 +341,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="producao">
           <ProductionProjectPanel projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="promob">
+          <PromobPanel projectId={projectId} canManage={canManageAccounts} />
         </TabsContent>
 
         <TabsContent value="portal" className="space-y-4">
@@ -398,6 +444,57 @@ export function ProjectDetailPage() {
             <Button disabled={sign.isPending || !signForm.role || signForm.signerName.trim().length < 2 || !signForm.dataUrl} onClick={() => sign.mutate()}>
               {sign.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Registrar assinatura
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!provDoc} onOpenChange={(v) => !v && setProvDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assinatura online — {provDoc?.title}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Envia o arquivo para o provedor de assinatura ({sigConfig.data?.data.provider}). Cada signatário recebe o
+            convite por e-mail (ou SMS, se só houver telefone).
+          </p>
+          <div className="space-y-4">
+            {(provDoc?.signerRoles.length ? provDoc.signerRoles : ["MOBIEER", "CLIENTE"]).map((role) => (
+              <div key={role} className="space-y-2 rounded-lg border border-border p-3">
+                <p className="text-xs font-semibold">{role}</p>
+                <Input
+                  placeholder="Nome completo"
+                  value={provSigners[role]?.name ?? ""}
+                  onChange={(e) => setProvSigners((s) => ({ ...s, [role]: { ...(s[role] ?? { email: "", phone: "" }), name: e.target.value } }))}
+                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="E-mail"
+                    value={provSigners[role]?.email ?? ""}
+                    onChange={(e) => setProvSigners((s) => ({ ...s, [role]: { ...(s[role] ?? { name: "", phone: "" }), email: e.target.value } }))}
+                  />
+                  <Input
+                    placeholder="Telefone"
+                    value={provSigners[role]?.phone ?? ""}
+                    onChange={(e) => setProvSigners((s) => ({ ...s, [role]: { ...(s[role] ?? { name: "", email: "" }), phone: e.target.value } }))}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProvDoc(null)}>Cancelar</Button>
+            <Button
+              disabled={
+                requestSign.isPending ||
+                (provDoc?.signerRoles.length ? provDoc.signerRoles : ["MOBIEER", "CLIENTE"]).some(
+                  (r) => (provSigners[r]?.name?.trim().length ?? 0) < 2 || (!provSigners[r]?.email && !provSigners[r]?.phone)
+                )
+              }
+              onClick={() => requestSign.mutate()}
+            >
+              {requestSign.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Enviar para assinatura
             </Button>
           </DialogFooter>
         </DialogContent>

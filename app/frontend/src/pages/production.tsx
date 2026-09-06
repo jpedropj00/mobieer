@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Factory, Loader2, PackageCheck, Truck } from "lucide-react";
+import { ArrowRight, CalendarRange, CheckCircle2, Factory, Loader2, PackageCheck, Sparkles, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,8 @@ export const STAGE_LABEL: Record<ProductionStage, string> = {
 
 type TimelineStep = { stage: ProductionStage; label: string; reachedAt: string | null; current: boolean; done: boolean };
 type StageEvent = { id: string; stage: ProductionStage; stageLabel: string; note: string | null; createdAt: string; author: string | null };
+type ScheduleStep = { stage: ProductionStage; label: string; startAt: string; endAt: string; durationDays: number; note: string | null };
+type Schedule = { source: "AI" | "HEURISTIC"; generatedAt: string; summary: string | null; deliveryAt: string; steps: ScheduleStep[] };
 export type ProductionOrder = {
   id: string;
   stage: ProductionStage;
@@ -38,6 +40,9 @@ export type ProductionOrder = {
   estimatedDeliveryAt: string | null;
   daysToEstimatedDelivery: number | null;
   notes: string | null;
+  schedule: Schedule | null;
+  scheduleSource: "AI" | "HEURISTIC" | null;
+  scheduleGeneratedAt: string | null;
   updatedAt: string;
   timeline: TimelineStep[];
   events: StageEvent[];
@@ -111,7 +116,15 @@ function useProductionActions(projectId: string, invalidate: () => void) {
     },
     onError: (e) => toast.error(errorMessage(e, "Falha ao salvar")),
   });
-  return { advance, patch };
+  const schedule = useMutation({
+    mutationFn: () => apiPost(`/production/projects/${projectId}/schedule`, {}),
+    onSuccess: (r: unknown) => {
+      toast.success((r as { message?: string })?.message ?? "Cronograma gerado");
+      done();
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao gerar o cronograma")),
+  });
+  return { advance, patch, schedule };
 }
 
 /* ============================ per-project panel ============================ */
@@ -124,7 +137,7 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
     qc.invalidateQueries({ queryKey: key });
     qc.invalidateQueries({ queryKey: ["production", "all"] });
   };
-  const { advance, patch } = useProductionActions(projectId, invalidate);
+  const { advance, patch, schedule } = useProductionActions(projectId, invalidate);
 
   const [dlg, setDlg] = useState(false);
   const [note, setNote] = useState("");
@@ -211,6 +224,58 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
                 Ajustar etapa…
               </Button>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="flex items-center gap-2"><CalendarRange className="h-4 w-4" /> Cronograma</span>
+            {o.schedule && (
+              <Badge variant={o.scheduleSource === "AI" ? "secondary" : "muted"}>
+                {o.scheduleSource === "AI" ? "Gerado por IA" : "Estimado"}
+                {o.scheduleGeneratedAt ? ` · ${fmtDate(o.scheduleGeneratedAt)}` : ""}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {o.schedule ? (
+            <>
+              {o.schedule.summary && <p className="text-xs text-muted-foreground">{o.schedule.summary}</p>}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="py-1.5 pr-3 text-left font-medium">Etapa</th>
+                      <th className="py-1.5 pr-3 text-left font-medium">Início</th>
+                      <th className="py-1.5 pr-3 text-left font-medium">Fim</th>
+                      <th className="py-1.5 text-left font-medium">Dias</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {o.schedule.steps.map((s) => (
+                      <tr key={s.stage} className="border-b border-border/50 last:border-0">
+                        <td className="py-1.5 pr-3">{s.label}</td>
+                        <td className="py-1.5 pr-3">{fmtDate(s.startAt)}</td>
+                        <td className="py-1.5 pr-3">{fmtDate(s.endAt)}</td>
+                        <td className="py-1.5">{s.durationDays || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground">Entrega prevista pelo cronograma: <strong className="text-foreground">{fmtDate(o.schedule.deliveryAt)}</strong></p>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Nenhum cronograma gerado ainda.</p>
+          )}
+          {canManage && (
+            <Button size="sm" variant="outline" disabled={schedule.isPending} onClick={() => schedule.mutate()}>
+              {schedule.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+              {o.schedule ? "Regenerar cronograma" : "Gerar cronograma"}
+            </Button>
           )}
         </CardContent>
       </Card>

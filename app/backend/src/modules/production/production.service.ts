@@ -57,6 +57,9 @@ type OrderRow = StageTimestamps & {
   stage: string;
   estimatedDeliveryAt: Date | null;
   notes: string | null;
+  scheduleJson?: unknown;
+  scheduleSource?: string | null;
+  scheduleGeneratedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   events?: {
@@ -95,6 +98,9 @@ export function serializeOrder(o: OrderRow) {
     estimatedDeliveryAt: o.estimatedDeliveryAt,
     daysToEstimatedDelivery,
     notes: o.notes,
+    schedule: o.scheduleJson ?? null,
+    scheduleSource: o.scheduleSource ?? null,
+    scheduleGeneratedAt: o.scheduleGeneratedAt ?? null,
     createdAt: o.createdAt,
     updatedAt: o.updatedAt,
     timeline: PRODUCTION_STAGES.map((s) => ({

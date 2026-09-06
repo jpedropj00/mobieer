@@ -36,6 +36,7 @@ const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage 
 const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
 const BriefingPage = lazy(() => import("@/pages/briefing").then((m) => ({ default: m.BriefingPage })));
 const FinancePage = lazy(() => import("@/pages/finance").then((m) => ({ default: m.FinancePage })));
+const FiscalPage = lazy(() => import("@/pages/fiscal").then((m) => ({ default: m.FiscalPage })));
 const TemplatesPage = lazy(() => import("@/pages/templates").then((m) => ({ default: m.TemplatesPage })));
 
 const PortalRoot = lazy(() => import("@/pages/portal/layout").then((m) => ({ default: m.PortalRoot })));
@@ -93,6 +94,7 @@ export const router = createBrowserRouter([
           { path: "/rh", element: <PermissionGate permission="hr.read"><HrPage /></PermissionGate> },
           { path: "/comercial", element: <PermissionGate permission="commercial.read"><CommercialPage /></PermissionGate> },
           { path: "/financeiro", element: <PermissionGate permission="finance.read"><FinancePage /></PermissionGate> },
+          { path: "/notas-fiscais", element: <PermissionGate permission="finance.read"><FiscalPage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },
           { path: "/auditoria", element: <PermissionGate permission="audit.read"><AuditPage /></PermissionGate> },

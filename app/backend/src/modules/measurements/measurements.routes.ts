@@ -8,6 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { MEASUREMENT_PERIODS, serializeVisit, techProjectDueDate, visitInclude } from "./measurements.service";
+import { notifyClientWhatsApp } from "../../lib/client-comms";
 
 const router = Router();
 router.use(authenticate);
@@ -154,6 +155,12 @@ router.patch(
     const nowScheduled = visit.status === "SCHEDULED" && (cur.status !== "SCHEDULED" || +(cur.scheduledAt ?? 0) !== +(visit.scheduledAt ?? 0));
     if (nowScheduled && visit.technicianId && visit.scheduledAt) {
       await notify(visit.technicianId, "Medição agendada", `${visit.project?.code} — ${visit.project?.name}: medição em ${visit.scheduledAt.toLocaleDateString("pt-BR")}.`);
+    }
+    if (nowScheduled && visit.scheduledAt) {
+      void notifyClientWhatsApp(
+        visit.project?.clientId,
+        `Sua medição do projeto ${visit.project?.code} foi agendada para ${visit.scheduledAt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. — MOBIEER`
+      );
     }
     return ok(res, serializeVisit(visit), "Medição atualizada");
   })

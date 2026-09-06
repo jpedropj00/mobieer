@@ -8,6 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "./techproject.service";
+import { notifyClientWhatsApp } from "../../lib/client-comms";
 
 const router = Router();
 router.use(authenticate);
@@ -15,7 +16,7 @@ router.use(authenticate);
 const nn = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 
 async function ensureProject(id: string, organizationId: string) {
-  const p = await prisma.project.findFirst({ where: { id, organizationId }, select: { id: true, code: true, name: true, managerId: true } });
+  const p = await prisma.project.findFirst({ where: { id, organizationId }, select: { id: true, code: true, name: true, managerId: true, clientId: true } });
   if (!p) throw new NotFoundError("Projeto não encontrado");
   return p;
 }
@@ -110,6 +111,12 @@ router.patch(
       data,
       include: approvalInclude,
     });
+    if (input.action === "publish") {
+      void notifyClientWhatsApp(
+        project.clientId,
+        `O projeto técnico do contrato ${project.code} está disponível no portal para sua revisão e aprovação. — MOBIEER`
+      );
+    }
     return ok(res, serializeApproval(approval, { includeSignature: true }), input.action === "publish" ? "Projeto técnico enviado ao cliente" : "Atualizado");
   })
 );

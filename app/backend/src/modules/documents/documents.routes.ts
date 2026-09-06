@@ -9,6 +9,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storage, buildStorageKey } from "../../lib/storage";
+import { SignatureError, createSignatureRequest, getSignatureStatus, signatureEnabled } from "../../lib/signature-provider";
 
 const router = Router();
 router.use(authenticate);
@@ -191,6 +192,102 @@ router.post(
     });
     const updated = await prisma.projectDocument.findUnique({ where: { id: doc.id }, select: { signatureStatus: true } });
     return ok(res, { signatureStatus: updated?.signatureStatus }, "Assinatura registrada");
+  })
+);
+
+// GET /api/documents/signature/config  -> a UI decide se mostra "enviar para assinatura"
+router.get(
+  "/signature/config",
+  requirePermission("documents.read"),
+  asyncHandler(async (_req, res) => ok(res, { configured: signatureEnabled(), provider: "clicksign" }))
+);
+
+// POST /api/documents/:id/request-signature  { signers:[{role,name,email?,phone?}], deadlineAt? }
+// Envia o arquivo ao provedor externo (Clicksign). Sem provedor => 400.
+router.post(
+  "/:id/request-signature",
+  requirePermission("documents.manage"),
+  asyncHandler(async (req, res) => {
+    const doc = await ensureDocument(req.params.id, req.user!.organizationId);
+    if (!signatureEnabled()) throw new BadRequestError("Provedor de assinatura não configurado (defina SIGNATURE_API_TOKEN)");
+
+    const roles = doc.signerRoles.length ? doc.signerRoles : ["MOBIEER", "CLIENTE"];
+    const input = z
+      .object({
+        signers: z
+          .array(
+            z.object({
+              role: z.string().trim().min(2).max(40).transform((s) => s.toUpperCase()),
+              name: z.string().trim().min(2).max(160),
+              email: z.string().email().optional().nullable().or(z.literal("")),
+              phone: z.string().trim().max(30).optional().nullable().or(z.literal("")),
+            })
+          )
+          .min(1),
+        deadlineAt: z.coerce.date().optional().nullable(),
+      })
+      .parse(req.body);
+
+    for (const s of input.signers) {
+      if (!roles.includes(s.role)) throw new BadRequestError(`Papel inválido: ${s.role}. Esperados: ${roles.join(", ")}`);
+      if (!s.email && !s.phone) throw new BadRequestError(`Informe e-mail ou telefone para ${s.name}`);
+    }
+
+    const bytes = await storage.getBytes(doc.storageKey);
+    try {
+      const result = await createSignatureRequest({
+        fileName: doc.fileName,
+        contentBase64: bytes.toString("base64"),
+        mimeType: doc.mimeType,
+        deadlineAt: input.deadlineAt ?? null,
+        signers: input.signers.map((s) => ({ name: s.name, email: s.email || null, phone: s.phone || null })),
+      });
+      const updated = await prisma.projectDocument.update({
+        where: { id: doc.id },
+        data: {
+          requiresSignature: true,
+          signatureStatus: "PENDING",
+          signatureProvider: "clicksign",
+          signatureProviderRef: result.providerRef,
+          signatureProviderUrl: result.signUrl,
+          signatureProviderStatus: result.status,
+        },
+        select: { id: true, signatureProvider: true, signatureProviderRef: true, signatureProviderUrl: true, signatureProviderStatus: true, signatureStatus: true },
+      });
+      await prisma.auditLog.create({
+        data: { userId: req.user!.id, action: "DOCUMENT_SIGNATURE_REQUESTED", entity: "ProjectDocument", entityId: doc.id, details: { provider: "clicksign", ref: result.providerRef } },
+      });
+      return ok(res, updated, "Documento enviado para assinatura");
+    } catch (e) {
+      if (e instanceof SignatureError) throw new BadRequestError(e.message);
+      throw e;
+    }
+  })
+);
+
+// GET /api/documents/:id/signature-status  -> consulta o provedor
+router.get(
+  "/:id/signature-status",
+  requirePermission("documents.read"),
+  asyncHandler(async (req, res) => {
+    const doc = await ensureDocument(req.params.id, req.user!.organizationId);
+    if (!doc.signatureProviderRef) return ok(res, { signatureProviderStatus: null, signatureStatus: doc.signatureStatus });
+    try {
+      const s = await getSignatureStatus(doc.signatureProviderRef);
+      const finished = /finish|closed|signed/i.test(s.status);
+      const updated = await prisma.projectDocument.update({
+        where: { id: doc.id },
+        data: {
+          signatureProviderStatus: s.status,
+          ...(finished ? { signatureStatus: "SIGNED" } : {}),
+        },
+        select: { signatureProviderStatus: true, signatureStatus: true },
+      });
+      return ok(res, updated);
+    } catch (e) {
+      if (e instanceof SignatureError) throw new BadRequestError(e.message);
+      throw e;
+    }
   })
 );
 

@@ -94,6 +94,8 @@ model User {
   measurementVisits        MeasurementVisit[]    @relation("MeasurementTechnician")
   publishedTechApprovals   TechnicalProjectApproval[] @relation("TechApprovalPublisher")
   productionStageEvents    ProductionStageEvent[] @relation("ProductionStageEventAuthor")
+  createdFiscalInvoices    FiscalInvoice[]        @relation("FiscalInvoiceCreator")
+  promobImports            PromobImport[]         @relation("PromobImportCreator")
 
   @@index([roleId])
   @@index([organizationId])
@@ -178,6 +180,8 @@ model Organization {
   measurementVisits   MeasurementVisit[]
   technicalApprovals  TechnicalProjectApproval[]
   productionOrders    ProductionOrder[]
+  fiscalInvoices      FiscalInvoice[]
+  promobImports       PromobImport[]
 
   @@index([enterpriseId])
 }
@@ -946,6 +950,7 @@ model Client {
   accounts          ClientAccount[]
   documents         ProjectDocument[]
   financeTransactions FinanceTransaction[]
+  fiscalInvoices    FiscalInvoice[]
 
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
@@ -980,6 +985,8 @@ model Project {
   measurementVisits MeasurementVisit[]
   technicalApproval TechnicalProjectApproval?
   productionOrder ProductionOrder?
+  fiscalInvoices FiscalInvoice[]
+  promobImports  PromobImport[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1900,6 +1907,10 @@ model ProjectDocument {
   requiresSignature Boolean           @default(false)
   signerRoles     String[]
   signatureStatus DocumentSignatureStatus @default(NOT_REQUIRED)
+  signatureProvider       String? // ex: "clicksign" quando enviado a um provedor externo
+  signatureProviderRef    String? // chave do documento no provedor
+  signatureProviderUrl    String? // link de assinatura
+  signatureProviderStatus String? // status devolvido pelo provedor
   version         Int                 @default(1)
   replacesId      String?
   replaces        ProjectDocument?    @relation("ProjectDocumentVersions", fields: [replacesId], references: [id], onDelete: SetNull)
@@ -2401,6 +2412,9 @@ model ProductionOrder {
   deliveredAt         DateTime?
   estimatedDeliveryAt DateTime? // previsão de entrega informada pela equipe
   notes               String?                @db.Text
+  scheduleJson        Json? // cronograma gerado (etapas + datas + observações)
+  scheduleSource      String? // AI | HEURISTIC
+  scheduleGeneratedAt DateTime?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
   events              ProductionStageEvent[]
@@ -2419,4 +2433,76 @@ model ProductionStageEvent {
   createdBy   User?           @relation("ProductionStageEventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([orderId])
+}
+
+// ============================================================
+// INTEGRAÇÕES EXTERNAS — NF-e e importação do Promob
+// Ambos ficam ociosos até haver provedor/arquivo; nenhum dado é
+// enviado à SEFAZ sem NFE_* configurado.
+// ============================================================
+
+enum FiscalInvoiceStatus {
+  DRAFT // rascunho no nosso lado
+  QUEUED // enviado ao provedor, aguardando processamento
+  PROCESSING // provedor processando junto à SEFAZ
+  ISSUED // autorizada
+  REJECTED // rejeitada pela SEFAZ
+  CANCELLED // cancelada após emissão
+  ERROR // falha de comunicação / configuração
+}
+
+model FiscalInvoice {
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?
+  project        Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientId       String?
+  client         Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  kind           String              @default("NFE") // NFE | NFSE
+  status         FiscalInvoiceStatus @default(DRAFT)
+  ref            String              @unique // referência idempotente enviada ao provedor
+  provider       String? // ex: focusnfe
+  providerRef    String? // chave de acesso / id no provedor
+  number         String?
+  series         String?
+  amount         Decimal             @db.Decimal(12, 2)
+  description    String?             @db.Text
+  payloadJson    Json? // corpo enviado ao provedor
+  resultJson     Json? // última resposta do provedor
+  xmlKey         String? // storage key do XML autorizado
+  pdfKey         String? // storage key do DANFE/PDF
+  errorMessage   String?             @db.Text
+  issuedAt       DateTime?
+  cancelledAt    DateTime?
+  createdById    String?
+  createdBy      User?               @relation("FiscalInvoiceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([organizationId, status])
+  @@index([projectId])
+}
+
+model PromobImport {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName       String
+  storageKey     String
+  mimeType       String
+  sizeBytes      Int
+  format         String       @default("OTHER") // XML | PDF | OTHER
+  status         String       @default("UPLOADED") // UPLOADED | PARSED | PARSE_FAILED
+  itemCount      Int          @default(0)
+  parsedJson     Json? // itens/ambientes extraídos (best-effort)
+  notes          String?      @db.Text
+  createdById    String?
+  createdBy      User?        @relation("PromobImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([projectId])
 }
