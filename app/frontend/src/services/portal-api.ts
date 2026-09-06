@@ -27,14 +27,15 @@ type Options = { method?: string; body?: unknown; headers?: Record<string, strin
 
 export async function portalApi<T = unknown>(path: string, options: Options = {}): Promise<T> {
   const { method = "GET", body, headers } = options;
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
-      "Content-Type": "application/json",
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
   });
 
   let payload: unknown = null;
@@ -57,6 +58,13 @@ export const portalGet = <T>(path: string) => portalApi<T>(path);
 export const portalPost = <T>(path: string, body?: unknown) => portalApi<T>(path, { method: "POST", body });
 export const portalPatch = <T>(path: string, body?: unknown) => portalApi<T>(path, { method: "PATCH", body });
 export const portalDelete = <T>(path: string) => portalApi<T>(path, { method: "DELETE" });
+
+/** Busca um arquivo autenticado e devolve um object URL (lembre de revogar). */
+export async function portalObjectUrl(path: string): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (!res.ok) throw new PortalApiError(res.status, `Erro ${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
 
 /** Baixa um documento autenticado (o backend responde com redirect assinado ou o arquivo). */
 export async function portalDownload(path: string, fileName: string) {

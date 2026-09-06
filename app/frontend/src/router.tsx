@@ -39,6 +39,7 @@ const BriefingPage = lazy(() => import("@/pages/briefing").then((m) => ({ defaul
 const FinancePage = lazy(() => import("@/pages/finance").then((m) => ({ default: m.FinancePage })));
 const FiscalPage = lazy(() => import("@/pages/fiscal").then((m) => ({ default: m.FiscalPage })));
 const TemplatesPage = lazy(() => import("@/pages/templates").then((m) => ({ default: m.TemplatesPage })));
+const WorkspacePage = lazy(() => import("@/pages/workspace").then((m) => ({ default: m.WorkspacePage })));
 
 const PortalRoot = lazy(() => import("@/pages/portal/layout").then((m) => ({ default: m.PortalRoot })));
 const PortalLayout = lazy(() => import("@/pages/portal/layout").then((m) => ({ default: m.PortalLayout })));
@@ -86,6 +87,7 @@ export const router = createBrowserRouter([
           { path: "/organizacao", element: <PermissionGate permission="organization.read"><OrganizationPage /></PermissionGate> },
           { path: "/organizacao/:id", element: <PermissionGate permission="organization.read"><OrganizationPage /></PermissionGate> },
           { path: "/minhas-tarefas", element: <PermissionGate permission="organization.read"><MyTasksPage /></PermissionGate> },
+          { path: "/meu-espaco", element: <WorkspacePage /> },
           { path: "/clientes-projetos", element: <PermissionGate permission="organization.read"><BusinessPage /></PermissionGate> },
           { path: "/clientes-projetos/:projectId", element: <PermissionGate permission="organization.read"><ProjectDetailPage /></PermissionGate> },
           { path: "/medicoes", element: <PermissionGate permission="organization.read"><MeasurementsPage /></PermissionGate> },

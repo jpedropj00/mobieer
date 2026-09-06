@@ -8,10 +8,13 @@ const problem = z.object({ description: z.string().trim().min(2).max(500), note:
 
 export const activityInput = z.object({
   employeeId: z.string().min(1).optional(), sector: optionalText(150), date: z.coerce.date(), startTime: optionalText(5), endTime: optionalText(5),
-  clientName: optionalText(255), projectReference: optionalText(255), service: z.string().trim().min(2).max(255), description: z.string().trim().min(2).max(10000),
+  clientName: optionalText(255), projectReference: optionalText(255), service: z.string().trim().max(255).optional().nullable(), description: z.string().trim().min(2).max(10000),
+  freeText: z.boolean().default(false),
   problemsSummary: optionalText(5000), observations: optionalText(5000), signatureRequired: z.boolean().default(false), status: z.nativeEnum(ActivityStatus).default(ActivityStatus.DRAFT),
   agendaEventId: optionalText(100), taskId: optionalText(100), assistanceId: optionalText(100), materials: z.array(material).max(100).default([]), problems: z.array(problem).max(50).default([]), attachments: z.array(attachment).max(30).default([]),
-}).refine((v) => !v.startTime || !v.endTime || v.endTime >= v.startTime, { message: "Horário de término deve ser posterior ao início", path: ["endTime"] });
+})
+  .refine((v) => !v.startTime || !v.endTime || v.endTime >= v.startTime, { message: "Horário de término deve ser posterior ao início", path: ["endTime"] })
+  .refine((v) => v.freeText || (v.service != null && v.service.trim().length >= 2), { message: "Informe o serviço realizado", path: ["service"] });
 
 export const activityQuery = z.object({ page: z.coerce.number().int().positive().default(1), perPage: z.coerce.number().int().min(1).max(100).default(15), search: z.string().optional(), employeeId: z.string().optional(), sector: z.string().optional(), client: z.string().optional(), project: z.string().optional(), service: z.string().optional(), status: z.nativeEnum(ActivityStatus).optional(), dateFrom: z.coerce.date().optional(), dateTo: z.coerce.date().optional(), sort: z.enum(["newest", "oldest", "employee", "status", "duration"]).default("newest"), my: z.enum(["true", "false"]).optional() });
 export const statusInput = z.object({ status: z.nativeEnum(ActivityStatus) });

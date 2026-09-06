@@ -37,6 +37,7 @@ import productionRoutes from "./modules/production/production.routes";
 import shopFloorRoutes from "./modules/production/shopfloor.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import promobRoutes from "./modules/promob/promob.routes";
+import workspaceRoutes from "./modules/workspace/workspace.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -90,6 +91,7 @@ export function createApp() {
   app.use("/api/production", shopFloorRoutes);
   app.use("/api/fiscal", fiscalRoutes);
   app.use("/api/promob", promobRoutes);
+  app.use("/api/workspace", workspaceRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

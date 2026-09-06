@@ -9,6 +9,8 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { env } from "../../config/env";
 import { sendMail, renderInviteEmail } from "../../lib/mailer";
+import { storage, buildStorageKey } from "../../lib/storage";
+import { uploadPhoto } from "../../middlewares/upload";
 
 const router = Router();
 router.use(authenticate);
@@ -62,7 +64,36 @@ router.post("/clients/:id/accounts", requirePermission("organization.manage"), a
 router.post("/clients/:id/accounts/:accountId/resend", requirePermission("organization.manage"), asyncHandler(async (req, res) => { await ensureClient(req.params.id, req.user!.organizationId); const account = await prisma.clientAccount.findFirst({ where: { id: req.params.accountId, clientId: req.params.id } }); if (!account) throw new NotFoundError("Conta não encontrada"); if (account.status === "ACTIVE") throw new BadRequestError("Esta conta já está ativa"); const inviteToken = crypto.randomBytes(32).toString("hex"); await prisma.clientAccount.update({ where: { id: account.id }, data: { status: "INVITED", inviteToken, inviteExpiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) } }); await sendInvite(account.id, account.name, account.email, req.params.id, inviteToken); await audit(req.user!.id, "CLIENT_ACCOUNT_INVITE_RESENT", "ClientAccount", account.id); return ok(res, { id: account.id }, "Convite reenviado"); }));
 router.patch("/clients/:id/accounts/:accountId", requirePermission("organization.manage"), asyncHandler(async (req, res) => { await ensureClient(req.params.id, req.user!.organizationId); const account = await prisma.clientAccount.findFirst({ where: { id: req.params.accountId, clientId: req.params.id } }); if (!account) throw new NotFoundError("Conta não encontrada"); const input = z.object({ status: z.enum(["ACTIVE", "DISABLED"]) }).parse(req.body); if (input.status === "ACTIVE" && !account.passwordHash) throw new BadRequestError("A conta ainda não definiu senha pelo convite"); const value = await prisma.clientAccount.update({ where: { id: account.id }, data: { status: input.status }, select: { id: true, status: true } }); await audit(req.user!.id, "CLIENT_ACCOUNT_UPDATED", "ClientAccount", account.id, { status: input.status }); return ok(res, value, "Conta atualizada"); }));
 
-router.get("/assistances", requirePermission("organization.read"), asyncHandler(async (req, res) => { const values = await prisma.assistanceTicket.findMany({ where: { organizationId: req.user!.organizationId, ...(req.query.status ? { status: req.query.status as never } : {}), ...(req.query.assigneeId ? { assigneeId: String(req.query.assigneeId) } : {}) }, include: { client: { select: { id: true, name: true } }, project: { select: { id: true, code: true, name: true } }, assignee: { select: { id: true, name: true } }, _count: { select: { kanbanTasks: true } } }, orderBy: { updatedAt: "desc" } }); return ok(res, values); }));
+router.get("/assistances", requirePermission("organization.read"), asyncHandler(async (req, res) => { const values = await prisma.assistanceTicket.findMany({ where: { organizationId: req.user!.organizationId, ...(req.query.status ? { status: req.query.status as never } : {}), ...(req.query.assigneeId ? { assigneeId: String(req.query.assigneeId) } : {}) }, include: { client: { select: { id: true, name: true } }, project: { select: { id: true, code: true, name: true } }, assignee: { select: { id: true, name: true } }, attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByLabel: true, createdAt: true }, orderBy: { createdAt: "asc" } }, _count: { select: { kanbanTasks: true } } }, orderBy: { updatedAt: "desc" } }); return ok(res, values.map((a) => ({ ...a, attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/business/assistances/${a.id}/attachments/${att.id}/download` })) }))); }));
+
+// Anexos de assistência (fotos) — visualização e upload pela equipe.
+router.get("/assistances/:id/attachments/:attId/download", requirePermission("organization.read"), asyncHandler(async (req, res) => {
+  const att = await prisma.assistanceAttachment.findFirst({ where: { id: req.params.attId, ticketId: req.params.id, ticket: { organizationId: req.user!.organizationId } } });
+  if (!att) throw new NotFoundError("Anexo não encontrado");
+  const signed = await storage.getSignedUrl(att.storageKey, att.fileName);
+  if (signed) return res.redirect(signed);
+  const stream = await storage.getStream(att.storageKey);
+  res.setHeader("Content-Type", att.mimeType);
+  res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(att.fileName)}"`);
+  stream.pipe(res);
+}));
+router.post("/assistances/:id/attachments", requirePermission("organization.tasks.edit.all"), uploadPhoto.single("photo"), asyncHandler(async (req, res) => {
+  const ticket = await prisma.assistanceTicket.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId }, select: { id: true, _count: { select: { attachments: true } } } });
+  if (!ticket) throw new NotFoundError("Assistência não encontrada");
+  if (!req.file) throw new BadRequestError("Envie uma imagem");
+  if (ticket._count.attachments >= 20) throw new BadRequestError("Limite de 20 fotos por chamado");
+  const key = buildStorageKey(`assistances/${ticket.id}`, req.file.originalname);
+  await storage.put(key, req.file.buffer, req.file.mimetype);
+  const att = await prisma.assistanceAttachment.create({ data: { ticketId: ticket.id, storageKey: key, fileName: req.file.originalname, mimeType: req.file.mimetype, sizeBytes: req.file.size, uploadedByUserId: req.user!.id, uploadedByLabel: req.user!.name }, select: { id: true, fileName: true, mimeType: true, uploadedByLabel: true, createdAt: true } });
+  return ok(res, { ...att, downloadUrl: `/api/business/assistances/${ticket.id}/attachments/${att.id}/download` }, "Foto anexada");
+}));
+router.delete("/assistances/:id/attachments/:attId", requirePermission("organization.tasks.edit.all"), asyncHandler(async (req, res) => {
+  const att = await prisma.assistanceAttachment.findFirst({ where: { id: req.params.attId, ticketId: req.params.id, ticket: { organizationId: req.user!.organizationId } }, select: { id: true, storageKey: true } });
+  if (!att) throw new NotFoundError("Anexo não encontrado");
+  await storage.remove(att.storageKey).catch(() => undefined);
+  await prisma.assistanceAttachment.delete({ where: { id: att.id } });
+  return ok(res, { id: att.id }, "Foto removida");
+}));
 router.post("/assistances", requirePermission("organization.tasks.create"), asyncHandler(async (req, res) => { const input = assistanceSchema.parse(req.body); await ensureClient(input.clientId, req.user!.organizationId); if (input.projectId) { const p = await ensureProject(input.projectId, req.user!.organizationId); if (p.clientId !== input.clientId) throw new BadRequestError("O projeto não pertence ao cliente informado"); } if (input.assigneeId) await ensureUser(input.assigneeId, req.user!.organizationId); const count = await prisma.assistanceTicket.count({ where: { organizationId: req.user!.organizationId } }); const number = `AST-${String(count + 1).padStart(5, "0")}`; const value = await prisma.assistanceTicket.create({ data: { ...input, number, organizationId: req.user!.organizationId, createdById: req.user!.id } }); await audit(req.user!.id, "ASSISTANCE_CREATED", "AssistanceTicket", value.id, { number }); if (value.assigneeId && value.assigneeId !== req.user!.id) await prisma.notification.create({ data: { type: "INFO", title: "Nova assistência atribuída", message: `${number} — ${value.title}`, userId: value.assigneeId } }); return ok(res, value, "Assistência criada"); }));
 router.patch("/assistances/:id", requirePermission("organization.tasks.edit.all"), asyncHandler(async (req, res) => { const current = await prisma.assistanceTicket.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId } }); if (!current) throw new NotFoundError("Assistência não encontrada"); const input = assistanceSchema.partial().parse(req.body); if (input.clientId) await ensureClient(input.clientId, req.user!.organizationId); if (input.projectId) await ensureProject(input.projectId, req.user!.organizationId); if (input.assigneeId) await ensureUser(input.assigneeId, req.user!.organizationId); const value = await prisma.assistanceTicket.update({ where: { id: current.id }, data: { ...input, resolvedAt: input.status === "RESOLVED" ? new Date() : input.status ? null : undefined } }); await audit(req.user!.id, "ASSISTANCE_UPDATED", "AssistanceTicket", value.id, { from: current.status, to: value.status }); return ok(res, value, "Assistência atualizada"); }));
 

@@ -97,6 +97,9 @@ model User {
   productionItemEvents     ProductionItemEvent[] @relation("ProductionItemEventAuthor")
   createdFiscalInvoices    FiscalInvoice[]        @relation("FiscalInvoiceCreator")
   promobImports            PromobImport[]         @relation("PromobImportCreator")
+  workspaceNotes           WorkspaceNote[]       @relation("WorkspaceNoteOwner")
+  plannerItems             PlannerItem[]         @relation("PlannerItemOwner")
+  hourBankAdjustments      HourBankAdjustment[]  @relation("HourBankAuthor")
 
   @@index([roleId])
   @@index([organizationId])
@@ -184,6 +187,9 @@ model Organization {
   productionItems     ProductionItem[]
   fiscalInvoices      FiscalInvoice[]
   promobImports       PromobImport[]
+  workspaceNotes      WorkspaceNote[]
+  plannerItems        PlannerItem[]
+  hourBankAdjustments HourBankAdjustment[]
 
   @@index([enterpriseId])
 }
@@ -376,6 +382,7 @@ model Activity {
   problemsSummary   String?              @db.Text
   observations      String?              @db.Text
   signatureRequired Boolean              @default(false)
+  freeText          Boolean              @default(false) // registro rápido em texto livre (sem o formulário estruturado)
   completedAt       DateTime?
   cancelledAt       DateTime?
   createdAt         DateTime             @default(now())
@@ -1025,6 +1032,7 @@ model AssistanceTicket {
   openedByClientAccount   ClientAccount? @relation(fields: [openedByClientAccountId], references: [id], onDelete: SetNull)
   origin         AssistanceOrigin   @default(INTERNAL)
   kanbanTasks    KanbanTask[]
+  attachments    AssistanceAttachment[]
 
   @@unique([organizationId, number])
   @@index([organizationId, status, priority])
@@ -1998,6 +2006,7 @@ model Employee {
   vacationPeriods  VacationPeriod[]
   vacationRequests VacationRequest[]
   timeEntries      TimeEntry[]
+  hourBank         HourBankAdjustment[] @relation("EmployeeHourBank")
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -2579,4 +2588,86 @@ model ProductionItemEvent {
   createdAt   DateTime          @default(now())
 
   @@index([itemId])
+}
+
+// ============================================================
+// FASE 4 — Itens da Jessica
+// ============================================================
+
+// 4.1 — Foto do cliente na assistência
+model AssistanceAttachment {
+  id                        String           @id @default(cuid())
+  ticketId                  String
+  ticket                    AssistanceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  storageKey                String
+  fileName                  String
+  mimeType                  String
+  sizeBytes                 Int
+  uploadedByClientAccountId String? // quando enviado pelo cliente no portal
+  uploadedByUserId          String? // quando enviado pela equipe
+  uploadedByLabel           String? // rótulo pronto para exibir ("Cliente", nome do usuário)
+  createdAt                 DateTime         @default(now())
+
+  @@index([ticketId])
+}
+
+// 4.4 — Registro de atividade em texto livre (flag no model Activity, sem tabela nova)
+
+// 4.2 — Bloco de notas + planner semanal (pessoal, por usuário)
+model WorkspaceNote {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("WorkspaceNoteOwner", fields: [userId], references: [id], onDelete: Cascade)
+  title          String?
+  body           String       @db.Text
+  color          String? // rótulo de cor opcional
+  pinned         Boolean      @default(false)
+  position       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, pinned, position])
+}
+
+model PlannerItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("PlannerItemOwner", fields: [userId], references: [id], onDelete: Cascade)
+  weekOf         DateTime     @db.Date // segunda-feira da semana
+  weekday        Int // 0=segunda ... 6=domingo
+  text           String
+  done           Boolean      @default(false)
+  position       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, weekOf])
+}
+
+// 4.3 — Banco de horas: ajustes manuais que somam/abatem do saldo calculado do ponto
+enum HourBankKind {
+  ADJUSTMENT // ajuste manual (correção)
+  COMPENSATION // folga/compensação (abate saldo)
+  PAYOUT // pagamento de horas extras (abate saldo)
+}
+
+model HourBankAdjustment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee     @relation("EmployeeHourBank", fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime     @db.Date
+  minutes        Int // positivo credita, negativo debita
+  kind           HourBankKind @default(ADJUSTMENT)
+  reason         String?
+  createdById    String?
+  createdBy      User?        @relation("HourBankAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([employeeId, date])
 }

@@ -94,6 +94,24 @@ export type TimeMirror = {
   faltas: number;
 };
 
+export type HourBank = {
+  employee: { id: string; fullName: string; registration: string; weeklyHours: number };
+  from: string;
+  to: string;
+  summary: {
+    workedMinutes: number;
+    expectedMinutes: number;
+    overtimeMinutes: number;
+    deficitMinutes: number;
+    rawBalanceMinutes: number;
+    adjustmentMinutes: number;
+    netBalanceMinutes: number;
+    faltas: number;
+  };
+  days: TimeMirrorDay[];
+  adjustments: { id: string; date: string; minutes: number; kind: "ADJUSTMENT" | "COMPENSATION" | "PAYOUT"; reason: string | null; author: string | null; createdAt: string }[];
+};
+
 export type RegimeTributario = "SIMPLES_NACIONAL" | "LUCRO_PRESUMIDO" | "LUCRO_REAL";
 export type TipoImposto = "DAS" | "IRPJ" | "CSLL" | "PIS" | "COFINS" | "ISS" | "ICMS";
 

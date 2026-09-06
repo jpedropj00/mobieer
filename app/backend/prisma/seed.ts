@@ -1140,6 +1140,19 @@ async function main() {
   }
   if (pontoRows.length) await prisma.timeEntry.createMany({ data: pontoRows, skipDuplicates: true });
 
+  // Banco de horas: uma compensação de exemplo para J. Silva.
+  await prisma.hourBankAdjustment.create({
+    data: {
+      organizationId: ORG_ID,
+      employeeId: pontoEmpId,
+      date: at(9, 0, 0),
+      minutes: -240,
+      kind: "COMPENSATION",
+      reason: "Folga da segunda emendada ao feriado",
+      createdById: userIds["Admin Principal"],
+    },
+  });
+
   console.log("[SEED] Criando lançamentos financeiros...");
   const monthRef = (offset: number) => {
     const d = new Date(today.getFullYear(), today.getMonth() + offset, 12);

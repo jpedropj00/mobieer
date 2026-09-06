@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   SquareKanban,
   ListTodo,
+  NotebookPen,
   Building2,
   Package,
   Ruler,
@@ -65,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Organização interna", to: "/organizacao", icon: SquareKanban, permission: "organization.read" },
       { label: "Minhas tarefas", to: "/minhas-tarefas", icon: ListTodo, permission: "organization.read" },
+      { label: "Meu espaço", to: "/meu-espaco", icon: NotebookPen },
       { label: "Clientes e projetos", to: "/clientes-projetos", icon: Building2, permission: "organization.read" },
       { label: "Medições", to: "/medicoes", icon: Ruler, permission: "organization.read" },
       { label: "Produção", to: "/producao", icon: Factory, permission: "organization.read", end: true },
