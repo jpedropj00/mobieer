@@ -13,6 +13,7 @@ import { storage } from "../../lib/storage";
 import { recomputeSignatureStatus } from "../documents/documents.routes";
 import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
 import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
+import { approvalInclude, getOrCreateApproval, serializeApproval } from "../techproject/techproject.service";
 
 const router = Router();
 
@@ -198,6 +199,7 @@ router.get(
         completedAt: true,
         feedbackFormUrl: true,
         manager: { select: { name: true } },
+        technicalApproval: { select: { status: true, approvedAt: true } },
         assistances: {
           select: {
             id: true,
@@ -229,8 +231,10 @@ router.get(
       orderBy: { createdAt: "desc" },
     });
 
+    const ta = project.technicalApproval;
     return ok(res, {
       ...project,
+      technicalApproval: ta && ta.status !== "DRAFT" ? ta : null,
       feedbackFormUrl: project.feedbackFormUrl || env.clientFeedbackFormUrl || null,
       documents: docs.map((d) => ({
         ...d,
@@ -537,6 +541,89 @@ router.patch(
       include: visitInclude,
     });
     return ok(res, serializeVisit(updated), "Solicitação atualizada");
+  })
+);
+
+// ============================================================
+// APROVAÇÃO DO PROJETO TÉCNICO (cliente aprova / pede mudanças)
+// ============================================================
+
+router.get(
+  "/projects/:id/tech-approval",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const approval = await prisma.technicalProjectApproval.findUnique({
+      where: { projectId: project.id },
+      include: approvalInclude,
+    });
+    if (!approval || approval.status === "DRAFT") return ok(res, null);
+    return ok(res, serializeApproval(approval, { includeSignature: true }));
+  })
+);
+
+router.post(
+  "/projects/:id/tech-approval/approve",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const approval = await getOrCreateApproval(project.id, project.organizationId);
+    if (approval.status === "DRAFT") throw new NotFoundError("Projeto técnico ainda não disponível");
+    if (approval.status === "APPROVED") throw new BadRequestError("Este projeto técnico já foi aprovado");
+    const input = z
+      .object({
+        approvedByName: z.string().trim().min(2).max(160),
+        signatureDataUrl: z.string().startsWith("data:image/").max(2_000_000),
+      })
+      .parse(req.body);
+
+    const updated = await prisma.technicalProjectApproval.update({
+      where: { id: approval.id },
+      data: {
+        status: "APPROVED",
+        approvedAt: new Date(),
+        approvedByName: input.approvedByName,
+        signatureDataUrl: input.signatureDataUrl,
+        signedByClientAccountId: req.portal!.accountId,
+        clientComment: null,
+      },
+      include: approvalInclude,
+    });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Projeto técnico aprovado",
+          message: `${project.code} — ${project.name}: o cliente aprovou o projeto técnico. Liberado para produção.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, serializeApproval(updated, { includeSignature: true }), "Projeto técnico aprovado. Obrigado!");
+  })
+);
+
+router.post(
+  "/projects/:id/tech-approval/request-changes",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const approval = await getOrCreateApproval(project.id, project.organizationId);
+    if (approval.status !== "IN_REVIEW") throw new BadRequestError("Não há projeto técnico aguardando sua avaliação");
+    const input = z.object({ comment: z.string().trim().min(3).max(3000) }).parse(req.body);
+    const updated = await prisma.technicalProjectApproval.update({
+      where: { id: approval.id },
+      data: { status: "CHANGES_REQUESTED", clientComment: input.comment },
+      include: approvalInclude,
+    });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Projeto técnico — ajustes solicitados",
+          message: `${project.code} — ${project.name}: o cliente pediu ajustes no projeto técnico.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, serializeApproval(updated, { includeSignature: true }), "Enviamos seu pedido de ajustes à equipe");
   })
 );
 

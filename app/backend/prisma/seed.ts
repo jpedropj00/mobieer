@@ -846,6 +846,33 @@ async function main() {
     });
   }
 
+  console.log("[SEED] Criando aprovação do projeto técnico do projeto piloto...");
+  {
+    const cronoDoc = await prisma.projectDocument.findFirst({
+      where: { projectId: projeto.id, type: "CRONOGRAMA" },
+      select: { id: true },
+    });
+    const approvedAt = new Date(Date.now() - 15 * 86400000);
+    await prisma.technicalProjectApproval.create({
+      data: {
+        organizationId: ORG_ID,
+        projectId: projeto.id,
+        status: "APPROVED",
+        documentId: cronoDoc?.id ?? null,
+        termText:
+          "Declaro que revisei o projeto técnico apresentado — medidas, layout, acabamentos e especificações — e APROVO a sua execução. " +
+          "Estou ciente de que, após esta aprovação, quaisquer alterações no projeto poderão gerar custo adicional e novo prazo de produção e entrega.",
+        publishedAt: new Date(approvedAt.getTime() - 3 * 86400000),
+        publishedById: userIds["Marcos Vinícius"] ?? adminId,
+        approvedAt,
+        approvedByName: "Juliana Costa Barboza de Castro",
+        signatureDataUrl:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        reviewRound: 1,
+      },
+    });
+  }
+
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");
   const TEMPLATES: { file: string; name: string; type: "MANUAL_GARANTIA" | "VISTORIA_CHECKLIST" | "CRONOGRAMA" | "VISTORIA_FOTOGRAFICA"; requiresSignature: boolean; signerRoles: string[] }[] = [
     { file: "CERTIFICADO GARANTIA .pdf", name: "Manual de Uso e Certificado de Garantia", type: "MANUAL_GARANTIA", requiresSignature: true, signerRoles: ["MOBIEER", "CLIENTE"] },

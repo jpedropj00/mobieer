@@ -92,6 +92,7 @@ model User {
   financeTransactions      FinanceTransaction[]  @relation("FinanceCreator")
   reviewedApplianceSheets  ApplianceSheet[]      @relation("ApplianceSheetReviewer")
   measurementVisits        MeasurementVisit[]    @relation("MeasurementTechnician")
+  publishedTechApprovals   TechnicalProjectApproval[] @relation("TechApprovalPublisher")
 
   @@index([roleId])
   @@index([organizationId])
@@ -174,6 +175,7 @@ model Organization {
   cardStatements      CardStatement[]
   applianceSheets     ApplianceSheet[]
   measurementVisits   MeasurementVisit[]
+  technicalApprovals  TechnicalProjectApproval[]
 
   @@index([enterpriseId])
 }
@@ -974,6 +976,7 @@ model Project {
   financeTransactions FinanceTransaction[]
   applianceSheet ApplianceSheet?
   measurementVisits MeasurementVisit[]
+  technicalApproval TechnicalProjectApproval?
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1901,6 +1904,7 @@ model ProjectDocument {
   uploadedById    String?
   uploadedBy      User?               @relation("ProjectDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   signatures      DocumentSignature[]
+  technicalApprovals TechnicalProjectApproval[]
   createdAt       DateTime            @default(now())
 
   @@index([organizationId, projectId, type])
@@ -2324,4 +2328,43 @@ model MeasurementVisit {
 
   @@index([organizationId, status])
   @@index([projectId])
+}
+
+// ============================================================
+// FASE 2 — Aprovação do projeto técnico
+// Equipe publica o projeto técnico -> cliente revisa e aprova (assina o
+// termo no portal) -> a partir daí o portal exibe o aviso de que
+// alterações podem gerar custo adicional e novo prazo.
+// ============================================================
+
+enum TechApprovalStatus {
+  DRAFT // equipe preparando; cliente não vê
+  IN_REVIEW // publicado; aguardando o cliente
+  APPROVED // cliente aprovou (assinou o termo)
+  CHANGES_REQUESTED // cliente pediu ajustes
+}
+
+model TechnicalProjectApproval {
+  id                      String             @id @default(cuid())
+  organizationId          String
+  organization            Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId               String             @unique
+  project                 Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status                  TechApprovalStatus @default(DRAFT)
+  documentId              String? // ProjectDocument do projeto técnico (3D/PDF) que o cliente revisa
+  document                ProjectDocument?   @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  termText                String?            @db.Text // termo de aprovação exibido ao cliente
+  publishedAt             DateTime?
+  publishedById           String?
+  publishedBy             User?              @relation("TechApprovalPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  approvedAt              DateTime?
+  approvedByName          String?
+  signatureDataUrl        String?            @db.Text // assinatura desenhada pelo cliente (data URL PNG)
+  signedByClientAccountId String?
+  clientComment           String?            @db.Text // quando o cliente pede mudanças
+  reviewRound             Int                @default(1)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@index([organizationId, status])
 }
