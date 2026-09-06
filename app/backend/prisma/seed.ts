@@ -823,6 +823,29 @@ async function main() {
     },
   });
 
+  console.log("[SEED] Criando medição do projeto piloto...");
+  {
+    const measureDone = new Date(Date.now() - 20 * 86400000);
+    await prisma.measurementVisit.create({
+      data: {
+        organizationId: ORG_ID,
+        projectId: projeto.id,
+        status: "DONE",
+        preferredDates: [
+          new Date(Date.now() - 26 * 86400000).toISOString().slice(0, 10),
+          new Date(Date.now() - 24 * 86400000).toISOString().slice(0, 10),
+        ],
+        preferredPeriod: "MANHA",
+        clientNotes: "Prédio Aurora, torre 2 — falar com a portaria (interfone 302).",
+        scheduledAt: new Date(measureDone.getTime() + 9 * 3600000),
+        technicianId: userIds["J. Silva"] ?? adminId,
+        teamNotes: "Medição concluída. Cliente confirmou pontos de água e elétrica.",
+        doneAt: measureDone,
+        techProjectDueAt: new Date(measureDone.getTime() + 12 * 86400000),
+      },
+    });
+  }
+
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");
   const TEMPLATES: { file: string; name: string; type: "MANUAL_GARANTIA" | "VISTORIA_CHECKLIST" | "CRONOGRAMA" | "VISTORIA_FOTOGRAFICA"; requiresSignature: boolean; signerRoles: string[] }[] = [
     { file: "CERTIFICADO GARANTIA .pdf", name: "Manual de Uso e Certificado de Garantia", type: "MANUAL_GARANTIA", requiresSignature: true, signerRoles: ["MOBIEER", "CLIENTE"] },

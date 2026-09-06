@@ -19,6 +19,7 @@ import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm } from "
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage } from "@/lib/utils";
 import { ApplianceSheetInternal } from "./appliance-sheet-internal";
+import { MeasurementProjectPanel } from "./measurements";
 
 type Project = {
   id: string;
@@ -179,6 +180,7 @@ export function ProjectDetailPage() {
         <TabsList>
           <TabsTrigger value="documents">Documentos ({p._count.documents})</TabsTrigger>
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
+          <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
 
@@ -281,6 +283,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="ficha">
           <ApplianceSheetInternal projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="medicao">
+          <MeasurementProjectPanel projectId={projectId} canManage={canManageAccounts} />
         </TabsContent>
 
         <TabsContent value="portal" className="space-y-4">

@@ -15,6 +15,7 @@ import { SignaturePad } from "@/components/signature-pad";
 import { errorMessage } from "@/lib/utils";
 import { portalDownload, portalGet, portalPost } from "@/services/portal-api";
 import { PortalApplianceSheet } from "./appliance-sheet";
+import { PortalMeasurement } from "./measurement";
 
 type Doc = {
   id: string;
@@ -219,6 +220,7 @@ export function PortalProjectPage() {
       <Tabs defaultValue="cronograma">
         <TabsList className="flex-wrap">
           <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
+          <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="fotos">Fotos</TabsTrigger>
@@ -238,6 +240,10 @@ export function PortalProjectPage() {
           </Card>
           {p.description && <p className="whitespace-pre-line text-sm text-muted-foreground">{p.description}</p>}
           <DocList docs={byType("CRONOGRAMA")} empty="Cronograma detalhado ainda não publicado." projectId={p.id} />
+        </TabsContent>
+
+        <TabsContent value="medicao">
+          <PortalMeasurement projectId={p.id} />
         </TabsContent>
 
         <TabsContent value="ficha">

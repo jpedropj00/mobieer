@@ -91,6 +91,7 @@ model User {
   vacationDecisions        VacationRequest[]      @relation("VacationDecider")
   financeTransactions      FinanceTransaction[]  @relation("FinanceCreator")
   reviewedApplianceSheets  ApplianceSheet[]      @relation("ApplianceSheetReviewer")
+  measurementVisits        MeasurementVisit[]    @relation("MeasurementTechnician")
 
   @@index([roleId])
   @@index([organizationId])
@@ -172,6 +173,7 @@ model Organization {
   creditCards         CreditCard[]
   cardStatements      CardStatement[]
   applianceSheets     ApplianceSheet[]
+  measurementVisits   MeasurementVisit[]
 
   @@index([enterpriseId])
 }
@@ -971,6 +973,7 @@ model Project {
   documents      ProjectDocument[]
   financeTransactions FinanceTransaction[]
   applianceSheet ApplianceSheet?
+  measurementVisits MeasurementVisit[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -2285,4 +2288,40 @@ model ApplianceItem {
   position     Int            @default(0)
 
   @@index([sheetId])
+}
+
+// ============================================================
+// FASE 2 — Agendamento da medição + prazo do projeto técnico
+// Cliente solicita a medição pelo portal -> equipe confirma data e técnico
+// -> técnico registra a conclusão -> dispara o prazo de 12 dias do projeto.
+// ============================================================
+
+enum MeasurementStatus {
+  REQUESTED // cliente solicitou; aguardando a equipe confirmar
+  SCHEDULED // data e técnico definidos
+  DONE // medição concluída (dispara o prazo do projeto técnico)
+  CANCELLED
+}
+
+model MeasurementVisit {
+  id               String            @id @default(cuid())
+  organizationId   String
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status           MeasurementStatus @default(REQUESTED)
+  preferredDates   String[] // datas propostas pelo cliente (ISO yyyy-mm-dd)
+  preferredPeriod  String? // MANHA | TARDE | QUALQUER
+  clientNotes      String?
+  scheduledAt      DateTime? // data/hora confirmada pela equipe
+  technicianId     String?
+  technician       User?             @relation("MeasurementTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+  teamNotes        String?
+  doneAt           DateTime?
+  techProjectDueAt DateTime? // doneAt + 12 dias (prazo do projeto técnico)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([organizationId, status])
+  @@index([projectId])
 }

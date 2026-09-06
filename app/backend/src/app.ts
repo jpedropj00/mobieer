@@ -31,6 +31,7 @@ import templatesRoutes from "./modules/templates/templates.routes";
 import commercialRoutes from "./modules/commercial/commercial.routes";
 import briefingRoutes from "./modules/briefing/briefing.routes";
 import appliancesRoutes from "./modules/appliances/appliances.routes";
+import measurementsRoutes from "./modules/measurements/measurements.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -78,6 +79,7 @@ export function createApp() {
   app.use("/api/commercial", commercialRoutes);
   app.use("/api/briefing", briefingRoutes);
   app.use("/api/appliances", appliancesRoutes);
+  app.use("/api/measurements", measurementsRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

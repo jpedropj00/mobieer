@@ -12,6 +12,7 @@ import { sendMail, renderResetEmail } from "../../lib/mailer";
 import { storage } from "../../lib/storage";
 import { recomputeSignatureStatus } from "../documents/documents.routes";
 import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
+import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
 
 const router = Router();
 
@@ -455,6 +456,87 @@ router.post(
       });
     }
     return ok(res, { status: "SUBMITTED" }, "Ficha enviada. Obrigado!");
+  })
+);
+
+// ============================================================
+// AGENDAMENTO DA MEDIÇÃO (cliente solicita)
+// ============================================================
+
+router.get(
+  "/projects/:id/measurement",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const visit = await prisma.measurementVisit.findFirst({
+      where: { projectId: project.id },
+      include: visitInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, visit ? serializeVisit(visit) : null);
+  })
+);
+
+const measurementRequestSchema = z.object({
+  preferredDates: z.array(z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1).max(3),
+  preferredPeriod: z.enum(MEASUREMENT_PERIODS).optional().nullable(),
+  clientNotes: z.string().trim().max(2000).optional().nullable().or(z.literal("")),
+});
+
+router.post(
+  "/projects/:id/measurement",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const open = await prisma.measurementVisit.findFirst({
+      where: { projectId: project.id, status: { in: ["REQUESTED", "SCHEDULED"] } },
+      select: { id: true },
+    });
+    if (open) throw new BadRequestError("Já existe uma solicitação de medição em andamento para este projeto");
+    const input = measurementRequestSchema.parse(req.body);
+    const visit = await prisma.measurementVisit.create({
+      data: {
+        organizationId: project.organizationId,
+        projectId: project.id,
+        status: "REQUESTED",
+        preferredDates: input.preferredDates,
+        preferredPeriod: input.preferredPeriod ?? null,
+        clientNotes: input.clientNotes?.trim() || null,
+      },
+      include: visitInclude,
+    });
+    if (project.managerId) {
+      await prisma.notification.create({
+        data: {
+          type: "INFO",
+          title: "Medição solicitada pelo cliente",
+          message: `${project.code} — ${project.name}: o cliente solicitou a medição. Datas sugeridas: ${input.preferredDates.join(", ")}.`,
+          userId: project.managerId,
+        },
+      });
+    }
+    return ok(res, serializeVisit(visit), "Solicitação enviada. A equipe vai confirmar a data.");
+  })
+);
+
+router.patch(
+  "/measurement/:id",
+  asyncHandler(async (req, res) => {
+    const visit = await prisma.measurementVisit.findFirst({
+      where: { id: req.params.id, project: { clientId: req.portal!.clientId } },
+      select: { id: true, status: true },
+    });
+    if (!visit) throw new NotFoundError("Medição não encontrada");
+    if (visit.status !== "REQUESTED") throw new BadRequestError("A equipe já está tratando esta solicitação");
+    const input = measurementRequestSchema.partial().parse(req.body);
+    const updated = await prisma.measurementVisit.update({
+      where: { id: visit.id },
+      data: {
+        preferredDates: input.preferredDates ?? undefined,
+        preferredPeriod: input.preferredPeriod === undefined ? undefined : input.preferredPeriod ?? null,
+        clientNotes: input.clientNotes === undefined ? undefined : input.clientNotes?.trim() || null,
+      },
+      include: visitInclude,
+    });
+    return ok(res, serializeVisit(updated), "Solicitação atualizada");
   })
 );
 
