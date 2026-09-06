@@ -178,6 +178,7 @@ model Organization {
   employees        Employee[]
   financeTransactions FinanceTransaction[]
   taxRules            TaxRule[]
+  dreCategoryMappings DreCategoryMapping[]
   documentTemplates   DocumentTemplate[]
   creditCards         CreditCard[]
   cardStatements      CardStatement[]
@@ -2704,4 +2705,23 @@ model ProductionTimeLog {
   @@index([itemId])
   @@index([organizationId, startedAt])
   @@index([userId, endedAt])
+}
+
+// ============================================================
+// FASE FIN — DRE formal
+// Mapeia categorias livres de FinanceTransaction para as linhas da DRE.
+// Quando não há mapeamento, um classificador por palavra-chave decide.
+// ============================================================
+
+model DreCategoryMapping {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       String
+  dreLine        String // RECEITA_BRUTA | DEDUCOES | RECEITA_FINANCEIRA | CUSTO | DESPESA_VENDAS | DESPESA_ADMIN | DESPESA_GERAL | DESPESA_FINANCEIRA | DEPRECIACAO | IMPOSTOS_RENDA
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, category])
+  @@index([organizationId])
 }

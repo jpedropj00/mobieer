@@ -1179,7 +1179,22 @@ async function main() {
     { type: "DESPESA", category: "Ferragens", amount: 2650, monthOffset: -1, status: "PAGO", description: "Corrediças e dobradiças", supplierName: "Fixadores do Brasil Ltda" },
     { type: "DESPESA", category: "Acabamento", amount: 1980, monthOffset: 0, status: "PENDENTE", description: "Tinta PU e selador", supplierName: "Tintas e Acabamentos Premium", dueOffset: 8 },
     { type: "DESPESA", category: "Folha de pagamento", amount: 21400, monthOffset: 0, status: "PAGO", description: "Salários da produção", },
-    { type: "DESPESA", category: "Frete", amount: 900, monthOffset: 0, status: "PENDENTE", description: "Entrega e montagem in loco", dueOffset: 5 },
+    { type: "DESPESA", category: "Frete de entrega", amount: 900, monthOffset: 0, status: "PENDENTE", description: "Entrega e montagem in loco", dueOffset: 5 },
+    // --- linhas extras p/ a DRE ficar completa ---
+    { type: "RECEITA", category: "Contrato — sinal", amount: 48000, monthOffset: -1, status: "PAGO", description: "Entrada 50% — corporativo Studio Alfa", clientId: juliana.id },
+    { type: "RECEITA", category: "Contrato — parcela", amount: 14250, monthOffset: 0, status: "PAGO", description: "Cozinha compacta — Marcelo Tavares" },
+    { type: "RECEITA", category: "Rendimento de aplicação", amount: 380, monthOffset: 0, status: "PAGO", description: "CDB — rendimento do mês" },
+    { type: "DESPESA", category: "Matéria-prima", amount: 12800, monthOffset: 0, status: "PAGO", description: "MDF, corte e fita — pedido 402-1", supplierName: "Madeireira Sul & Cia" },
+    { type: "DESPESA", category: "Marketing", amount: 3200, monthOffset: 0, status: "PAGO", description: "Anúncios Instagram/Google + fotógrafo" },
+    { type: "DESPESA", category: "Comissão de vendas", amount: 4800, monthOffset: 0, status: "PAGO", description: "Comissão sobre contratos fechados" },
+    { type: "DESPESA", category: "Aluguel", amount: 6500, monthOffset: 0, status: "PAGO", description: "Aluguel da fábrica/showroom" },
+    { type: "DESPESA", category: "Energia elétrica", amount: 2100, monthOffset: 0, status: "PAGO", description: "Conta de energia — fábrica" },
+    { type: "DESPESA", category: "Software / assinaturas", amount: 690, monthOffset: 0, status: "PAGO", description: "Promob + ferramentas de gestão" },
+    { type: "DESPESA", category: "Contabilidade", amount: 1200, monthOffset: 0, status: "PAGO", description: "Honorários do escritório contábil" },
+    { type: "DESPESA", category: "DAS — Simples Nacional", amount: 5900, monthOffset: 0, status: "PAGO", description: "Guia do Simples do mês" },
+    { type: "DESPESA", category: "Tarifas bancárias", amount: 320, monthOffset: 0, status: "PAGO", description: "Tarifas de conta e boletos" },
+    { type: "DESPESA", category: "Juros de antecipação", amount: 760, monthOffset: 0, status: "PAGO", description: "Antecipação de recebíveis" },
+    { type: "DESPESA", category: "Depreciação de máquinas", amount: 1500, monthOffset: 0, status: "PAGO", description: "Depreciação mensal (seccionadora, coladeira)" },
   ];
   for (const f of FIN) {
     const d = monthRef(f.monthOffset);
@@ -1312,45 +1327,71 @@ async function main() {
   }
   const sellerId = userIds["Marcos Vinícius"] ?? adminId;
 
-  const LEADS = [
-    { name: "Fernanda Aragão", phone: "(85) 98111-2020", interest: "Cozinha + área gourmet", source: "Instagram", status: "NEW" as const },
-    { name: "Escritório Contábil Prisma", phone: "(85) 3255-7788", interest: "Estações de trabalho (6 lugares)", source: "Indicação", status: "CONTACTED" as const },
-    { name: "Dr. Henrique Sales", phone: "(85) 99640-1234", interest: "Home office + closet", source: "Site", status: "QUALIFIED" as const },
+  const LEADS: { name: string; phone: string; interest: string; source: string; status: "NEW" | "CONTACTED" | "QUALIFIED" | "CONVERTED" | "LOST"; daysAgo: number }[] = [
+    { name: "Fernanda Aragão", phone: "(85) 98111-2020", interest: "Cozinha + área gourmet", source: "Instagram", status: "NEW", daysAgo: 3 },
+    { name: "Escritório Contábil Prisma", phone: "(85) 3255-7788", interest: "Estações de trabalho (6 lugares)", source: "Indicação", status: "CONTACTED", daysAgo: 10 },
+    { name: "Dr. Henrique Sales", phone: "(85) 99640-1234", interest: "Home office + closet", source: "Site", status: "QUALIFIED", daysAgo: 16 },
+    { name: "Paula Rocha", phone: "(85) 98720-4545", interest: "Apartamento completo", source: "Google", status: "CONTACTED", daysAgo: 22 },
+    { name: "Construtora Vega", phone: "(85) 3021-9090", interest: "Stand de vendas + decorado", source: "Parceiros", status: "QUALIFIED", daysAgo: 30 },
+    { name: "Marcelo Tavares", phone: "(85) 99333-1010", interest: "Cozinha compacta", source: "Instagram", status: "CONVERTED", daysAgo: 45 },
+    { name: "Bianca Nogueira", phone: "(85) 98444-2323", interest: "Closet casal", source: "Site", status: "LOST", daysAgo: 38 },
+    { name: "Studio Alfa Arquitetura", phone: "(85) 3011-2233", interest: "Corporativo 12 estações", source: "Arquiteto", status: "CONVERTED", daysAgo: 60 },
+    { name: "Rogério Lima", phone: "(85) 99120-7788", interest: "Home theater", source: "Google", status: "LOST", daysAgo: 26 },
+    { name: "Camila Xavier", phone: "(85) 98650-9911", interest: "Cozinha + lavanderia", source: "Indicação", status: "NEW", daysAgo: 5 },
   ];
   for (const l of LEADS) {
     await prisma.commercialLead.create({
-      data: { organizationId: ORG_ID, name: l.name, phone: l.phone, interest: l.interest, source: l.source, status: l.status, sellerId, nextContactAt: addDays(today, 2) },
+      data: {
+        organizationId: ORG_ID, name: l.name, phone: l.phone, interest: l.interest, source: l.source, status: l.status, sellerId,
+        enteredAt: addDays(today, -l.daysAgo),
+        lastContactAt: l.status === "NEW" ? null : addDays(today, -Math.max(1, l.daysAgo - 4)),
+        convertedAt: l.status === "CONVERTED" ? addDays(today, -Math.max(1, l.daysAgo - 10)) : null,
+        nextContactAt: l.status === "NEW" || l.status === "CONTACTED" ? addDays(today, 2) : null,
+      },
     });
   }
 
-  const OPPS = [
-    { title: "Cozinha planejada — Ap. Meireles", stage: "Qualificação", value: 42000, days: 25 },
-    { title: "Escritório advocacia (fase 2) — Juliana", stage: "Medição / Projeto", value: 68000, days: 18, clientId: juliana.id },
-    { title: "Dormitório casal + closet — Cond. Dunas", stage: "Proposta enviada", value: 31500, days: 12 },
-    { title: "Corporativo 12 estações — Studio Alfa", stage: "Negociação", value: 96000, days: 8 },
-    { title: "Sala + home theater — Aldeota", stage: "Novo contato", value: 27000, days: 40 },
+  const OPPS: { title: string; stage: string; value: number; days: number; status?: "WON" | "LOST"; lost?: "PRECO" | "PRAZO" | "CONCORRENCIA" | "SEM_RESPOSTA" | "DESISTIU" | "ESCOPO" | "OUTRO"; clientId?: string; createdAgo: number }[] = [
+    { title: "Cozinha planejada — Ap. Meireles", stage: "Qualificação", value: 42000, days: 25, createdAgo: 20 },
+    { title: "Escritório advocacia (fase 2) — Juliana", stage: "Medição / Projeto", value: 68000, days: 18, clientId: juliana.id, createdAgo: 30 },
+    { title: "Dormitório casal + closet — Cond. Dunas", stage: "Proposta enviada", value: 31500, days: 12, createdAgo: 24 },
+    { title: "Corporativo 12 estações — Studio Alfa", stage: "Ganho", value: 96000, days: -5, status: "WON", createdAgo: 55 },
+    { title: "Cozinha compacta — Marcelo Tavares", stage: "Ganho", value: 28500, days: -12, status: "WON", createdAgo: 42 },
+    { title: "Sala + home theater — Aldeota", stage: "Perdido", value: 27000, days: -3, status: "LOST", lost: "PRECO", createdAgo: 26 },
+    { title: "Closet casal — Bianca Nogueira", stage: "Perdido", value: 19000, days: -8, status: "LOST", lost: "CONCORRENCIA", createdAgo: 36 },
+    { title: "Apartamento completo — Paula Rocha", stage: "Perdido", value: 54000, days: -6, status: "LOST", lost: "PRAZO", createdAgo: 28 },
+    { title: "Home office — Dr. Henrique", stage: "Perdido", value: 22000, days: -15, status: "LOST", lost: "SEM_RESPOSTA", createdAgo: 40 },
+    { title: "Cozinha gourmet — Rogério Lima", stage: "Perdido", value: 33000, days: -2, status: "LOST", lost: "PRECO", createdAgo: 22 },
   ];
+  const LOST_TEXT: Record<string, string> = {
+    PRECO: "Achou o orçamento acima do previsto", CONCORRENCIA: "Fechou com concorrente", PRAZO: "Prazo de entrega longo demais",
+    SEM_RESPOSTA: "Parou de responder após a proposta", DESISTIU: "Adiou o projeto", ESCOPO: "Escopo mudou", OUTRO: "Outro motivo",
+  };
   for (const [i, o] of OPPS.entries()) {
     const opp = await prisma.commercialOpportunity.create({
       data: {
         organizationId: ORG_ID,
         title: o.title,
         stageId: stageIds[o.stage],
+        status: o.status ?? "OPEN",
         probability: STAGES.find((s) => s.name === o.stage)!.probability,
         estimatedValue: o.value.toFixed(2),
         expectedCloseAt: addDays(today, o.days),
+        createdAt: addDays(today, -o.createdAgo),
         position: i,
         clientId: o.clientId ?? null,
         sellerId,
-        nextAction: i % 2 === 0 ? "Ligar para retomar" : "Enviar revisão da proposta",
-        nextActionAt: addDays(today, (i % 3) + 1),
+        lostReasonCode: o.lost ?? null,
+        lostReason: o.lost ? LOST_TEXT[o.lost] : null,
+        nextAction: o.status ? null : i % 2 === 0 ? "Ligar para retomar" : "Enviar revisão da proposta",
+        nextActionAt: o.status ? null : addDays(today, (i % 3) + 1),
       },
     });
     await prisma.commercialInteraction.create({
       data: {
         type: i % 2 === 0 ? "CALL" : "WHATSAPP",
-        summary: "Contato inicial — cliente demonstrou interesse e pediu proposta.",
-        occurredAt: addDays(today, -(i + 1)),
+        summary: o.status === "WON" ? "Cliente aprovou a proposta — contrato assinado." : o.status === "LOST" ? `Oportunidade perdida: ${o.lost}.` : "Contato inicial — cliente pediu proposta.",
+        occurredAt: addDays(today, -(o.createdAgo - 2)),
         opportunityId: opp.id,
         clientId: o.clientId ?? null,
         responsibleId: sellerId,

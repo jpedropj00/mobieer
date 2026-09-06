@@ -32,15 +32,20 @@ export type FinanceSummary = {
   porMes: { month: string; receitas: number; despesas: number }[];
 };
 
+export type DreLineKey =
+  | "RECEITA_BRUTA" | "DEDUCOES" | "RECEITA_FINANCEIRA" | "CUSTO" | "DESPESA_VENDAS"
+  | "DESPESA_ADMIN" | "DESPESA_GERAL" | "DESPESA_FINANCEIRA" | "DEPRECIACAO" | "IMPOSTOS_RENDA";
+
 export type Dre = {
-  periodo: { de: string; ate: string; base: "realizado" | "competência" };
-  receitas: { categoria: string; valor: number }[];
-  despesas: { categoria: string; valor: number }[];
-  totalReceitas: number;
-  totalDespesas: number;
-  resultado: number;
-  margem: number;
-  totalLancamentos: number;
+  from: string | null;
+  to: string | null;
+  basis: "accrual" | "cash";
+  transactionCount: number;
+  lines: { key: string; label: string; value: number; kind: "line" | "subtotal" | "result"; sign: 1 | -1 | 0 }[];
+  buckets: Record<DreLineKey, number>;
+  byCategory: { category: string; type: string; dreLine: DreLineKey; value: number; mapped: boolean }[];
+  unmappedCategories: string[];
+  margins: { bruta: number | null; operacional: number | null; liquida: number | null };
 };
 
 export type CashflowPoint = {

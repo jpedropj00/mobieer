@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, formatCurrency } from "@/lib/utils";
 import type { BreakEven, CardAnalysis, CardStatementDetail, CashflowPoint, CreditCard, Dre, FinanceSummary, FinanceTransaction, InstallmentGroup, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
@@ -64,10 +64,23 @@ export function FinancePage() {
   const clients = useQuery({ queryKey: ["business-clients", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/business/clients") });
   const suppliers = useQuery({ queryKey: ["suppliers", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/suppliers") });
   const cashflow = useQuery({ queryKey: ["finance", "cashflow"], queryFn: () => apiGet<{ data: CashflowPoint[] }>("/finance/cashflow", { back: 3, forward: 6 }) });
-  const [dreRange, setDreRange] = useState({ from: `${new Date().getFullYear()}-01-01`, to: new Date().toISOString().slice(0, 10), base: "PAGO" });
+  const [dreRange, setDreRange] = useState({ from: `${new Date().getFullYear()}-01-01`, to: new Date().toISOString().slice(0, 10), basis: "accrual" });
   const dre = useQuery({
     queryKey: ["finance", "dre", dreRange],
-    queryFn: () => apiGet<{ data: Dre }>("/finance/dre", { from: dreRange.from, to: dreRange.to, status: dreRange.base }),
+    queryFn: () => apiGet<{ data: Dre }>("/finance/dre", { from: dreRange.from, to: dreRange.to, basis: dreRange.basis }),
+  });
+  const dreLines = useQuery({ queryKey: ["finance", "dre-lines"], queryFn: () => apiGet<{ data: { key: string; label: string }[] }>("/finance/dre/lines") });
+  const dreMappings = useQuery({ queryKey: ["finance", "dre-mappings"], queryFn: () => apiGet<{ data: { category: string; dreLine: string }[] }>("/finance/dre/mappings") });
+  const [mapEdits, setMapEdits] = useState<Record<string, string>>({});
+  const saveMappings = useMutation({
+    mutationFn: (all: { category: string; dreLine: string }[]) => apiPut("/finance/dre/mappings", { mappings: all }),
+    onSuccess: () => {
+      toast.success("Classificação salva");
+      setMapEdits({});
+      qc.invalidateQueries({ queryKey: ["finance", "dre"] });
+      qc.invalidateQueries({ queryKey: ["finance", "dre-mappings"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao salvar")),
   });
   const company = useQuery({ queryKey: ["finance", "tax", "company"], queryFn: () => apiGet<{ data: TaxCompany }>("/finance/tax/company") });
   const rules = useQuery({ queryKey: ["finance", "tax", "rules"], queryFn: () => apiGet<{ data: TaxRule[] }>("/finance/tax/rules") });
@@ -635,7 +648,7 @@ export function FinancePage() {
           </div>
         </TabsContent>
 
-        {/* ---- DRE ---- */}
+        {/* ---- DRE formal ---- */}
         <TabsContent value="dre" className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <Field label="De">
@@ -645,11 +658,11 @@ export function FinancePage() {
               <Input type="date" value={dreRange.to} onChange={(e) => setDreRange({ ...dreRange, to: e.target.value })} />
             </Field>
             <Field label="Base">
-              <Select value={dreRange.base} onValueChange={(v) => setDreRange({ ...dreRange, base: v })}>
+              <Select value={dreRange.basis} onValueChange={(v) => setDreRange({ ...dreRange, basis: v })}>
                 <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PAGO">Realizado (pagos)</SelectItem>
-                  <SelectItem value="ALL">Competência (todos)</SelectItem>
+                  <SelectItem value="accrual">Competência</SelectItem>
+                  <SelectItem value="cash">Caixa (pagos)</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -657,53 +670,111 @@ export function FinancePage() {
 
           {dre.isLoading || !dre.data ? (
             <PageSkeleton />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Demonstrativo de Resultado — {dre.data.data.periodo.de} a {dre.data.data.periodo.ate}
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">({dre.data.data.periodo.base})</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <p className="pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Receitas</p>
-                {dre.data.data.receitas.length === 0 && <p className="text-muted-foreground">—</p>}
-                {dre.data.data.receitas.map((r) => (
-                  <div key={r.categoria} className="flex justify-between">
-                    <span className="pl-3 text-muted-foreground">{r.categoria}</span>
-                    <span className="tabular-nums text-success">{formatCurrency(r.valor)}</span>
-                  </div>
-                ))}
-                <div className="flex justify-between border-t border-border pt-1 font-medium">
-                  <span>Total de receitas</span>
-                  <span className="tabular-nums text-success">{formatCurrency(dre.data.data.totalReceitas)}</span>
+          ) : (() => {
+            const d = dre.data.data;
+            const result = d.lines.find((l) => l.key === "LUCRO_LIQUIDO")?.value ?? 0;
+            const chart = [
+              { name: "Receita líq.", v: d.lines.find((l) => l.key === "RECEITA_LIQUIDA")?.value ?? 0 },
+              { name: "Lucro bruto", v: d.lines.find((l) => l.key === "LUCRO_BRUTO")?.value ?? 0 },
+              { name: "EBITDA", v: d.lines.find((l) => l.key === "EBITDA")?.value ?? 0 },
+              { name: "Lucro líq.", v: result },
+            ];
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <KpiCard title="Margem bruta" value={d.margins.bruta == null ? "—" : `${d.margins.bruta}%`} icon={Target} />
+                  <KpiCard title="Margem operacional" value={d.margins.operacional == null ? "—" : `${d.margins.operacional}%`} icon={Target} />
+                  <KpiCard title="Margem líquida" value={d.margins.liquida == null ? "—" : `${d.margins.liquida}%`} icon={Target} />
                 </div>
 
-                <p className="pb-1 pt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">(−) Despesas</p>
-                {dre.data.data.despesas.length === 0 && <p className="text-muted-foreground">—</p>}
-                {dre.data.data.despesas.map((r) => (
-                  <div key={r.categoria} className="flex justify-between">
-                    <span className="pl-3 text-muted-foreground">{r.categoria}</span>
-                    <span className="tabular-nums text-destructive">({formatCurrency(r.valor)})</span>
-                  </div>
-                ))}
-                <div className="flex justify-between border-t border-border pt-1 font-medium">
-                  <span>Total de despesas</span>
-                  <span className="tabular-nums text-destructive">({formatCurrency(dre.data.data.totalDespesas)})</span>
-                </div>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">
+                      Demonstração do Resultado — {d.from ?? "início"} a {d.to ?? "hoje"}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">({d.basis === "cash" ? "caixa" : "competência"} · {d.transactionCount} lançamentos)</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-0.5 text-sm">
+                    {d.lines.map((l) => {
+                      const shown = l.sign === -1 ? -Math.abs(l.value) : l.value;
+                      const isTotal = l.kind === "subtotal" || l.kind === "result";
+                      return (
+                        <div
+                          key={l.key}
+                          className={`flex justify-between py-1 ${isTotal ? "border-t border-border font-semibold" : ""} ${l.kind === "result" ? "mt-1 border-t-2 border-foreground/30 pt-2 text-base" : ""}`}
+                        >
+                          <span className={isTotal ? "" : "pl-3 text-muted-foreground"}>{l.label}</span>
+                          <span className={`tabular-nums ${shown < 0 ? "text-destructive" : isTotal ? "text-success" : ""}`}>
+                            {formatCurrency(shown)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
 
-                <div className="mt-4 flex justify-between border-t-2 border-foreground/20 pt-2 text-base font-bold">
-                  <span>Resultado do período</span>
-                  <span className={`tabular-nums ${dre.data.data.resultado >= 0 ? "text-success" : "text-destructive"}`}>
-                    {formatCurrency(dre.data.data.resultado)}
-                  </span>
-                </div>
-                <p className="text-right text-xs text-muted-foreground">
-                  Margem: {dre.data.data.margem}% · {dre.data.data.totalLancamentos} lançamento(s)
-                </p>
-              </CardContent>
-            </Card>
-          )}
+                <Card>
+                  <CardHeader className="py-3"><CardTitle className="text-sm">Cascata do resultado</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chart} margin={{ top: 4, right: 8, bottom: 0, left: -6 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                          <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                          <Bar dataKey="v" radius={[4, 4, 0, 0]} className="fill-primary" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {canManage && d.byCategory.length > 0 && (
+                  <Card>
+                    <CardHeader className="flex-row items-center justify-between py-3">
+                      <CardTitle className="text-sm">Classificação das categorias na DRE</CardTitle>
+                      {Object.keys(mapEdits).length > 0 && (
+                        <Button
+                          size="sm"
+                          disabled={saveMappings.isPending}
+                          onClick={() => {
+                            const current = new Map((dreMappings.data?.data ?? []).map((m) => [m.category, m.dreLine]));
+                            for (const [cat, line] of Object.entries(mapEdits)) current.set(cat, line);
+                            saveMappings.mutate([...current.entries()].map(([category, dreLine]) => ({ category, dreLine })));
+                          }}
+                        >
+                          {saveMappings.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar
+                        </Button>
+                      )}
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      {[...new Map(d.byCategory.map((r) => [r.category, r])).values()].map((r) => {
+                        const cur = mapEdits[r.category] ?? r.dreLine;
+                        return (
+                          <div key={r.category} className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 py-1.5 text-xs last:border-0">
+                            <span className="min-w-0 flex-1">
+                              {r.category}
+                              {!r.mapped && <span className="ml-1 text-muted-foreground">(auto)</span>}
+                            </span>
+                            <span className="tabular-nums text-muted-foreground">{formatCurrency(r.value)}</span>
+                            <Select value={cur} onValueChange={(v) => setMapEdits((s) => ({ ...s, [r.category]: v }))}>
+                              <SelectTrigger className="h-7 w-56 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {(dreLines.data?.data ?? []).map((ln) => (
+                                  <SelectItem key={ln.key} value={ln.key}>{ln.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
         </TabsContent>
 
         {/* ---- Impostos ---- */}

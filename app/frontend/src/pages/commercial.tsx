@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Loader2, Plus, Target, TrendingUp, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -44,6 +45,21 @@ export function CommercialPage() {
   const opps = useQuery({ queryKey: ["commercial", "opportunities"], queryFn: () => apiGet<{ data: Opportunity[] }>("/commercial/opportunities") });
   const leads = useQuery({ queryKey: ["commercial", "leads"], queryFn: () => apiGet<{ data: CommercialLead[] }>("/commercial/leads") });
   const pipeline = useQuery({ queryKey: ["commercial", "pipeline"], queryFn: () => apiGet<{ data: PipelineSummary }>("/commercial/pipeline") });
+  const funnel = useQuery({
+    queryKey: ["commercial", "funnel"],
+    queryFn: () =>
+      apiGet<{
+        data: {
+          from: string;
+          to: string;
+          steps: { key: string; label: string; count: number; conversionFromPrev: number; conversionFromTop: number }[];
+          leadToContract: number;
+          oppToContract: number;
+          wonValue: number;
+          leadsLost: number;
+        };
+      }>("/commercial/funnel"),
+  });
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["commercial"] });
 
@@ -116,6 +132,7 @@ export function CommercialPage() {
         <TabsList>
           <TabsTrigger value="funil">Funil ({oppList.length})</TabsTrigger>
           <TabsTrigger value="leads">Leads ({leadList.filter((l) => l.status !== "CONVERTED").length})</TabsTrigger>
+          <TabsTrigger value="conversao">Conversão</TabsTrigger>
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
         </TabsList>
 
@@ -202,6 +219,89 @@ export function CommercialPage() {
         </TabsContent>
 
         {/* ---- Resumo ---- */}
+        {/* ---- Conversão (funil MRV-style + motivos de perda) ---- */}
+        <TabsContent value="conversao" className="space-y-4">
+          {funnel.isLoading || !funnel.data ? (
+            <PageSkeleton />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <KpiCard title="Conversão lead → contrato" value={`${funnel.data.data.leadToContract}%`} icon={TrendingUp} />
+                <KpiCard title="Conversão oportunidade → contrato" value={`${funnel.data.data.oppToContract}%`} icon={Target} />
+                <KpiCard title="Valor fechado no período" value={formatCurrency(funnel.data.data.wonValue)} icon={ArrowRight} />
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Funil de conversão</CardTitle>
+                  <p className="text-xs text-muted-foreground">{funnel.data.data.from} a {funnel.data.data.to} · % em relação à etapa anterior</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart layout="vertical" data={funnel.data.data.steps} margin={{ top: 4, right: 48, bottom: 0, left: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 12 }} />
+                        <Tooltip
+                          formatter={(v: number, _n, item) => [`${v} (${(item?.payload as { conversionFromPrev: number })?.conversionFromPrev}% da etapa anterior)`, "Volume"]}
+                        />
+                        <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                          {funnel.data.data.steps.map((s, i) => (
+                            <Cell key={s.key} className={i === funnel.data!.data.steps.length - 1 ? "fill-success" : "fill-primary"} />
+                          ))}
+                          <LabelList
+                            dataKey="conversionFromPrev"
+                            position="right"
+                            formatter={(v: number) => `${v}%`}
+                            className="fill-muted-foreground text-[11px]"
+                          />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-3">
+                    {funnel.data.data.steps.map((s) => (
+                      <span key={s.key}>{s.label}: <strong className="text-foreground">{s.count}</strong> ({s.conversionFromTop}% do topo)</span>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2"><CardTitle className="text-base">Por que os clientes não fecham</CardTitle></CardHeader>
+                <CardContent>
+                  {!p || p.lostReasons.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Sem oportunidades perdidas com motivo registrado ainda.</p>
+                  ) : (
+                    <>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart layout="vertical" data={p.lostReasons} margin={{ top: 4, right: 40, bottom: 0, left: 8 }}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
+                            <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                            <YAxis type="category" dataKey="label" width={110} tick={{ fontSize: 12 }} />
+                            <Tooltip />
+                            <Bar dataKey="count" radius={[0, 4, 4, 0]} className="fill-destructive">
+                              <LabelList
+                                dataKey="count"
+                                position="right"
+                                formatter={(v: number) => `${v} (${Math.round((v / p.lostCount) * 100)}%)`}
+                                className="fill-muted-foreground text-[11px]"
+                              />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{p.lostCount} oportunidade(s) perdida(s) no total · win rate {p.winRate}%</p>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
+
         <TabsContent value="resumo" className="space-y-4">
           {!p ? (
             <PageSkeleton />

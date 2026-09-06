@@ -9,6 +9,7 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import taxRoutes from "./tax.routes";
 import extrasRoutes from "./extras.routes";
+import { DRE_LINE_KEYS, DRE_LINE_LABEL, buildDre } from "./dre.service";
 
 const router = Router();
 router.use(authenticate);
@@ -103,53 +104,6 @@ router.get(
   })
 );
 
-// GET /api/finance/dre?from&to[&status=PAGO|ALL]  (Demonstrativo de Resultado)
-router.get(
-  "/dre",
-  requirePermission("finance.read"),
-  asyncHandler(async (req, res) => {
-    const organizationId = req.user!.organizationId;
-    const now = new Date();
-    const from = req.query.from ? new Date(String(req.query.from)) : new Date(now.getFullYear(), 0, 1);
-    const to = req.query.to ? new Date(String(req.query.to)) : now;
-    const onlyPaid = String(req.query.status ?? "PAGO").toUpperCase() !== "ALL";
-
-    const rows = await prisma.financeTransaction.findMany({
-      where: {
-        organizationId,
-        date: { gte: from, lte: to },
-        ...(onlyPaid ? { status: "PAGO" as const } : {}),
-      },
-      select: { type: true, amount: true, category: true },
-    });
-
-    const rec = new Map<string, number>();
-    const desp = new Map<string, number>();
-    for (const r of rows) {
-      const v = money(r.amount);
-      const bucket = r.type === "RECEITA" ? rec : desp;
-      bucket.set(r.category, (bucket.get(r.category) ?? 0) + v);
-    }
-    const toList = (m: Map<string, number>) =>
-      [...m.entries()].map(([categoria, valor]) => ({ categoria, valor: round2(valor) })).sort((a, b) => b.valor - a.valor);
-
-    const totalReceitas = round2([...rec.values()].reduce((a, b) => a + b, 0));
-    const totalDespesas = round2([...desp.values()].reduce((a, b) => a + b, 0));
-    const resultado = round2(totalReceitas - totalDespesas);
-
-    return ok(res, {
-      periodo: { de: from.toISOString().slice(0, 10), ate: to.toISOString().slice(0, 10), base: onlyPaid ? "realizado" : "competência" },
-      receitas: toList(rec),
-      despesas: toList(desp),
-      totalReceitas,
-      totalDespesas,
-      resultado,
-      margem: totalReceitas > 0 ? round2((resultado / totalReceitas) * 100) : 0,
-      totalLancamentos: rows.length,
-    });
-  })
-);
-
 // GET /api/finance/summary  (DRE simplificado + a receber/a pagar + quebras)
 router.get(
   "/summary",
@@ -207,6 +161,87 @@ router.get(
         .map((m) => ({ ...m, receitas: round2(m.receitas), despesas: round2(m.despesas) }))
         .sort((a, b) => a.month.localeCompare(b.month))
         .slice(-6),
+    });
+  })
+);
+
+// GET /api/finance/dre/lines  -> chaves e rótulos das linhas da DRE (para a UI)
+router.get(
+  "/dre/lines",
+  requirePermission("finance.read"),
+  asyncHandler(async (_req, res) => ok(res, DRE_LINE_KEYS.map((key) => ({ key, label: DRE_LINE_LABEL[key] }))))
+);
+
+// GET /api/finance/dre/mappings  -> mapeamentos categoria -> linha da DRE
+router.get(
+  "/dre/mappings",
+  requirePermission("finance.read"),
+  asyncHandler(async (req, res) => {
+    const rows = await prisma.dreCategoryMapping.findMany({
+      where: { organizationId: req.user!.organizationId },
+      orderBy: { category: "asc" },
+      select: { category: true, dreLine: true },
+    });
+    return ok(res, rows);
+  })
+);
+
+// PUT /api/finance/dre/mappings  { mappings: [{category, dreLine}] }  -> substitui todos
+router.put(
+  "/dre/mappings",
+  requirePermission("finance.manage"),
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({
+        mappings: z
+          .array(z.object({ category: z.string().trim().min(1).max(120), dreLine: z.enum(DRE_LINE_KEYS) }))
+          .max(500),
+      })
+      .parse(req.body);
+    const orgId = req.user!.organizationId;
+    // dedup por categoria (último vence)
+    const map = new Map(input.mappings.map((m) => [m.category, m.dreLine]));
+    await prisma.$transaction([
+      prisma.dreCategoryMapping.deleteMany({ where: { organizationId: orgId } }),
+      prisma.dreCategoryMapping.createMany({
+        data: [...map.entries()].map(([category, dreLine]) => ({ organizationId: orgId, category, dreLine })),
+      }),
+    ]);
+    return ok(res, { count: map.size }, "Classificação da DRE salva");
+  })
+);
+
+// GET /api/finance/dre?from&to&basis=accrual|cash  -> DRE formal
+router.get(
+  "/dre",
+  requirePermission("finance.read"),
+  asyncHandler(async (req, res) => {
+    const organizationId = req.user!.organizationId;
+    const basis = req.query.basis === "cash" ? "cash" : "accrual";
+    const from = req.query.from ? new Date(String(req.query.from)) : null;
+    const to = req.query.to ? new Date(String(req.query.to)) : null;
+
+    const dateField = basis === "cash" ? "paidAt" : "date";
+    const range: Prisma.DateTimeFilter = {};
+    if (from) range.gte = from;
+    if (to) range.lte = to;
+    const where: Prisma.FinanceTransactionWhereInput = { organizationId };
+    if (from || to) where[dateField] = range;
+    if (basis === "cash") where.status = "PAGO";
+
+    const [txs, mappingRows] = await Promise.all([
+      prisma.financeTransaction.findMany({ where, select: { type: true, category: true, amount: true, status: true } }),
+      prisma.dreCategoryMapping.findMany({ where: { organizationId }, select: { category: true, dreLine: true } }),
+    ]);
+
+    const mappings = Object.fromEntries(mappingRows.map((m) => [m.category, m.dreLine]));
+    const dre = buildDre(txs, mappings);
+    return ok(res, {
+      from: from ? from.toISOString().slice(0, 10) : null,
+      to: to ? to.toISOString().slice(0, 10) : null,
+      basis,
+      transactionCount: txs.length,
+      ...dre,
     });
   })
 );
