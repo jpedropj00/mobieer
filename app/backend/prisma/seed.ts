@@ -766,6 +766,63 @@ async function main() {
   }
   console.log(`[SEED]   convite do portal (dev): /portal/definir-senha?token=${inviteToken}`);
 
+  console.log("[SEED] Criando ficha de eletrodomésticos do projeto piloto...");
+  const APPLIANCE_DEFAULTS: { category: string; name: string }[] = [
+    { category: "COZINHA", name: "Geladeira / refrigerador" },
+    { category: "COZINHA", name: "Cooktop" },
+    { category: "COZINHA", name: "Forno elétrico ou a gás" },
+    { category: "COZINHA", name: "Micro-ondas" },
+    { category: "COZINHA", name: "Coifa / depurador" },
+    { category: "GOURMET", name: "Lava-louças" },
+    { category: "GOURMET", name: "Adega" },
+    { category: "GOURMET", name: "Cervejeira" },
+    { category: "GOURMET", name: "Frigobar" },
+    { category: "GOURMET", name: "Forno de pizza / churrasqueira" },
+    { category: "LAVANDERIA", name: "Máquina de lavar" },
+    { category: "LAVANDERIA", name: "Secadora" },
+    { category: "LAVANDERIA", name: "Tanquinho" },
+    { category: "OUTROS", name: "TV 1" },
+    { category: "OUTROS", name: "TV 2" },
+    { category: "OUTROS", name: "TV 3" },
+  ];
+  const applianceFill: Record<string, { owned?: boolean; willBuy?: boolean; brandModel?: string; widthCm?: number; heightCm?: number; depthCm?: number; referenceUrl?: string }> = {
+    "Geladeira / refrigerador": { owned: true, brandModel: "Brastemp BRO85 Inverse", widthCm: 70.5, heightCm: 191, depthCm: 70.9 },
+    Cooktop: { willBuy: true, brandModel: "Tramontina Penta 5 bocas", widthCm: 74, referenceUrl: "https://www.tramontina.com.br/cooktop-penta" },
+    "Micro-ondas": { owned: true, brandModel: "Electrolux MI41S", widthCm: 51.6, heightCm: 30.7, depthCm: 39.9 },
+    "Coifa / depurador": { willBuy: true, brandModel: "Suggar Slim 60cm", widthCm: 60 },
+    "Lava-louças": { willBuy: true, widthCm: 60, referenceUrl: "https://www.brastemp.com.br/lava-loucas-14-servicos" },
+    "Máquina de lavar": { owned: true, brandModel: "LG VC4 13kg", widthCm: 60, heightCm: 100, depthCm: 61 },
+    "TV 1": { owned: true, brandModel: 'Samsung 65" Crystal', widthCm: 145, heightCm: 83 },
+  };
+  await prisma.applianceSheet.create({
+    data: {
+      organizationId: ORG_ID,
+      projectId: projeto.id,
+      status: "SUBMITTED",
+      projetista: "Marcos Vinícius",
+      ambientes: "Cozinha, Área gourmet, Lavanderia, Home",
+      notes: "Prever tomada 220V para o cooktop e ponto de água/dreno para a lava-louças à direita da bancada.",
+      submittedAt: new Date(Date.now() - 3 * 86400000),
+      items: {
+        create: APPLIANCE_DEFAULTS.map((it, idx) => {
+          const f = applianceFill[it.name] ?? {};
+          return {
+            category: it.category,
+            name: it.name,
+            position: idx,
+            owned: f.owned ?? false,
+            willBuy: f.willBuy ?? false,
+            brandModel: f.brandModel ?? null,
+            widthCm: f.widthCm != null ? f.widthCm.toFixed(1) : null,
+            heightCm: f.heightCm != null ? f.heightCm.toFixed(1) : null,
+            depthCm: f.depthCm != null ? f.depthCm.toFixed(1) : null,
+            referenceUrl: f.referenceUrl ?? null,
+          };
+        }),
+      },
+    },
+  });
+
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");
   const TEMPLATES: { file: string; name: string; type: "MANUAL_GARANTIA" | "VISTORIA_CHECKLIST" | "CRONOGRAMA" | "VISTORIA_FOTOGRAFICA"; requiresSignature: boolean; signerRoles: string[] }[] = [
     { file: "CERTIFICADO GARANTIA .pdf", name: "Manual de Uso e Certificado de Garantia", type: "MANUAL_GARANTIA", requiresSignature: true, signerRoles: ["MOBIEER", "CLIENTE"] },

@@ -18,6 +18,7 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage } from "@/lib/utils";
+import { ApplianceSheetInternal } from "./appliance-sheet-internal";
 
 type Project = {
   id: string;
@@ -177,6 +178,7 @@ export function ProjectDetailPage() {
       <Tabs defaultValue="documents">
         <TabsList>
           <TabsTrigger value="documents">Documentos ({p._count.documents})</TabsTrigger>
+          <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
 
@@ -275,6 +277,10 @@ export function ProjectDetailPage() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="ficha">
+          <ApplianceSheetInternal projectId={projectId} canManage={canManageAccounts} />
         </TabsContent>
 
         <TabsContent value="portal" className="space-y-4">
