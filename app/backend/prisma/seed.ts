@@ -914,6 +914,61 @@ async function main() {
     });
   }
 
+  console.log("[SEED] Criando ponto de equilíbrio, compra parcelada e cartão de crédito...");
+  await prisma.setting.upsert({ where: { key: "finance.breakeven.fixedCostMonthly" }, create: { key: "finance.breakeven.fixedCostMonthly", value: "38000" }, update: { value: "38000" } });
+  await prisma.setting.upsert({ where: { key: "finance.breakeven.contributionMarginPct" }, create: { key: "finance.breakeven.contributionMarginPct", value: "42" }, update: { value: "42" } });
+
+  // Compra parcelada de exemplo (máquina de corte em 10x)
+  const instGroup = crypto.randomUUID();
+  const instFirstDue = new Date(today.getFullYear(), today.getMonth() - 1, 10);
+  const instRows = Array.from({ length: 10 }, (_, i) => {
+    const due = new Date(instFirstDue.getFullYear(), instFirstDue.getMonth() + i, 10);
+    return {
+      organizationId: ORG_ID,
+      type: "DESPESA" as const,
+      category: "Ferramentas",
+      amount: (1250).toFixed(2),
+      date: due,
+      dueDate: due,
+      description: `Seccionadora Bosch — máquina de corte (${i + 1}/10)`,
+      status: (i < 2 ? "PAGO" : "PENDENTE") as "PAGO" | "PENDENTE",
+      paidAt: i < 2 ? due : null,
+      method: "Parcelado",
+      supplierId: supplierIds["Fixadores do Brasil Ltda"] ?? null,
+      installmentGroup: instGroup,
+      installmentNumber: i + 1,
+      installmentTotal: 10,
+      createdById: adminId,
+    };
+  });
+  await prisma.financeTransaction.createMany({ data: instRows });
+
+  const card = await prisma.creditCard.create({
+    data: { organizationId: ORG_ID, name: "Nubank PJ", lastDigits: "4417", closingDay: 3, dueDay: 10 },
+  });
+  const stmtMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 7);
+  const cardExpenses = [
+    { description: "Posto Shell — diesel van", category: "Combustível", amount: 420.9, day: 4 },
+    { description: "Leroy Merlin — parafusos e buchas", category: "Ferragens", amount: 318.4, day: 9 },
+    { description: "Figma (assinatura anual 3/12)", category: "Software / assinaturas", amount: 176.0, day: 12, installment: "3/12" },
+    { description: "Almoço equipe montagem", category: "Alimentação", amount: 214.7, day: 15 },
+    { description: "Impulsionamento Instagram", category: "Marketing", amount: 300.0, day: 20 },
+  ];
+  const stmtTotal = cardExpenses.reduce((a, e) => a + e.amount, 0);
+  const statement = await prisma.cardStatement.create({
+    data: { organizationId: ORG_ID, cardId: card.id, referenceMonth: stmtMonth, total: stmtTotal.toFixed(2), importedById: adminId },
+  });
+  await prisma.cardExpense.createMany({
+    data: cardExpenses.map((e) => ({
+      statementId: statement.id,
+      description: e.description,
+      category: e.category,
+      amount: e.amount.toFixed(2),
+      date: new Date(today.getFullYear(), today.getMonth() - 1, e.day),
+      installment: e.installment ?? null,
+    })),
+  });
+
   console.log("[SEED] Criando regras fiscais (dados de desenvolvimento — trocar por regras oficiais)...");
   type RuleSeed = { regimeTributario: "SIMPLES_NACIONAL" | "LUCRO_PRESUMIDO" | "LUCRO_REAL"; tipoImposto: "DAS" | "IRPJ" | "CSLL" | "PIS" | "COFINS" | "ISS" | "ICMS"; aliquota: number; reducaoBase?: number; faixaFaturamentoMin?: number; faixaFaturamentoMax?: number; descricao: string };
   const TAX_RULES: RuleSeed[] = [
@@ -948,6 +1003,69 @@ async function main() {
         faixaFaturamentoMax: r.faixaFaturamentoMax != null ? r.faixaFaturamentoMax.toString() : null,
         descricao: r.descricao,
         vigenciaInicio,
+      },
+    });
+  }
+
+  console.log("[SEED] Criando funil de vendas (etapas + leads + oportunidades)...");
+  const STAGES = [
+    { name: "Novo contato", position: 1, probability: 10 },
+    { name: "Qualificação", position: 2, probability: 25 },
+    { name: "Medição / Projeto", position: 3, probability: 45 },
+    { name: "Proposta enviada", position: 4, probability: 65 },
+    { name: "Negociação", position: 5, probability: 80 },
+    { name: "Ganho", position: 6, probability: 100, isWon: true },
+    { name: "Perdido", position: 7, probability: 0, isLost: true },
+  ];
+  const stageIds: Record<string, string> = {};
+  for (const s of STAGES) {
+    const st = await prisma.salesStage.create({ data: { ...s, organizationId: ORG_ID } });
+    stageIds[s.name] = st.id;
+  }
+  const sellerId = userIds["Marcos Vinícius"] ?? adminId;
+
+  const LEADS = [
+    { name: "Fernanda Aragão", phone: "(85) 98111-2020", interest: "Cozinha + área gourmet", source: "Instagram", status: "NEW" as const },
+    { name: "Escritório Contábil Prisma", phone: "(85) 3255-7788", interest: "Estações de trabalho (6 lugares)", source: "Indicação", status: "CONTACTED" as const },
+    { name: "Dr. Henrique Sales", phone: "(85) 99640-1234", interest: "Home office + closet", source: "Site", status: "QUALIFIED" as const },
+  ];
+  for (const l of LEADS) {
+    await prisma.commercialLead.create({
+      data: { organizationId: ORG_ID, name: l.name, phone: l.phone, interest: l.interest, source: l.source, status: l.status, sellerId, nextContactAt: addDays(today, 2) },
+    });
+  }
+
+  const OPPS = [
+    { title: "Cozinha planejada — Ap. Meireles", stage: "Qualificação", value: 42000, days: 25 },
+    { title: "Escritório advocacia (fase 2) — Juliana", stage: "Medição / Projeto", value: 68000, days: 18, clientId: juliana.id },
+    { title: "Dormitório casal + closet — Cond. Dunas", stage: "Proposta enviada", value: 31500, days: 12 },
+    { title: "Corporativo 12 estações — Studio Alfa", stage: "Negociação", value: 96000, days: 8 },
+    { title: "Sala + home theater — Aldeota", stage: "Novo contato", value: 27000, days: 40 },
+  ];
+  for (const [i, o] of OPPS.entries()) {
+    const opp = await prisma.commercialOpportunity.create({
+      data: {
+        organizationId: ORG_ID,
+        title: o.title,
+        stageId: stageIds[o.stage],
+        probability: STAGES.find((s) => s.name === o.stage)!.probability,
+        estimatedValue: o.value.toFixed(2),
+        expectedCloseAt: addDays(today, o.days),
+        position: i,
+        clientId: o.clientId ?? null,
+        sellerId,
+        nextAction: i % 2 === 0 ? "Ligar para retomar" : "Enviar revisão da proposta",
+        nextActionAt: addDays(today, (i % 3) + 1),
+      },
+    });
+    await prisma.commercialInteraction.create({
+      data: {
+        type: i % 2 === 0 ? "CALL" : "WHATSAPP",
+        summary: "Contato inicial — cliente demonstrou interesse e pediu proposta.",
+        occurredAt: addDays(today, -(i + 1)),
+        opportunityId: opp.id,
+        clientId: o.clientId ?? null,
+        responsibleId: sellerId,
       },
     });
   }

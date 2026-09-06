@@ -168,6 +168,8 @@ model Organization {
   financeTransactions FinanceTransaction[]
   taxRules            TaxRule[]
   documentTemplates   DocumentTemplate[]
+  creditCards         CreditCard[]
+  cardStatements      CardStatement[]
 
   @@index([enterpriseId])
 }
@@ -1396,10 +1398,45 @@ model CommercialLead {
   interactions      CommercialInteraction[]
   history           CommercialHistory[]
   kanbanTasks       KanbanTask[]
+  briefing          LeadBriefing?
 
   @@index([organizationId, status, enteredAt])
   @@index([sellerId, nextContactAt])
   @@index([convertedClientId])
+}
+
+enum BriefingOrigin {
+  PUBLIC
+  CONSULTANT
+}
+
+/// Briefing inicial do cliente (form público que alimenta o CRM).
+model LeadBriefing {
+  id                 String         @id @default(cuid())
+  leadId             String         @unique
+  lead               CommercialLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  address            String?
+  investmentEstimate Decimal?       @db.Decimal(14, 2)
+  investmentText     String? // texto livre caso não seja um número
+  hasProject         Boolean        @default(false)
+  environments       String[] // ex.: ["Cozinha", "Sala"]
+  userCount          Int?
+  discoveryChannel   String? // Instagram | Indicação | Google | Site | Arquiteto | Parceiros | Outro
+  notes              String?        @db.Text
+  origin             BriefingOrigin @default(PUBLIC)
+  submittedAt        DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+enum LostReason {
+  PRECO
+  PRAZO
+  CONCORRENCIA
+  SEM_RESPOSTA
+  DESISTIU
+  ESCOPO
+  OUTRO
 }
 
 model CommercialOpportunity {
@@ -1414,6 +1451,7 @@ model CommercialOpportunity {
   nextAction      String?
   nextActionAt    DateTime?
   lostReason      String?
+  lostReasonCode  LostReason?
   position        Int                     @default(0)
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
@@ -1433,6 +1471,7 @@ model CommercialOpportunity {
   orders          SalesOrder[]
   history         CommercialHistory[]
   kanbanTasks     KanbanTask[]
+  financeTransactions FinanceTransaction[]
 
   @@index([organizationId, status, expectedCloseAt])
   @@index([stageId, position])
@@ -2067,12 +2106,23 @@ model FinanceTransaction {
   paidAt         DateTime?
   method         String? // forma de pagamento
 
+  // parcelamento (compras parceladas)
+  installmentGroup  String? // id do grupo; parcelas do mesmo grupo compartilham
+  installmentNumber Int? // 1..N
+  installmentTotal  Int? // N
+
+  // origem automática (contrato/oportunidade ganha)
+  originOpportunityId String?
+  originOpportunity   CommercialOpportunity? @relation(fields: [originOpportunityId], references: [id], onDelete: SetNull)
+
   projectId  String?
   project    Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   clientId   String?
   client     Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  cardExpenseId String?  @unique
+  cardExpense   CardExpense? @relation(fields: [cardExpenseId], references: [id], onDelete: SetNull)
 
   createdById String?
   createdBy   User?    @relation("FinanceCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -2081,9 +2131,58 @@ model FinanceTransaction {
 
   @@index([organizationId, type, status])
   @@index([organizationId, date])
+  @@index([installmentGroup])
   @@index([projectId])
   @@index([supplierId])
   @@index([clientId])
+}
+
+// ---- Cartão de crédito (análise de gastos + fatura) ----
+model CreditCard {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  lastDigits     String?
+  closingDay     Int?
+  dueDay         Int?
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  statements     CardStatement[]
+
+  @@index([organizationId, active])
+}
+
+model CardStatement {
+  id             String        @id @default(cuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cardId         String
+  card           CreditCard    @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  referenceMonth String // YYYY-MM
+  total          Decimal       @default(0) @db.Decimal(14, 2)
+  fileKey        String? // PDF da fatura no storage
+  importedById   String?
+  createdAt      DateTime      @default(now())
+  expenses       CardExpense[]
+
+  @@unique([cardId, referenceMonth])
+  @@index([organizationId, referenceMonth])
+}
+
+model CardExpense {
+  id          String         @id @default(cuid())
+  statementId String
+  statement   CardStatement  @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  description String
+  category    String // Uber, Mercado, Combustível, Software, ...
+  amount      Decimal        @db.Decimal(14, 2)
+  date        DateTime
+  installment String? // "2/12"
+  transaction FinanceTransaction?
+
+  @@index([statementId])
+  @@index([category])
 }
 
 // Base de regras fiscais configuráveis (econofinance tax_rules).

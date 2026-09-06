@@ -20,6 +20,8 @@ import businessRoutes from "../modules/business/business.routes";
 import documentsRoutes from "../modules/documents/documents.routes";
 import portalRoutes from "../modules/portal/portal.routes";
 import hrRoutes from "../modules/hr/hr.routes";
+import commercialRoutes from "../modules/commercial/commercial.routes";
+import briefingRoutes from "../modules/briefing/briefing.routes";
 import financeRoutes from "../modules/finance/finance.routes";
 import templatesRoutes from "../modules/templates/templates.routes";
 
@@ -46,6 +48,8 @@ router.use("/business", businessRoutes);
 router.use("/documents", documentsRoutes);
 router.use("/portal", portalRoutes);
 router.use("/hr", hrRoutes);
+router.use("/commercial", commercialRoutes);
+router.use("/briefing", briefingRoutes);
 router.use("/finance", financeRoutes);
 router.use("/templates", templatesRoutes);
 

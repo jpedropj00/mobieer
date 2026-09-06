@@ -501,3 +501,127 @@ export type SearchResults = {
   users: { id: string; name: string; email: string; position: string | null; sector: string | null }[];
   suppliers: { id: string; name: string; cnpj: string | null; contact: string | null }[];
 };
+
+// ---- Comercial / Funil de vendas ----
+export type SalesStage = {
+  id: string;
+  name: string;
+  position: number;
+  probability: number;
+  isWon: boolean;
+  isLost: boolean;
+  active: boolean;
+  _count?: { opportunities: number };
+};
+
+export type CommercialLead = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  source: string | null;
+  interest: string | null;
+  status: "NEW" | "CONTACTED" | "QUALIFIED" | "CONVERTED" | "LOST";
+  notes: string | null;
+  enteredAt: string;
+  nextContactAt: string | null;
+  seller: { id: string; name: string } | null;
+  briefing: { id: string; submittedAt: string; environments: string[]; origin: "PUBLIC" | "CONSULTANT" } | null;
+  _count: { opportunities: number; interactions: number };
+};
+
+export type LeadBriefing = {
+  id: string;
+  address: string | null;
+  investmentEstimate: number | null;
+  investmentText: string | null;
+  hasProject: boolean;
+  environments: string[];
+  userCount: number | null;
+  discoveryChannel: string | null;
+  notes: string | null;
+  origin: "PUBLIC" | "CONSULTANT";
+  submittedAt: string;
+};
+
+export type Opportunity = {
+  id: string;
+  title: string;
+  status: "OPEN" | "NEGOTIATION" | "WAITING_CLIENT" | "WON" | "LOST";
+  estimatedValue: number;
+  probability: number;
+  weightedValue: number;
+  expectedCloseAt: string | null;
+  nextAction: string | null;
+  nextActionAt: string | null;
+  lostReason: string | null;
+  position: number;
+  createdAt: string;
+  stage: { id: string; name: string; position: number; isWon: boolean; isLost: boolean };
+  client: { id: string; name: string } | null;
+  seller: { id: string; name: string };
+  lastInteractionAt: string | null;
+  interactionCount: number;
+  quoteCount: number;
+  score: number;
+};
+
+export type PipelineSummary = {
+  byStage: { id: string; name: string; count: number; total: number; weighted: number }[];
+  openCount: number;
+  openValue: number;
+  forecast: number;
+  wonCount: number;
+  wonValue: number;
+  ticketMedio: number;
+  lostCount: number;
+  lostReasons: { code: string; label: string; count: number }[];
+  winRate: number;
+};
+
+// ---- Financeiro: parcelas, cartões, ponto de equilíbrio ----
+export type InstallmentGroup = {
+  group: string;
+  category: string;
+  supplier: string | null;
+  total: number;
+  paid: number;
+  count: number;
+  nextDue: string | null;
+  installments: { id: string; number: number; total: number; amount: number; dueDate: string | null; status: string }[];
+};
+
+export type CreditCard = {
+  id: string;
+  name: string;
+  lastDigits: string | null;
+  closingDay: number | null;
+  dueDay: number | null;
+  active: boolean;
+  statements: { id: string; referenceMonth: string; total: number }[];
+};
+
+export type CardStatementDetail = {
+  id: string;
+  card: string;
+  referenceMonth: string;
+  total: number;
+  hasFile: boolean;
+  expenses: { id: string; description: string; category: string; amount: number; date: string; installment: string | null }[];
+};
+
+export type CardAnalysis = {
+  total: number;
+  byCategory: { key: string; total: number }[];
+  byCard: { key: string; total: number }[];
+  byMonth: { key: string; total: number }[];
+};
+
+export type BreakEven = {
+  fixedCostMonthly: number;
+  contributionMarginPct: number;
+  breakEvenRevenue: number;
+  currentMonthRevenue: number;
+  gap: number;
+  reached: boolean;
+};

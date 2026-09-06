@@ -31,6 +31,8 @@ const MyTasksPage = lazy(() => import("@/pages/my-tasks").then((m) => ({ default
 const BusinessPage = lazy(() => import("@/pages/business").then((m) => ({ default: m.BusinessPage })));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail").then((m) => ({ default: m.ProjectDetailPage })));
 const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage })));
+const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
+const BriefingPage = lazy(() => import("@/pages/briefing").then((m) => ({ default: m.BriefingPage })));
 const FinancePage = lazy(() => import("@/pages/finance").then((m) => ({ default: m.FinancePage })));
 const TemplatesPage = lazy(() => import("@/pages/templates").then((m) => ({ default: m.TemplatesPage })));
 
@@ -49,6 +51,7 @@ function LazyBoundary({ children }: { children: React.ReactNode }) {
 }
 
 export const router = createBrowserRouter([
+  { path: "/briefing", element: <LazyBoundary><BriefingPage /></LazyBoundary> },
   {
     element: <GuestRoute />,
     children: [{ path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> }],
@@ -84,6 +87,7 @@ export const router = createBrowserRouter([
           { path: "/modelos", element: <PermissionGate permission="documents.read"><TemplatesPage /></PermissionGate> },
           { path: "/alertas", element: <PermissionGate permission="stock.read"><AlertsPage /></PermissionGate> },
           { path: "/rh", element: <PermissionGate permission="hr.read"><HrPage /></PermissionGate> },
+          { path: "/comercial", element: <PermissionGate permission="commercial.read"><CommercialPage /></PermissionGate> },
           { path: "/financeiro", element: <PermissionGate permission="finance.read"><FinancePage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },

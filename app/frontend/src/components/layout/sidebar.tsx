@@ -19,6 +19,7 @@ import {
   Scissors,
   Settings,
   Wallet,
+  Target,
   Tags,
   Truck,
   Users,
@@ -79,6 +80,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Pessoas",
     items: [{ label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" }],
+  },
+  {
+    label: "Comercial",
+    items: [{ label: "Comercial", to: "/comercial", icon: Target, permission: "commercial.read" }],
   },
   {
     label: "Financeiro",
