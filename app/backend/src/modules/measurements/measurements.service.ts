@@ -55,7 +55,7 @@ export function serializeVisit(v: VisitRow) {
 
 export const visitInclude = {
   technician: { select: { id: true, name: true } },
-  project: { select: { id: true, code: true, name: true, managerId: true, client: { select: { name: true } } } },
+  project: { select: { id: true, code: true, name: true, managerId: true, clientId: true, client: { select: { name: true } } } },
 } as const;
 
 /**

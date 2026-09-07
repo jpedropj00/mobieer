@@ -7,7 +7,7 @@ import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
-import { buildMirror, inferKinds, parseTimeClockFile } from "./timeclock.service";
+import { buildMirror, computeHourBank, inferKinds, monthsBetween, parseTimeClockFile } from "./timeclock.service";
 
 const router = Router();
 router.use(authenticate);
@@ -60,6 +60,104 @@ router.get(
       month,
       ...mirror,
     });
+  })
+);
+
+// GET /api/hr/timeclock/hour-bank?employeeId&from=YYYY-MM-DD&to=YYYY-MM-DD
+// Banco de horas: saldos diários do espelho + ajustes manuais.
+router.get(
+  "/hour-bank",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    const employeeId = String(req.query.employeeId ?? "").trim();
+    if (!employeeId) throw new BadRequestError("employeeId é obrigatório");
+    const employee = await ensureEmployee(employeeId, req.user!.organizationId);
+
+    const now = new Date();
+    const from = req.query.from ? new Date(`${String(req.query.from)}T00:00:00`) : new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = req.query.to ? new Date(`${String(req.query.to)}T23:59:59`) : now;
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) throw new BadRequestError("Intervalo inválido");
+
+    const entries = await prisma.timeEntry.findMany({
+      where: { employeeId, timestamp: { gte: new Date(from.getFullYear(), from.getMonth(), 1), lt: new Date(to.getFullYear(), to.getMonth() + 1, 1) } },
+      select: { timestamp: true, kind: true },
+      orderBy: { timestamp: "asc" },
+    });
+
+    const fromKey = from.toISOString().slice(0, 10);
+    const toKey = to.toISOString().slice(0, 10);
+    const days = monthsBetween(from, to)
+      .flatMap((month) => {
+        const monthEntries = entries.filter((e) => e.timestamp.toISOString().slice(0, 7) === month);
+        return buildMirror(monthEntries, month, employee.weeklyHours).days;
+      })
+      .filter((d) => d.date >= fromKey && d.date <= toKey);
+
+    const adjustments = await prisma.hourBankAdjustment.findMany({
+      where: { employeeId, date: { gte: new Date(`${fromKey}T00:00:00Z`), lte: new Date(`${toKey}T00:00:00Z`) } },
+      include: { createdBy: { select: { id: true, name: true } } },
+      orderBy: { date: "asc" },
+    });
+
+    const summary = computeHourBank(days, adjustments);
+    return ok(res, {
+      employee: { id: employee.id, fullName: employee.fullName, registration: employee.registration, weeklyHours: employee.weeklyHours },
+      from: fromKey,
+      to: toKey,
+      summary,
+      days,
+      adjustments: adjustments.map((a) => ({
+        id: a.id,
+        date: a.date.toISOString().slice(0, 10),
+        minutes: a.minutes,
+        kind: a.kind,
+        reason: a.reason,
+        author: a.createdBy?.name ?? null,
+        createdAt: a.createdAt,
+      })),
+    });
+  })
+);
+
+// POST /api/hr/timeclock/hour-bank/adjustments  { employeeId, date, minutes, kind, reason? }
+router.post(
+  "/hour-bank/adjustments",
+  requirePermission("hr.timeclock.manage"),
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({
+        employeeId: z.string().min(1),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        minutes: z.number().int().min(-100000).max(100000).refine((v) => v !== 0, "Informe um valor diferente de zero"),
+        kind: z.enum(["ADJUSTMENT", "COMPENSATION", "PAYOUT"]).default("ADJUSTMENT"),
+        reason: z.string().trim().max(500).optional().nullable(),
+      })
+      .parse(req.body);
+    await ensureEmployee(input.employeeId, req.user!.organizationId);
+    const adj = await prisma.hourBankAdjustment.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        employeeId: input.employeeId,
+        date: new Date(`${input.date}T00:00:00Z`),
+        minutes: input.minutes,
+        kind: input.kind,
+        reason: input.reason?.trim() || null,
+        createdById: req.user!.id,
+      },
+    });
+    return ok(res, adj, "Lançamento registrado");
+  })
+);
+
+// DELETE /api/hr/timeclock/hour-bank/adjustments/:id
+router.delete(
+  "/hour-bank/adjustments/:id",
+  requirePermission("hr.timeclock.manage"),
+  asyncHandler(async (req, res) => {
+    const adj = await prisma.hourBankAdjustment.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId }, select: { id: true } });
+    if (!adj) throw new NotFoundError("Lançamento não encontrado");
+    await prisma.hourBankAdjustment.delete({ where: { id: adj.id } });
+    return ok(res, { id: adj.id }, "Lançamento removido");
   })
 );
 

@@ -31,11 +31,15 @@ const MyTasksPage = lazy(() => import("@/pages/my-tasks").then((m) => ({ default
 const BusinessPage = lazy(() => import("@/pages/business").then((m) => ({ default: m.BusinessPage })));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail").then((m) => ({ default: m.ProjectDetailPage })));
 const MeasurementsPage = lazy(() => import("@/pages/measurements").then((m) => ({ default: m.MeasurementsPage })));
+const ProductionPage = lazy(() => import("@/pages/production").then((m) => ({ default: m.ProductionPage })));
+const FactoryBoardPage = lazy(() => import("@/pages/production-items").then((m) => ({ default: m.FactoryBoardPage })));
 const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage })));
 const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
 const BriefingPage = lazy(() => import("@/pages/briefing").then((m) => ({ default: m.BriefingPage })));
 const FinancePage = lazy(() => import("@/pages/finance").then((m) => ({ default: m.FinancePage })));
+const FiscalPage = lazy(() => import("@/pages/fiscal").then((m) => ({ default: m.FiscalPage })));
 const TemplatesPage = lazy(() => import("@/pages/templates").then((m) => ({ default: m.TemplatesPage })));
+const WorkspacePage = lazy(() => import("@/pages/workspace").then((m) => ({ default: m.WorkspacePage })));
 
 const PortalRoot = lazy(() => import("@/pages/portal/layout").then((m) => ({ default: m.PortalRoot })));
 const PortalLayout = lazy(() => import("@/pages/portal/layout").then((m) => ({ default: m.PortalLayout })));
@@ -83,14 +87,18 @@ export const router = createBrowserRouter([
           { path: "/organizacao", element: <PermissionGate permission="organization.read"><OrganizationPage /></PermissionGate> },
           { path: "/organizacao/:id", element: <PermissionGate permission="organization.read"><OrganizationPage /></PermissionGate> },
           { path: "/minhas-tarefas", element: <PermissionGate permission="organization.read"><MyTasksPage /></PermissionGate> },
+          { path: "/meu-espaco", element: <WorkspacePage /> },
           { path: "/clientes-projetos", element: <PermissionGate permission="organization.read"><BusinessPage /></PermissionGate> },
           { path: "/clientes-projetos/:projectId", element: <PermissionGate permission="organization.read"><ProjectDetailPage /></PermissionGate> },
           { path: "/medicoes", element: <PermissionGate permission="organization.read"><MeasurementsPage /></PermissionGate> },
+          { path: "/producao", element: <PermissionGate permission="organization.read"><ProductionPage /></PermissionGate> },
+          { path: "/producao/fabrica", element: <PermissionGate permission="organization.read"><FactoryBoardPage /></PermissionGate> },
           { path: "/modelos", element: <PermissionGate permission="documents.read"><TemplatesPage /></PermissionGate> },
           { path: "/alertas", element: <PermissionGate permission="stock.read"><AlertsPage /></PermissionGate> },
           { path: "/rh", element: <PermissionGate permission="hr.read"><HrPage /></PermissionGate> },
           { path: "/comercial", element: <PermissionGate permission="commercial.read"><CommercialPage /></PermissionGate> },
           { path: "/financeiro", element: <PermissionGate permission="finance.read"><FinancePage /></PermissionGate> },
+          { path: "/notas-fiscais", element: <PermissionGate permission="finance.read"><FiscalPage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },
           { path: "/auditoria", element: <PermissionGate permission="audit.read"><AuditPage /></PermissionGate> },

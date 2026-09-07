@@ -10,9 +10,11 @@ import {
   ClipboardCheck,
   FileClock,
   FileSignature,
+  Factory,
   LayoutDashboard,
   SquareKanban,
   ListTodo,
+  NotebookPen,
   Building2,
   Package,
   Ruler,
@@ -64,8 +66,11 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Organização interna", to: "/organizacao", icon: SquareKanban, permission: "organization.read" },
       { label: "Minhas tarefas", to: "/minhas-tarefas", icon: ListTodo, permission: "organization.read" },
+      { label: "Meu espaço", to: "/meu-espaco", icon: NotebookPen },
       { label: "Clientes e projetos", to: "/clientes-projetos", icon: Building2, permission: "organization.read" },
       { label: "Medições", to: "/medicoes", icon: Ruler, permission: "organization.read" },
+      { label: "Produção", to: "/producao", icon: Factory, permission: "organization.read", end: true },
+      { label: "Fábrica", to: "/producao/fabrica", icon: SquareKanban, permission: "organization.read" },
       { label: "Modelos de documentos", to: "/modelos", icon: FileSignature, permission: "documents.read" },
       { label: "Requisições de Peças", to: "/requisicoes", icon: Scissors, permission: "requisitions.read" },
       { label: "Atividades", to: "/atividades", icon: FileClock, permission: "activities.read" },
@@ -89,7 +94,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Financeiro",
-    items: [{ label: "Financeiro", to: "/financeiro", icon: Wallet, permission: "finance.read" }],
+    items: [
+      { label: "Financeiro", to: "/financeiro", icon: Wallet, permission: "finance.read" },
+      { label: "Notas fiscais", to: "/notas-fiscais", icon: ScrollText, permission: "finance.read" },
+    ],
   },
   {
     label: "Administração",

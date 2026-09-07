@@ -873,6 +873,174 @@ async function main() {
     });
   }
 
+  console.log("[SEED] Criando esteira de produção do projeto piloto...");
+  {
+    const D = 86400000;
+    const released = new Date(Date.now() - 15 * D); // logo após a aprovação do projeto técnico
+    const stages: { stage: "RELEASED" | "IN_PRODUCTION" | "PRE_ASSEMBLY" | "OUT_FOR_DELIVERY" | "DELIVERED"; at: Date; note: string }[] = [
+      { stage: "RELEASED", at: released, note: "Projeto liberado para produção" },
+      { stage: "IN_PRODUCTION", at: new Date(released.getTime() + 2 * D), note: "Corte e usinagem iniciados" },
+      { stage: "PRE_ASSEMBLY", at: new Date(released.getTime() + 9 * D), note: "Módulos conferidos na fábrica" },
+      { stage: "OUT_FOR_DELIVERY", at: new Date(released.getTime() + 11 * D), note: "Equipe de montagem a caminho" },
+      { stage: "DELIVERED", at: new Date(released.getTime() + 12 * D), note: "Entrega e montagem concluídas" },
+    ];
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const schedule = {
+      source: "HEURISTIC",
+      generatedAt: released.toISOString(),
+      summary: "Cronograma estimado a partir das durações padrão de produção.",
+      deliveryAt: iso(stages[4].at),
+      steps: [
+        { stage: "RELEASED", label: "Liberado para produção", startAt: iso(stages[0].at), endAt: iso(stages[0].at), durationDays: 0, note: "Projeto técnico aprovado" },
+        { stage: "IN_PRODUCTION", label: "Em produção", startAt: iso(stages[1].at), endAt: iso(stages[2].at), durationDays: 7, note: null },
+        { stage: "PRE_ASSEMBLY", label: "Pré-montagem", startAt: iso(stages[2].at), endAt: iso(stages[3].at), durationDays: 2, note: null },
+        { stage: "OUT_FOR_DELIVERY", label: "Em entrega e montagem", startAt: iso(stages[3].at), endAt: iso(stages[4].at), durationDays: 1, note: null },
+        { stage: "DELIVERED", label: "Entregue", startAt: iso(stages[4].at), endAt: iso(stages[4].at), durationDays: 0, note: null },
+      ],
+    };
+    const order364 = await prisma.productionOrder.create({
+      data: {
+        organizationId: ORG_ID,
+        projectId: projeto.id,
+        stage: "DELIVERED",
+        releasedAt: stages[0].at,
+        productionStartedAt: stages[1].at,
+        preAssemblyAt: stages[2].at,
+        outForDeliveryAt: stages[3].at,
+        deliveredAt: stages[4].at,
+        estimatedDeliveryAt: new Date(released.getTime() + 12 * D),
+        notes: "Entrega dentro do prazo previsto.",
+        scheduleJson: schedule,
+        scheduleSource: "HEURISTIC",
+        scheduleGeneratedAt: released,
+        events: {
+          create: stages.map((s) => ({
+            stage: s.stage,
+            note: s.note,
+            createdAt: s.at,
+            createdById: userIds["Marcos Vinícius"] ?? adminId,
+          })),
+        },
+      },
+    });
+    // Itens do pedido 364-1 (todos concluídos — pedido já entregue).
+    for (const [i, it] of [
+      { ambiente: "Recepção", descricao: "Balcão de atendimento", material: "MDF Carvalho 18mm" },
+      { ambiente: "Recepção", descricao: "Painel ripado", material: "MDF Carvalho 18mm" },
+      { ambiente: "Copa", descricao: "Armário inferior 2 portas", material: "MDF Branco 18mm" },
+      { ambiente: "Copa", descricao: "Aéreo basculante", material: "MDF Branco 18mm" },
+      { ambiente: "Sala", descricao: "Guarda-volumes 8 portas", material: "MDF Branco 18mm" },
+    ].entries()) {
+      await prisma.productionItem.create({
+        data: {
+          organizationId: ORG_ID,
+          orderId: order364.id,
+          ambiente: it.ambiente,
+          descricao: it.descricao,
+          material: it.material,
+          quantidade: 1,
+          status: "DONE",
+          position: i,
+          startedAt: stages[1].at,
+          completedAt: stages[3].at,
+        },
+      });
+    }
+
+    // Segundo projeto EM PRODUÇÃO — abastece o quadro da fábrica.
+    const proj402 = await prisma.project.create({
+      data: {
+        organizationId: ORG_ID,
+        clientId: juliana.id,
+        code: "402-1",
+        name: "Apartamento — Cozinha e Home",
+        description: "Cozinha em L, ilha central e painel de home theater.",
+        status: "ACTIVE",
+        startAt: new Date(Date.now() - 6 * D),
+        managerId: userIds["Marcos Vinícius"] ?? adminId,
+      },
+    });
+    const order402 = await prisma.productionOrder.create({
+      data: {
+        organizationId: ORG_ID,
+        projectId: proj402.id,
+        stage: "IN_PRODUCTION",
+        releasedAt: new Date(Date.now() - 5 * D),
+        productionStartedAt: new Date(Date.now() - 4 * D),
+        estimatedDeliveryAt: new Date(Date.now() + 8 * D),
+        events: {
+          create: [
+            { stage: "RELEASED", note: "Projeto liberado para produção", createdAt: new Date(Date.now() - 5 * D), createdById: userIds["Marcos Vinícius"] ?? adminId },
+            { stage: "IN_PRODUCTION", note: "Corte iniciado", createdAt: new Date(Date.now() - 4 * D), createdById: userIds["Marcos Vinícius"] ?? adminId },
+          ],
+        },
+      },
+    });
+    const floor: { descricao: string; ambiente: string; sector: "CORTE" | "FITA_BORDA" | "FURACAO" | "PRE_MONTAGEM" | "EMBALAGEM" | "EXPEDICAO" | null; status: "PENDING" | "IN_PROGRESS" }[] = [
+      { descricao: "Ilha central", ambiente: "Cozinha", sector: "PRE_MONTAGEM", status: "IN_PROGRESS" },
+      { descricao: "Torre quente (forno + micro-ondas)", ambiente: "Cozinha", sector: "FURACAO", status: "IN_PROGRESS" },
+      { descricao: "Balcão em L", ambiente: "Cozinha", sector: "FITA_BORDA", status: "IN_PROGRESS" },
+      { descricao: "Aéreos 4 módulos", ambiente: "Cozinha", sector: "CORTE", status: "IN_PROGRESS" },
+      { descricao: "Painel ripado do home", ambiente: "Home", sector: "CORTE", status: "IN_PROGRESS" },
+      { descricao: "Rack suspenso", ambiente: "Home", sector: null, status: "PENDING" },
+      { descricao: "Adega climatizada (nicho)", ambiente: "Cozinha", sector: null, status: "PENDING" },
+    ];
+    let firstInProgressItemId: string | null = null;
+    for (const [i, it] of floor.entries()) {
+      const created = await prisma.productionItem.create({
+        data: {
+          organizationId: ORG_ID,
+          orderId: order402.id,
+          ambiente: it.ambiente,
+          descricao: it.descricao,
+          material: "MDF Branco 18mm",
+          quantidade: 1,
+          status: it.status,
+          sector: it.sector,
+          position: i,
+          startedAt: it.status === "IN_PROGRESS" ? new Date(Date.now() - 3 * D) : null,
+        },
+      });
+      if (it.status === "IN_PROGRESS" && !firstInProgressItemId) firstInProgressItemId = created.id;
+    }
+
+    // Apontamentos de horas de exemplo no 1º item em produção.
+    if (firstInProgressItemId) {
+      const opId = userIds["J. Silva"] ?? adminId;
+      const t0 = new Date(Date.now() - 2 * D);
+      await prisma.productionTimeLog.createMany({
+        data: [
+          { organizationId: ORG_ID, itemId: firstInProgressItemId, sector: "CORTE", userId: opId, startedAt: t0, endedAt: new Date(t0.getTime() + 95 * 60000), minutes: 95, manual: false, note: "Corte das peças" },
+          { organizationId: ORG_ID, itemId: firstInProgressItemId, sector: "FITA_BORDA", userId: opId, startedAt: new Date(t0.getTime() + 120 * 60000), endedAt: new Date(t0.getTime() + 175 * 60000), minutes: 55, manual: true, note: null },
+        ],
+      });
+    }
+
+    // Requisição de corte gerada da produção do 402-1 (rascunho).
+    await prisma.requisition.create({
+      data: {
+        number: "REQ-00001",
+        status: "DRAFT",
+        priority: "NORMAL",
+        clientName: juliana.name,
+        projectReference: proj402.code,
+        note: `Gerada da produção — ${proj402.code} ${proj402.name}`,
+        requesterId: userIds["Marcos Vinícius"] ?? adminId,
+        productionOrderId: order402.id,
+        createdAt: new Date(Date.now() - 3 * D),
+        items: {
+          create: floor.map((it) => ({
+            description: it.descricao,
+            material: "MDF Branco 18mm",
+            quantity: 1,
+            unit: "UNIT" as const,
+            note: it.ambiente,
+          })),
+        },
+      },
+    });
+  }
+
   console.log("[SEED] Criando modelos de documentos (a partir dos arquivos de docs/)...");
   const TEMPLATES: { file: string; name: string; type: "MANUAL_GARANTIA" | "VISTORIA_CHECKLIST" | "CRONOGRAMA" | "VISTORIA_FOTOGRAFICA"; requiresSignature: boolean; signerRoles: string[] }[] = [
     { file: "CERTIFICADO GARANTIA .pdf", name: "Manual de Uso e Certificado de Garantia", type: "MANUAL_GARANTIA", requiresSignature: true, signerRoles: ["MOBIEER", "CLIENTE"] },
@@ -986,6 +1154,19 @@ async function main() {
   }
   if (pontoRows.length) await prisma.timeEntry.createMany({ data: pontoRows, skipDuplicates: true });
 
+  // Banco de horas: uma compensação de exemplo para J. Silva.
+  await prisma.hourBankAdjustment.create({
+    data: {
+      organizationId: ORG_ID,
+      employeeId: pontoEmpId,
+      date: at(9, 0, 0),
+      minutes: -240,
+      kind: "COMPENSATION",
+      reason: "Folga da segunda emendada ao feriado",
+      createdById: userIds["Admin Principal"],
+    },
+  });
+
   console.log("[SEED] Criando lançamentos financeiros...");
   const monthRef = (offset: number) => {
     const d = new Date(today.getFullYear(), today.getMonth() + offset, 12);
@@ -998,7 +1179,22 @@ async function main() {
     { type: "DESPESA", category: "Ferragens", amount: 2650, monthOffset: -1, status: "PAGO", description: "Corrediças e dobradiças", supplierName: "Fixadores do Brasil Ltda" },
     { type: "DESPESA", category: "Acabamento", amount: 1980, monthOffset: 0, status: "PENDENTE", description: "Tinta PU e selador", supplierName: "Tintas e Acabamentos Premium", dueOffset: 8 },
     { type: "DESPESA", category: "Folha de pagamento", amount: 21400, monthOffset: 0, status: "PAGO", description: "Salários da produção", },
-    { type: "DESPESA", category: "Frete", amount: 900, monthOffset: 0, status: "PENDENTE", description: "Entrega e montagem in loco", dueOffset: 5 },
+    { type: "DESPESA", category: "Frete de entrega", amount: 900, monthOffset: 0, status: "PENDENTE", description: "Entrega e montagem in loco", dueOffset: 5 },
+    // --- linhas extras p/ a DRE ficar completa ---
+    { type: "RECEITA", category: "Contrato — sinal", amount: 48000, monthOffset: -1, status: "PAGO", description: "Entrada 50% — corporativo Studio Alfa", clientId: juliana.id },
+    { type: "RECEITA", category: "Contrato — parcela", amount: 14250, monthOffset: 0, status: "PAGO", description: "Cozinha compacta — Marcelo Tavares" },
+    { type: "RECEITA", category: "Rendimento de aplicação", amount: 380, monthOffset: 0, status: "PAGO", description: "CDB — rendimento do mês" },
+    { type: "DESPESA", category: "Matéria-prima", amount: 12800, monthOffset: 0, status: "PAGO", description: "MDF, corte e fita — pedido 402-1", supplierName: "Madeireira Sul & Cia" },
+    { type: "DESPESA", category: "Marketing", amount: 3200, monthOffset: 0, status: "PAGO", description: "Anúncios Instagram/Google + fotógrafo" },
+    { type: "DESPESA", category: "Comissão de vendas", amount: 4800, monthOffset: 0, status: "PAGO", description: "Comissão sobre contratos fechados" },
+    { type: "DESPESA", category: "Aluguel", amount: 6500, monthOffset: 0, status: "PAGO", description: "Aluguel da fábrica/showroom" },
+    { type: "DESPESA", category: "Energia elétrica", amount: 2100, monthOffset: 0, status: "PAGO", description: "Conta de energia — fábrica" },
+    { type: "DESPESA", category: "Software / assinaturas", amount: 690, monthOffset: 0, status: "PAGO", description: "Promob + ferramentas de gestão" },
+    { type: "DESPESA", category: "Contabilidade", amount: 1200, monthOffset: 0, status: "PAGO", description: "Honorários do escritório contábil" },
+    { type: "DESPESA", category: "DAS — Simples Nacional", amount: 5900, monthOffset: 0, status: "PAGO", description: "Guia do Simples do mês" },
+    { type: "DESPESA", category: "Tarifas bancárias", amount: 320, monthOffset: 0, status: "PAGO", description: "Tarifas de conta e boletos" },
+    { type: "DESPESA", category: "Juros de antecipação", amount: 760, monthOffset: 0, status: "PAGO", description: "Antecipação de recebíveis" },
+    { type: "DESPESA", category: "Depreciação de máquinas", amount: 1500, monthOffset: 0, status: "PAGO", description: "Depreciação mensal (seccionadora, coladeira)" },
   ];
   for (const f of FIN) {
     const d = monthRef(f.monthOffset);
@@ -1131,45 +1327,71 @@ async function main() {
   }
   const sellerId = userIds["Marcos Vinícius"] ?? adminId;
 
-  const LEADS = [
-    { name: "Fernanda Aragão", phone: "(85) 98111-2020", interest: "Cozinha + área gourmet", source: "Instagram", status: "NEW" as const },
-    { name: "Escritório Contábil Prisma", phone: "(85) 3255-7788", interest: "Estações de trabalho (6 lugares)", source: "Indicação", status: "CONTACTED" as const },
-    { name: "Dr. Henrique Sales", phone: "(85) 99640-1234", interest: "Home office + closet", source: "Site", status: "QUALIFIED" as const },
+  const LEADS: { name: string; phone: string; interest: string; source: string; status: "NEW" | "CONTACTED" | "QUALIFIED" | "CONVERTED" | "LOST"; daysAgo: number }[] = [
+    { name: "Fernanda Aragão", phone: "(85) 98111-2020", interest: "Cozinha + área gourmet", source: "Instagram", status: "NEW", daysAgo: 3 },
+    { name: "Escritório Contábil Prisma", phone: "(85) 3255-7788", interest: "Estações de trabalho (6 lugares)", source: "Indicação", status: "CONTACTED", daysAgo: 10 },
+    { name: "Dr. Henrique Sales", phone: "(85) 99640-1234", interest: "Home office + closet", source: "Site", status: "QUALIFIED", daysAgo: 16 },
+    { name: "Paula Rocha", phone: "(85) 98720-4545", interest: "Apartamento completo", source: "Google", status: "CONTACTED", daysAgo: 22 },
+    { name: "Construtora Vega", phone: "(85) 3021-9090", interest: "Stand de vendas + decorado", source: "Parceiros", status: "QUALIFIED", daysAgo: 30 },
+    { name: "Marcelo Tavares", phone: "(85) 99333-1010", interest: "Cozinha compacta", source: "Instagram", status: "CONVERTED", daysAgo: 45 },
+    { name: "Bianca Nogueira", phone: "(85) 98444-2323", interest: "Closet casal", source: "Site", status: "LOST", daysAgo: 38 },
+    { name: "Studio Alfa Arquitetura", phone: "(85) 3011-2233", interest: "Corporativo 12 estações", source: "Arquiteto", status: "CONVERTED", daysAgo: 60 },
+    { name: "Rogério Lima", phone: "(85) 99120-7788", interest: "Home theater", source: "Google", status: "LOST", daysAgo: 26 },
+    { name: "Camila Xavier", phone: "(85) 98650-9911", interest: "Cozinha + lavanderia", source: "Indicação", status: "NEW", daysAgo: 5 },
   ];
   for (const l of LEADS) {
     await prisma.commercialLead.create({
-      data: { organizationId: ORG_ID, name: l.name, phone: l.phone, interest: l.interest, source: l.source, status: l.status, sellerId, nextContactAt: addDays(today, 2) },
+      data: {
+        organizationId: ORG_ID, name: l.name, phone: l.phone, interest: l.interest, source: l.source, status: l.status, sellerId,
+        enteredAt: addDays(today, -l.daysAgo),
+        lastContactAt: l.status === "NEW" ? null : addDays(today, -Math.max(1, l.daysAgo - 4)),
+        convertedAt: l.status === "CONVERTED" ? addDays(today, -Math.max(1, l.daysAgo - 10)) : null,
+        nextContactAt: l.status === "NEW" || l.status === "CONTACTED" ? addDays(today, 2) : null,
+      },
     });
   }
 
-  const OPPS = [
-    { title: "Cozinha planejada — Ap. Meireles", stage: "Qualificação", value: 42000, days: 25 },
-    { title: "Escritório advocacia (fase 2) — Juliana", stage: "Medição / Projeto", value: 68000, days: 18, clientId: juliana.id },
-    { title: "Dormitório casal + closet — Cond. Dunas", stage: "Proposta enviada", value: 31500, days: 12 },
-    { title: "Corporativo 12 estações — Studio Alfa", stage: "Negociação", value: 96000, days: 8 },
-    { title: "Sala + home theater — Aldeota", stage: "Novo contato", value: 27000, days: 40 },
+  const OPPS: { title: string; stage: string; value: number; days: number; status?: "WON" | "LOST"; lost?: "PRECO" | "PRAZO" | "CONCORRENCIA" | "SEM_RESPOSTA" | "DESISTIU" | "ESCOPO" | "OUTRO"; clientId?: string; createdAgo: number }[] = [
+    { title: "Cozinha planejada — Ap. Meireles", stage: "Qualificação", value: 42000, days: 25, createdAgo: 20 },
+    { title: "Escritório advocacia (fase 2) — Juliana", stage: "Medição / Projeto", value: 68000, days: 18, clientId: juliana.id, createdAgo: 30 },
+    { title: "Dormitório casal + closet — Cond. Dunas", stage: "Proposta enviada", value: 31500, days: 12, createdAgo: 24 },
+    { title: "Corporativo 12 estações — Studio Alfa", stage: "Ganho", value: 96000, days: -5, status: "WON", createdAgo: 55 },
+    { title: "Cozinha compacta — Marcelo Tavares", stage: "Ganho", value: 28500, days: -12, status: "WON", createdAgo: 42 },
+    { title: "Sala + home theater — Aldeota", stage: "Perdido", value: 27000, days: -3, status: "LOST", lost: "PRECO", createdAgo: 26 },
+    { title: "Closet casal — Bianca Nogueira", stage: "Perdido", value: 19000, days: -8, status: "LOST", lost: "CONCORRENCIA", createdAgo: 36 },
+    { title: "Apartamento completo — Paula Rocha", stage: "Perdido", value: 54000, days: -6, status: "LOST", lost: "PRAZO", createdAgo: 28 },
+    { title: "Home office — Dr. Henrique", stage: "Perdido", value: 22000, days: -15, status: "LOST", lost: "SEM_RESPOSTA", createdAgo: 40 },
+    { title: "Cozinha gourmet — Rogério Lima", stage: "Perdido", value: 33000, days: -2, status: "LOST", lost: "PRECO", createdAgo: 22 },
   ];
+  const LOST_TEXT: Record<string, string> = {
+    PRECO: "Achou o orçamento acima do previsto", CONCORRENCIA: "Fechou com concorrente", PRAZO: "Prazo de entrega longo demais",
+    SEM_RESPOSTA: "Parou de responder após a proposta", DESISTIU: "Adiou o projeto", ESCOPO: "Escopo mudou", OUTRO: "Outro motivo",
+  };
   for (const [i, o] of OPPS.entries()) {
     const opp = await prisma.commercialOpportunity.create({
       data: {
         organizationId: ORG_ID,
         title: o.title,
         stageId: stageIds[o.stage],
+        status: o.status ?? "OPEN",
         probability: STAGES.find((s) => s.name === o.stage)!.probability,
         estimatedValue: o.value.toFixed(2),
         expectedCloseAt: addDays(today, o.days),
+        createdAt: addDays(today, -o.createdAgo),
         position: i,
         clientId: o.clientId ?? null,
         sellerId,
-        nextAction: i % 2 === 0 ? "Ligar para retomar" : "Enviar revisão da proposta",
-        nextActionAt: addDays(today, (i % 3) + 1),
+        lostReasonCode: o.lost ?? null,
+        lostReason: o.lost ? LOST_TEXT[o.lost] : null,
+        nextAction: o.status ? null : i % 2 === 0 ? "Ligar para retomar" : "Enviar revisão da proposta",
+        nextActionAt: o.status ? null : addDays(today, (i % 3) + 1),
       },
     });
     await prisma.commercialInteraction.create({
       data: {
         type: i % 2 === 0 ? "CALL" : "WHATSAPP",
-        summary: "Contato inicial — cliente demonstrou interesse e pediu proposta.",
-        occurredAt: addDays(today, -(i + 1)),
+        summary: o.status === "WON" ? "Cliente aprovou a proposta — contrato assinado." : o.status === "LOST" ? `Oportunidade perdida: ${o.lost}.` : "Contato inicial — cliente pediu proposta.",
+        occurredAt: addDays(today, -(o.createdAgo - 2)),
         opportunityId: opp.id,
         clientId: o.clientId ?? null,
         responsibleId: sellerId,

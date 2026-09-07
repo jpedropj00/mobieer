@@ -153,3 +153,59 @@ export function buildMirror(
 
   return { days, totalWorked, totalExpected, balance: totalWorked - totalExpected, faltas };
 }
+
+/**
+ * Banco de horas em um intervalo: consolida os saldos diários do espelho e
+ * aplica os ajustes manuais (compensações, correções, pagamentos).
+ * `days` já deve vir filtrado ao intervalo desejado.
+ */
+export function computeHourBank(
+  days: DayMirror[],
+  adjustments: { minutes: number }[]
+): {
+  workedMinutes: number;
+  expectedMinutes: number;
+  overtimeMinutes: number; // soma dos saldos diários positivos (horas extras acumuladas)
+  deficitMinutes: number; // soma dos saldos diários negativos (déficit / faltas)
+  rawBalanceMinutes: number; // worked - expected
+  adjustmentMinutes: number; // soma dos ajustes manuais
+  netBalanceMinutes: number; // saldo final do banco
+  faltas: number;
+} {
+  let worked = 0;
+  let expected = 0;
+  let overtime = 0;
+  let deficit = 0;
+  let faltas = 0;
+  for (const d of days) {
+    worked += d.workedMinutes;
+    expected += d.expectedMinutes;
+    if (d.balanceMinutes > 0) overtime += d.balanceMinutes;
+    else deficit += d.balanceMinutes;
+    if (d.status === "FALTA") faltas++;
+  }
+  const adjustmentMinutes = adjustments.reduce((s, a) => s + a.minutes, 0);
+  const rawBalance = worked - expected;
+  return {
+    workedMinutes: worked,
+    expectedMinutes: expected,
+    overtimeMinutes: overtime,
+    deficitMinutes: deficit,
+    rawBalanceMinutes: rawBalance,
+    adjustmentMinutes,
+    netBalanceMinutes: rawBalance + adjustmentMinutes,
+    faltas,
+  };
+}
+
+/** Lista de "YYYY-MM" de `from` até `to` (inclusive), para iterar o espelho. */
+export function monthsBetween(from: Date, to: Date): string[] {
+  const out: string[] = [];
+  const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+  const end = new Date(to.getFullYear(), to.getMonth(), 1);
+  while (cur <= end) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return out;
+}

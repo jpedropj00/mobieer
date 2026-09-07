@@ -93,6 +93,14 @@ model User {
   reviewedApplianceSheets  ApplianceSheet[]      @relation("ApplianceSheetReviewer")
   measurementVisits        MeasurementVisit[]    @relation("MeasurementTechnician")
   publishedTechApprovals   TechnicalProjectApproval[] @relation("TechApprovalPublisher")
+  productionStageEvents    ProductionStageEvent[] @relation("ProductionStageEventAuthor")
+  productionItemEvents     ProductionItemEvent[] @relation("ProductionItemEventAuthor")
+  productionTimeLogs       ProductionTimeLog[]   @relation("ProductionTimeLogOperator")
+  createdFiscalInvoices    FiscalInvoice[]        @relation("FiscalInvoiceCreator")
+  promobImports            PromobImport[]         @relation("PromobImportCreator")
+  workspaceNotes           WorkspaceNote[]       @relation("WorkspaceNoteOwner")
+  plannerItems             PlannerItem[]         @relation("PlannerItemOwner")
+  hourBankAdjustments      HourBankAdjustment[]  @relation("HourBankAuthor")
 
   @@index([roleId])
   @@index([organizationId])
@@ -170,12 +178,21 @@ model Organization {
   employees        Employee[]
   financeTransactions FinanceTransaction[]
   taxRules            TaxRule[]
+  dreCategoryMappings DreCategoryMapping[]
   documentTemplates   DocumentTemplate[]
   creditCards         CreditCard[]
   cardStatements      CardStatement[]
   applianceSheets     ApplianceSheet[]
   measurementVisits   MeasurementVisit[]
   technicalApprovals  TechnicalProjectApproval[]
+  productionOrders    ProductionOrder[]
+  productionItems     ProductionItem[]
+  productionTimeLogs  ProductionTimeLog[]
+  fiscalInvoices      FiscalInvoice[]
+  promobImports       PromobImport[]
+  workspaceNotes      WorkspaceNote[]
+  plannerItems        PlannerItem[]
+  hourBankAdjustments HourBankAdjustment[]
 
   @@index([enterpriseId])
 }
@@ -368,6 +385,7 @@ model Activity {
   problemsSummary   String?              @db.Text
   observations      String?              @db.Text
   signatureRequired Boolean              @default(false)
+  freeText          Boolean              @default(false) // registro rápido em texto livre (sem o formulário estruturado)
   completedAt       DateTime?
   cancelledAt       DateTime?
   createdAt         DateTime             @default(now())
@@ -701,6 +719,9 @@ model Requisition {
   inspectorId String?
   inspector   User?   @relation("RequisitionInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
 
+  productionOrderId String?
+  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: SetNull)
+
   items        RequisitionItem[]
   movements    StockMovement[]
   reservations StockReservation[]
@@ -710,6 +731,7 @@ model Requisition {
   kanbanTasks  KanbanTask[]
 
   @@index([status])
+  @@index([productionOrderId])
   @@index([priority])
   @@index([neededAt])
   @@index([requesterId])
@@ -944,6 +966,7 @@ model Client {
   accounts          ClientAccount[]
   documents         ProjectDocument[]
   financeTransactions FinanceTransaction[]
+  fiscalInvoices    FiscalInvoice[]
 
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
@@ -977,6 +1000,9 @@ model Project {
   applianceSheet ApplianceSheet?
   measurementVisits MeasurementVisit[]
   technicalApproval TechnicalProjectApproval?
+  productionOrder ProductionOrder?
+  fiscalInvoices FiscalInvoice[]
+  promobImports  PromobImport[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1009,6 +1035,7 @@ model AssistanceTicket {
   openedByClientAccount   ClientAccount? @relation(fields: [openedByClientAccountId], references: [id], onDelete: SetNull)
   origin         AssistanceOrigin   @default(INTERNAL)
   kanbanTasks    KanbanTask[]
+  attachments    AssistanceAttachment[]
 
   @@unique([organizationId, number])
   @@index([organizationId, status, priority])
@@ -1897,6 +1924,10 @@ model ProjectDocument {
   requiresSignature Boolean           @default(false)
   signerRoles     String[]
   signatureStatus DocumentSignatureStatus @default(NOT_REQUIRED)
+  signatureProvider       String? // ex: "clicksign" quando enviado a um provedor externo
+  signatureProviderRef    String? // chave do documento no provedor
+  signatureProviderUrl    String? // link de assinatura
+  signatureProviderStatus String? // status devolvido pelo provedor
   version         Int                 @default(1)
   replacesId      String?
   replaces        ProjectDocument?    @relation("ProjectDocumentVersions", fields: [replacesId], references: [id], onDelete: SetNull)
@@ -1978,6 +2009,7 @@ model Employee {
   vacationPeriods  VacationPeriod[]
   vacationRequests VacationRequest[]
   timeEntries      TimeEntry[]
+  hourBank         HourBankAdjustment[] @relation("EmployeeHourBank")
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -2367,4 +2399,329 @@ model TechnicalProjectApproval {
   updatedAt               DateTime           @updatedAt
 
   @@index([organizationId, status])
+}
+
+// ============================================================
+// FASE 2 — Esteira de produção
+// Depois que o cliente aprova o projeto técnico, o pedido entra na
+// esteira: liberado -> em produção -> pré-montagem -> em entrega ->
+// entregue. A equipe avança as etapas; o cliente acompanha pelo portal.
+// ============================================================
+
+enum ProductionStage {
+  RELEASED // liberado para produção (projeto técnico aprovado)
+  IN_PRODUCTION // em produção na fábrica
+  PRE_ASSEMBLY // pré-montagem / conferência dos módulos
+  OUT_FOR_DELIVERY // em rota de entrega e montagem
+  DELIVERED // entregue e montado
+}
+
+model ProductionOrder {
+  id                  String                 @id @default(cuid())
+  organizationId      String
+  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId           String                 @unique
+  project             Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage               ProductionStage        @default(RELEASED)
+  releasedAt          DateTime? // entrou na esteira (projeto técnico aprovado)
+  productionStartedAt DateTime?
+  preAssemblyAt       DateTime?
+  outForDeliveryAt    DateTime?
+  deliveredAt         DateTime?
+  estimatedDeliveryAt DateTime? // previsão de entrega informada pela equipe
+  notes               String?                @db.Text
+  scheduleJson        Json? // cronograma gerado (etapas + datas + observações)
+  scheduleSource      String? // AI | HEURISTIC
+  scheduleGeneratedAt DateTime?
+  cutPlanImportId     String? // PromobImport marcado como o plano de corte oficial do pedido
+  cutPlanImport       PromobImport?          @relation("OrderCutPlan", fields: [cutPlanImportId], references: [id], onDelete: SetNull)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  events              ProductionStageEvent[]
+  items               ProductionItem[]
+  requisitions        Requisition[]
+
+  @@index([organizationId, stage])
+}
+
+model ProductionStageEvent {
+  id          String          @id @default(cuid())
+  orderId     String
+  order       ProductionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stage       ProductionStage
+  note        String?
+  createdAt   DateTime        @default(now())
+  createdById String?
+  createdBy   User?           @relation("ProductionStageEventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+// ============================================================
+// INTEGRAÇÕES EXTERNAS — NF-e e importação do Promob
+// Ambos ficam ociosos até haver provedor/arquivo; nenhum dado é
+// enviado à SEFAZ sem NFE_* configurado.
+// ============================================================
+
+enum FiscalInvoiceStatus {
+  DRAFT // rascunho no nosso lado
+  QUEUED // enviado ao provedor, aguardando processamento
+  PROCESSING // provedor processando junto à SEFAZ
+  ISSUED // autorizada
+  REJECTED // rejeitada pela SEFAZ
+  CANCELLED // cancelada após emissão
+  ERROR // falha de comunicação / configuração
+}
+
+model FiscalInvoice {
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?
+  project        Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientId       String?
+  client         Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  kind           String              @default("NFE") // NFE | NFSE
+  status         FiscalInvoiceStatus @default(DRAFT)
+  ref            String              @unique // referência idempotente enviada ao provedor
+  provider       String? // ex: focusnfe
+  providerRef    String? // chave de acesso / id no provedor
+  number         String?
+  series         String?
+  amount         Decimal             @db.Decimal(12, 2)
+  description    String?             @db.Text
+  payloadJson    Json? // corpo enviado ao provedor
+  resultJson     Json? // última resposta do provedor
+  xmlKey         String? // storage key do XML autorizado
+  pdfKey         String? // storage key do DANFE/PDF
+  errorMessage   String?             @db.Text
+  issuedAt       DateTime?
+  cancelledAt    DateTime?
+  createdById    String?
+  createdBy      User?               @relation("FiscalInvoiceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([organizationId, status])
+  @@index([projectId])
+}
+
+model PromobImport {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName       String
+  storageKey     String
+  mimeType       String
+  sizeBytes      Int
+  format         String       @default("OTHER") // XML | PDF | OTHER
+  status         String       @default("UPLOADED") // UPLOADED | PARSED | PARSE_FAILED
+  itemCount      Int          @default(0)
+  parsedJson     Json? // itens/ambientes extraídos (best-effort)
+  notes          String?      @db.Text
+  createdById    String?
+  createdBy      User?        @relation("PromobImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  generatedItems ProductionItem[]
+  cutPlanForOrders ProductionOrder[] @relation("OrderCutPlan")
+
+  @@index([organizationId])
+  @@index([projectId])
+}
+
+// ============================================================
+// FASE 3 — Produção (chão de fábrica)
+// A ProductionOrder (Fase 2) rastreia o pedido em nível macro. Aqui os
+// módulos/peças de cada pedido percorrem os setores da fábrica com
+// apontamento por operador: corte -> fita de borda -> furação ->
+// pré-montagem -> embalagem -> expedição.
+// ============================================================
+
+enum ProductionItemStatus {
+  PENDING // ainda não entrou na fábrica
+  IN_PROGRESS // em algum setor
+  DONE // passou por todos os setores
+  CANCELLED
+}
+
+enum ProductionSector {
+  CORTE
+  FITA_BORDA
+  FURACAO
+  PRE_MONTAGEM
+  EMBALAGEM
+  EXPEDICAO
+}
+
+model ProductionItem {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orderId        String
+  order          ProductionOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ambiente       String?
+  descricao      String
+  referencia     String? // referência do Promob, quando veio de um import
+  quantidade     Int                  @default(1)
+  material       String?
+  status         ProductionItemStatus @default(PENDING)
+  sector         ProductionSector? // setor atual (null se PENDING/DONE/CANCELLED)
+  sourceImportId String?
+  sourceImport   PromobImport?        @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  position       Int                  @default(0)
+  notes          String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  events         ProductionItemEvent[]
+  timeLogs       ProductionTimeLog[]
+
+  @@index([organizationId, status, sector])
+  @@index([orderId])
+}
+
+model ProductionItemEvent {
+  id          String            @id @default(cuid())
+  itemId      String
+  item        ProductionItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sector      ProductionSector? // setor concluído/afetado (null em criação/cancelamento)
+  action      String // ENTER | COMPLETE | JUMP | REOPEN | CANCEL | NOTE
+  note        String?
+  createdById String?
+  createdBy   User?             @relation("ProductionItemEventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now())
+
+  @@index([itemId])
+}
+
+// ============================================================
+// FASE 4 — Itens da Jessica
+// ============================================================
+
+// 4.1 — Foto do cliente na assistência
+model AssistanceAttachment {
+  id                        String           @id @default(cuid())
+  ticketId                  String
+  ticket                    AssistanceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  storageKey                String
+  fileName                  String
+  mimeType                  String
+  sizeBytes                 Int
+  uploadedByClientAccountId String? // quando enviado pelo cliente no portal
+  uploadedByUserId          String? // quando enviado pela equipe
+  uploadedByLabel           String? // rótulo pronto para exibir ("Cliente", nome do usuário)
+  createdAt                 DateTime         @default(now())
+
+  @@index([ticketId])
+}
+
+// 4.4 — Registro de atividade em texto livre (flag no model Activity, sem tabela nova)
+
+// 4.2 — Bloco de notas + planner semanal (pessoal, por usuário)
+model WorkspaceNote {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("WorkspaceNoteOwner", fields: [userId], references: [id], onDelete: Cascade)
+  title          String?
+  body           String       @db.Text
+  color          String? // rótulo de cor opcional
+  pinned         Boolean      @default(false)
+  position       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, pinned, position])
+}
+
+model PlannerItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("PlannerItemOwner", fields: [userId], references: [id], onDelete: Cascade)
+  weekOf         DateTime     @db.Date // segunda-feira da semana
+  weekday        Int // 0=segunda ... 6=domingo
+  text           String
+  done           Boolean      @default(false)
+  position       Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, weekOf])
+}
+
+// 4.3 — Banco de horas: ajustes manuais que somam/abatem do saldo calculado do ponto
+enum HourBankKind {
+  ADJUSTMENT // ajuste manual (correção)
+  COMPENSATION // folga/compensação (abate saldo)
+  PAYOUT // pagamento de horas extras (abate saldo)
+}
+
+model HourBankAdjustment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee     @relation("EmployeeHourBank", fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime     @db.Date
+  minutes        Int // positivo credita, negativo debita
+  kind           HourBankKind @default(ADJUSTMENT)
+  reason         String?
+  createdById    String?
+  createdBy      User?        @relation("HourBankAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([employeeId, date])
+}
+
+// ============================================================
+// FASE 3.4 — Apontamento de horas na produção
+// Cada item registra o tempo trabalhado por setor e por operador.
+// Serve para custo/produtividade; NÃO alimenta o banco de horas do ponto
+// (que é baseado nas marcações do relógio) para evitar dupla contagem.
+// ============================================================
+
+model ProductionTimeLog {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  itemId         String
+  item           ProductionItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sector         ProductionSector
+  userId         String
+  user           User             @relation("ProductionTimeLogOperator", fields: [userId], references: [id], onDelete: Cascade)
+  startedAt      DateTime
+  endedAt        DateTime? // null enquanto o cronômetro está rodando
+  minutes        Int? // preenchido ao parar (ou na entrada manual)
+  manual         Boolean          @default(false)
+  note           String?
+  createdAt      DateTime         @default(now())
+
+  @@index([itemId])
+  @@index([organizationId, startedAt])
+  @@index([userId, endedAt])
+}
+
+// ============================================================
+// FASE FIN — DRE formal
+// Mapeia categorias livres de FinanceTransaction para as linhas da DRE.
+// Quando não há mapeamento, um classificador por palavra-chave decide.
+// ============================================================
+
+model DreCategoryMapping {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       String
+  dreLine        String // RECEITA_BRUTA | DEDUCOES | RECEITA_FINANCEIRA | CUSTO | DESPESA_VENDAS | DESPESA_ADMIN | DESPESA_GERAL | DESPESA_FINANCEIRA | DEPRECIACAO | IMPOSTOS_RENDA
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, category])
+  @@index([organizationId])
 }

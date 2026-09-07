@@ -9,11 +9,17 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError, UnauthorizedError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { sendMail, renderResetEmail } from "../../lib/mailer";
-import { storage } from "../../lib/storage";
+import { storage, buildStorageKey } from "../../lib/storage";
+import { uploadPhoto } from "../../middlewares/upload";
 import { recomputeSignatureStatus } from "../documents/documents.routes";
 import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
 import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "../techproject/techproject.service";
+import {
+  getOrCreateOrder as getOrCreateProductionOrder,
+  orderInclude as productionInclude,
+  serializeOrder as serializeProductionOrder,
+} from "../production/production.service";
 
 const router = Router();
 
@@ -200,6 +206,7 @@ router.get(
         feedbackFormUrl: true,
         manager: { select: { name: true } },
         technicalApproval: { select: { status: true, approvedAt: true } },
+        productionOrder: { select: { stage: true, estimatedDeliveryAt: true, deliveredAt: true } },
         assistances: {
           select: {
             id: true,
@@ -210,6 +217,7 @@ router.get(
             createdAt: true,
             resolvedAt: true,
             origin: true,
+            attachments: { select: { id: true, fileName: true, mimeType: true, createdAt: true }, orderBy: { createdAt: "asc" } },
           },
           orderBy: { createdAt: "desc" },
         },
@@ -235,7 +243,13 @@ router.get(
     return ok(res, {
       ...project,
       technicalApproval: ta && ta.status !== "DRAFT" ? ta : null,
+      productionOrder: undefined,
+      production: project.productionOrder ?? null,
       feedbackFormUrl: project.feedbackFormUrl || env.clientFeedbackFormUrl || null,
+      assistances: project.assistances.map((a) => ({
+        ...a,
+        attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/portal/assistances/${a.id}/attachments/${att.id}/download` })),
+      })),
       documents: docs.map((d) => ({
         ...d,
         downloadUrl: `/api/portal/documents/${d.id}/download`,
@@ -307,10 +321,78 @@ router.get(
         createdAt: true,
         resolvedAt: true,
         project: { select: { id: true, code: true, name: true } },
+        attachments: { select: { id: true, fileName: true, mimeType: true, createdAt: true }, orderBy: { createdAt: "asc" } },
       },
       orderBy: { createdAt: "desc" },
     });
-    return ok(res, items);
+    return ok(
+      res,
+      items.map((a) => ({
+        ...a,
+        attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/portal/assistances/${a.id}/attachments/${att.id}/download` })),
+      }))
+    );
+  })
+);
+
+// POST /api/portal/assistances/:id/attachments  (multipart: photo)  -> cliente anexa foto
+router.post(
+  "/assistances/:id/attachments",
+  uploadPhoto.single("photo"),
+  asyncHandler(async (req, res) => {
+    const ticket = await prisma.assistanceTicket.findFirst({
+      where: { id: req.params.id, clientId: req.portal!.clientId },
+      select: { id: true, _count: { select: { attachments: true } } },
+    });
+    if (!ticket) throw new NotFoundError("Chamado não encontrado");
+    if (!req.file) throw new BadRequestError("Envie uma imagem");
+    if (ticket._count.attachments >= 12) throw new BadRequestError("Limite de 12 fotos por chamado");
+
+    const key = buildStorageKey(`assistances/${ticket.id}`, req.file.originalname);
+    await storage.put(key, req.file.buffer, req.file.mimetype);
+    const att = await prisma.assistanceAttachment.create({
+      data: {
+        ticketId: ticket.id,
+        storageKey: key,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        uploadedByClientAccountId: req.portal!.accountId,
+        uploadedByLabel: "Cliente",
+      },
+      select: { id: true, fileName: true, mimeType: true, createdAt: true },
+    });
+    return ok(res, { ...att, downloadUrl: `/api/portal/assistances/${ticket.id}/attachments/${att.id}/download` }, "Foto anexada");
+  })
+);
+
+router.get(
+  "/assistances/:id/attachments/:attId/download",
+  asyncHandler(async (req, res) => {
+    const att = await prisma.assistanceAttachment.findFirst({
+      where: { id: req.params.attId, ticketId: req.params.id, ticket: { clientId: req.portal!.clientId } },
+    });
+    if (!att) throw new NotFoundError("Anexo não encontrado");
+    const signed = await storage.getSignedUrl(att.storageKey, att.fileName);
+    if (signed) return res.redirect(signed);
+    const stream = await storage.getStream(att.storageKey);
+    res.setHeader("Content-Type", att.mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(att.fileName)}"`);
+    stream.pipe(res);
+  })
+);
+
+router.delete(
+  "/assistances/:id/attachments/:attId",
+  asyncHandler(async (req, res) => {
+    const att = await prisma.assistanceAttachment.findFirst({
+      where: { id: req.params.attId, ticketId: req.params.id, ticket: { clientId: req.portal!.clientId }, uploadedByClientAccountId: { not: null } },
+      select: { id: true, storageKey: true },
+    });
+    if (!att) throw new NotFoundError("Anexo não encontrado");
+    await storage.remove(att.storageKey).catch(() => undefined);
+    await prisma.assistanceAttachment.delete({ where: { id: att.id } });
+    return ok(res, { id: att.id }, "Foto removida");
   })
 );
 
@@ -587,6 +669,8 @@ router.post(
       },
       include: approvalInclude,
     });
+    // Aprovado -> entra na esteira de produção (etapa "liberado").
+    await getOrCreateProductionOrder(project.id, project.organizationId);
     if (project.managerId) {
       await prisma.notification.create({
         data: {
@@ -624,6 +708,22 @@ router.post(
       });
     }
     return ok(res, serializeApproval(updated, { includeSignature: true }), "Enviamos seu pedido de ajustes à equipe");
+  })
+);
+
+// ============================================================
+// ESTEIRA DE PRODUÇÃO (cliente acompanha)
+// ============================================================
+
+router.get(
+  "/projects/:id/production",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const order = await prisma.productionOrder.findUnique({
+      where: { projectId: project.id },
+      include: productionInclude,
+    });
+    return ok(res, order ? serializeProductionOrder(order) : null);
   })
 );
 

@@ -13,10 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage } from "@/lib/utils";
-import type { Employee, HrAlert, TimeMirror, User, VacationRequest } from "@/types";
+import type { Employee, HourBank, HrAlert, TimeMirror, User, VacationRequest } from "@/types";
 
 const hhmm = (min: number) => {
   const s = min < 0 ? "-" : "";
@@ -60,7 +60,7 @@ export function HrPage() {
     enabled: canEmployees,
   });
 
-  const [dialog, setDialog] = useState<"employee" | "period" | "request" | "manualPunch" | null>(null);
+  const [dialog, setDialog] = useState<"employee" | "period" | "request" | "manualPunch" | "adjust" | null>(null);
   const [periodEmployeeId, setPeriodEmployeeId] = useState<string>("");
   const [empForm, setEmpForm] = useState({ fullName: "", role: "", sector: "", admittedAt: "", weeklyHours: "44", userId: "" });
   const [periodForm, setPeriodForm] = useState({ accrualStart: "", accrualEnd: "", daysEntitled: "30" });
@@ -72,6 +72,37 @@ export function HrPage() {
   const [pontoMonth, setPontoMonth] = useState(new Date().toISOString().slice(0, 7));
   const [punch, setPunch] = useState({ timestamp: "", kind: "IN" });
   const pontoFileRef = useRef<HTMLInputElement>(null);
+
+  // Banco de horas
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const [bancoEmp, setBancoEmp] = useState("");
+  const [bancoFrom, setBancoFrom] = useState(monthStart);
+  const [bancoTo, setBancoTo] = useState(today);
+  const [adjForm, setAdjForm] = useState({ date: today, hours: "", minutes: "", kind: "COMPENSATION", reason: "" });
+  const hourBank = useQuery({
+    queryKey: ["hr", "hourbank", bancoEmp, bancoFrom, bancoTo],
+    queryFn: () => apiGet<{ data: HourBank }>("/hr/timeclock/hour-bank", { employeeId: bancoEmp, from: bancoFrom, to: bancoTo }),
+    enabled: Boolean(bancoEmp) && Boolean(bancoFrom) && Boolean(bancoTo),
+  });
+  const addAdjustment = useMutation({
+    mutationFn: () => {
+      const mins = (Number(adjForm.hours || 0) * 60 + Number(adjForm.minutes || 0)) * (adjForm.kind === "COMPENSATION" || adjForm.kind === "PAYOUT" ? -1 : 1);
+      return apiPost("/hr/timeclock/hour-bank/adjustments", { employeeId: bancoEmp, date: adjForm.date, minutes: mins, kind: adjForm.kind, reason: adjForm.reason || null });
+    },
+    onSuccess: () => {
+      toast.success("Lançamento registrado");
+      setDialog(null);
+      setAdjForm({ date: today, hours: "", minutes: "", kind: "COMPENSATION", reason: "" });
+      qc.invalidateQueries({ queryKey: ["hr", "hourbank"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao lançar")),
+  });
+  const delAdjustment = useMutation({
+    mutationFn: (id: string) => apiDelete(`/hr/timeclock/hour-bank/adjustments/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "hourbank"] }),
+    onError: (e) => toast.error(errorMessage(e, "Falha ao remover")),
+  });
   const mirror = useQuery({
     queryKey: ["hr", "mirror", pontoEmp, pontoMonth],
     queryFn: () => apiGet<{ data: TimeMirror }>("/hr/timeclock/mirror", { employeeId: pontoEmp, month: pontoMonth }),
@@ -186,6 +217,7 @@ export function HrPage() {
             Alertas{alertList.length ? ` (${alertList.length})` : ""}
           </TabsTrigger>
           <TabsTrigger value="ponto">Ponto</TabsTrigger>
+          <TabsTrigger value="banco">Banco de horas</TabsTrigger>
         </TabsList>
 
         {/* ---- Colaboradores ---- */}
@@ -407,6 +439,93 @@ export function HrPage() {
             <EmptyState title="Sem marcações no mês" />
           )}
         </TabsContent>
+
+        {/* ---- Banco de horas ---- */}
+        <TabsContent value="banco" className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label>Colaborador</Label>
+              <Select value={bancoEmp || "NONE"} onValueChange={(v) => setBancoEmp(v === "NONE" ? "" : v)}>
+                <SelectTrigger className="w-56"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Selecione</SelectItem>
+                  {empList.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>{e.fullName} ({e.registration})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2"><Label>De</Label><Input type="date" className="w-40" value={bancoFrom} onChange={(e) => setBancoFrom(e.target.value)} /></div>
+            <div className="space-y-2"><Label>Até</Label><Input type="date" className="w-40" value={bancoTo} onChange={(e) => setBancoTo(e.target.value)} /></div>
+            {canTimeclock && (
+              <Button variant="ghost" disabled={!bancoEmp} onClick={() => setDialog("adjust")}>
+                <Plus className="mr-2 h-4 w-4" /> Lançamento
+              </Button>
+            )}
+          </div>
+
+          {!bancoEmp ? (
+            <EmptyState title="Selecione um colaborador" description="Escolha quem e o período para consolidar o banco de horas." />
+          ) : hourBank.isLoading ? (
+            <PageSkeleton />
+          ) : hourBank.data ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <MiniStat label="Horas extras" value={hhmm(hourBank.data.data.summary.overtimeMinutes)} tone="pos" />
+                <MiniStat label="Déficit / faltas" value={hhmm(hourBank.data.data.summary.deficitMinutes)} tone="neg" />
+                <MiniStat label="Ajustes / compensações" value={hhmm(hourBank.data.data.summary.adjustmentMinutes)} tone={hourBank.data.data.summary.adjustmentMinutes < 0 ? "neg" : "pos"} />
+                <MiniStat label="Saldo do banco" value={hhmm(hourBank.data.data.summary.netBalanceMinutes)} tone={hourBank.data.data.summary.netBalanceMinutes >= 0 ? "pos" : "neg"} />
+              </div>
+
+              {hourBank.data.data.adjustments.length > 0 && (
+                <div className="rounded-lg border border-border">
+                  <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">Lançamentos manuais</p>
+                  <div className="divide-y divide-border">
+                    {hourBank.data.data.adjustments.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                        <div>
+                          <span className="tabular-nums">{new Date(`${a.date}T00:00:00`).toLocaleDateString("pt-BR")}</span>
+                          <span className={`ml-3 tabular-nums ${a.minutes < 0 ? "text-destructive" : "text-success"}`}>{hhmm(a.minutes)}</span>
+                          <span className="ml-3 text-xs text-muted-foreground">{a.kind === "COMPENSATION" ? "Compensação" : a.kind === "PAYOUT" ? "Pagamento" : "Ajuste"}{a.reason ? ` · ${a.reason}` : ""}{a.author ? ` · ${a.author}` : ""}</span>
+                        </div>
+                        {canTimeclock && (
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => delAdjustment.mutate(a.id)}>×</Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
+                      <th className="px-3 py-2 text-left">Dia</th>
+                      <th className="px-3 py-2 text-right">Trabalhado</th>
+                      <th className="px-3 py-2 text-right">Previsto</th>
+                      <th className="px-3 py-2 text-right">Saldo do dia</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hourBank.data.data.days.filter((d) => d.status !== "FOLGA").map((d) => (
+                      <tr key={d.date} className="border-b border-border last:border-0">
+                        <td className="whitespace-nowrap px-3 py-2">{new Date(`${d.date}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", weekday: "short" })}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{d.workedMinutes ? hhmm(d.workedMinutes) : "—"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{d.expectedMinutes ? hhmm(d.expectedMinutes) : "—"}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums ${d.balanceMinutes < 0 ? "text-destructive" : d.balanceMinutes > 0 ? "text-success" : ""}`}>{hhmm(d.balanceMinutes)}</td>
+                        <td className="px-3 py-2"><Badge variant={DAY_STATUS[d.status].variant}>{DAY_STATUS[d.status].label}</Badge></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <EmptyState title="Sem dados no período" />
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* ---- Dialogs ---- */}
@@ -578,6 +697,38 @@ export function HrPage() {
             <Button disabled={addPunch.isPending || !punch.timestamp} onClick={() => addPunch.mutate()}>
               {addPunch.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Registrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "adjust"} onOpenChange={(v) => !v && setDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Lançamento no banco de horas</DialogTitle></DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Data"><Input type="date" value={adjForm.date} onChange={(e) => setAdjForm({ ...adjForm, date: e.target.value })} /></Field>
+            <Field label="Tipo">
+              <Select value={adjForm.kind} onValueChange={(v) => setAdjForm({ ...adjForm, kind: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COMPENSATION">Compensação / folga (abate)</SelectItem>
+                  <SelectItem value="PAYOUT">Pagamento de extras (abate)</SelectItem>
+                  <SelectItem value="ADJUSTMENT">Ajuste / correção (credita)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Horas"><Input type="number" min="0" value={adjForm.hours} onChange={(e) => setAdjForm({ ...adjForm, hours: e.target.value })} /></Field>
+            <Field label="Minutos"><Input type="number" min="0" max="59" value={adjForm.minutes} onChange={(e) => setAdjForm({ ...adjForm, minutes: e.target.value })} /></Field>
+            <Field label="Motivo" className="sm:col-span-2"><Input value={adjForm.reason} onChange={(e) => setAdjForm({ ...adjForm, reason: e.target.value })} placeholder="Ex.: folga da segunda emendada" /></Field>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Compensação e pagamento reduzem o saldo; ajuste credita. O valor é somado ao saldo calculado do ponto.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialog(null)}>Cancelar</Button>
+            <Button disabled={addAdjustment.isPending || (Number(adjForm.hours || 0) === 0 && Number(adjForm.minutes || 0) === 0)} onClick={() => addAdjustment.mutate()}>
+              {addAdjustment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Lançar
             </Button>
           </DialogFooter>
         </DialogContent>

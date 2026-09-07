@@ -636,4 +636,63 @@ router.get(
   })
 );
 
+// ============================================================
+// FUNIL DE CONVERSÃO DE LEADS (estilo MRV: volume por etapa + taxa de conversão)
+// ============================================================
+router.get(
+  "/funnel",
+  requirePermission("commercial.read"),
+  asyncHandler(async (req, res) => {
+    const organizationId = req.user!.organizationId;
+    const now = new Date();
+    const from = req.query.from ? new Date(String(req.query.from)) : new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const to = req.query.to ? new Date(String(req.query.to)) : now;
+
+    const [leads, opps] = await Promise.all([
+      prisma.commercialLead.findMany({
+        where: { organizationId, enteredAt: { gte: from, lte: to } },
+        select: { status: true, lastContactAt: true },
+      }),
+      prisma.commercialOpportunity.findMany({
+        where: { organizationId, createdAt: { gte: from, lte: to }, ...sellerScope(req) },
+        select: { status: true, estimatedValue: true },
+      }),
+    ]);
+
+    const leadsTotal = leads.length;
+    const contatados = leads.filter((l) => l.status !== "NEW" || l.lastContactAt).length;
+    const qualificados = leads.filter((l) => l.status === "QUALIFIED" || l.status === "CONVERTED").length;
+    const oppsTotal = opps.length;
+    const emNegociacao = opps.filter((o) => ["NEGOTIATION", "WAITING_CLIENT", "WON", "LOST"].includes(o.status)).length;
+    const ganhos = opps.filter((o) => o.status === "WON").length;
+    const ganhosValor = opps.filter((o) => o.status === "WON").reduce((a, o) => a + money(o.estimatedValue), 0);
+
+    const raw = [
+      { key: "LEADS", label: "Leads", count: leadsTotal },
+      { key: "CONTATADOS", label: "Contatados", count: contatados },
+      { key: "QUALIFICADOS", label: "Qualificados", count: qualificados },
+      { key: "OPORTUNIDADES", label: "Oportunidades", count: oppsTotal },
+      { key: "NEGOCIACAO", label: "Em negociação / proposta", count: emNegociacao },
+      { key: "GANHOS", label: "Fechados (contrato)", count: ganhos },
+    ];
+    const top = raw[0].count || 0;
+    const steps = raw.map((s, i) => ({
+      ...s,
+      conversionFromPrev: i === 0 ? 100 : raw[i - 1].count > 0 ? Math.round((s.count / raw[i - 1].count) * 1000) / 10 : 0,
+      conversionFromTop: top > 0 ? Math.round((s.count / top) * 1000) / 10 : 0,
+      dropFromPrev: i === 0 ? 0 : Math.max(0, raw[i - 1].count - s.count),
+    }));
+
+    return ok(res, {
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      steps,
+      leadToContract: leadsTotal > 0 ? Math.round((ganhos / leadsTotal) * 1000) / 10 : 0,
+      oppToContract: oppsTotal > 0 ? Math.round((ganhos / oppsTotal) * 1000) / 10 : 0,
+      wonValue: Math.round(ganhosValor),
+      leadsLost: leads.filter((l) => l.status === "LOST").length,
+    });
+  })
+);
+
 export default router;

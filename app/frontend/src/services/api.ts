@@ -100,6 +100,15 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   return payload as T;
 }
 
+/** Busca um arquivo autenticado e devolve um object URL (lembre de revogar). */
+export async function apiObjectUrl(path: string): Promise<string> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+  if (!response.ok) throw new ApiError(response.status, `Erro ${response.status}`);
+  return URL.createObjectURL(await response.blob());
+}
+
 /** Baixa um arquivo autenticado (o backend responde com redirect assinado ou o arquivo). */
 export async function apiDownload(path: string, fileName: string) {
   const response = await fetch(`${API_BASE}${path}`, {
