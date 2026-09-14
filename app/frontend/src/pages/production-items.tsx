@@ -15,15 +15,17 @@ import { apiDelete, apiGet, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
 
-export const SECTORS = ["CORTE", "FITA_BORDA", "FURACAO", "PRE_MONTAGEM", "EMBALAGEM", "EXPEDICAO"] as const;
+export const SECTORS = ["CORTE", "FITA_BORDA", "FURACAO", "PRE_MONTAGEM", "ACABAMENTO", "LIMPEZA", "EMBALAGEM", "EXPEDICAO"] as const;
 export type Sector = (typeof SECTORS)[number];
 export const SECTOR_LABEL: Record<Sector, string> = {
   CORTE: "Corte",
   FITA_BORDA: "Fita de borda",
   FURACAO: "Furação",
   PRE_MONTAGEM: "Pré-montagem",
+  ACABAMENTO: "Acabamento",
+  LIMPEZA: "Limpeza",
   EMBALAGEM: "Embalagem",
-  EXPEDICAO: "Expedição",
+  EXPEDICAO: "Saída / entrega",
 };
 
 export type ProductionItem = {

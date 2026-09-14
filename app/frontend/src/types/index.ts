@@ -65,16 +65,122 @@ export type DocumentTemplate = {
   name: string;
   type: string;
   description: string | null;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  hasFile: boolean;
+  body: string | null;
+  hasBody: boolean;
   requiresSignature: boolean;
   signerRoles: string[];
   visibleToClient: boolean;
   active: boolean;
   createdAt: string;
   generatedCount: number;
+  downloadUrl: string | null;
+};
+
+export type MergeField = { key: string; label: string; example: string };
+
+export type ContractMeta = {
+  clientId: string;
+  clientName: string;
+  projectId: string | null;
+  projectCode: string | null;
+  promobImportId: string | null;
+  total: number | null;
+  totalSource: "PROMOB" | "MANUAL" | "NENHUM";
+};
+
+export type ContractPreview = { title: string; text: string; missing: string[]; meta: ContractMeta };
+
+export type MeasurementAttachment = {
+  id: string;
+  visitId: string;
+  kind: "FILE" | "DRAWING";
+  title: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { id: string; name: string } | null;
   downloadUrl: string;
+};
+
+export type HolidayScope = "NACIONAL" | "ESTADUAL" | "MUNICIPAL" | "EMPRESA";
+
+export type Holiday = {
+  id?: string;
+  date: string;
+  name: string;
+  scope: HolidayScope;
+  optional: boolean;
+  source: "CALENDARIO" | "EMPRESA";
+  notes?: string | null;
+};
+
+export type DispatchChecklist = {
+  id: string;
+  orderId: string;
+  producaoCompleta: boolean;
+  materialCompleto: boolean;
+  ferragens: boolean;
+  insumos: boolean;
+  pendencia: boolean;
+  pendenciaDescricao: string | null;
+  notes: string | null;
+  releasedAt: string | null;
+  updatedAt: string;
+  checkedBy: { id: string; name: string } | null;
+  ready: boolean;
+};
+
+export type Contractor = {
+  id: string;
+  name: string;
+  document: string | null;
+  phone: string | null;
+  address: string | null;
+  specialty: string | null;
+  dailyRate: number;
+  active: boolean;
+  notes: string | null;
+  createdAt: string;
+  onSite: boolean;
+};
+
+export type ContractorShift = {
+  id: string;
+  contractorId: string;
+  projectId: string | null;
+  checkInAt: string;
+  checkOutAt: string | null;
+  minutes: number | null;
+  hours: number | null;
+  dailyRate: number;
+  day: string;
+  open: boolean;
+  notes: string | null;
+  contractor: { id: string; name: string } | null;
+  project: { id: string; code: string; name: string } | null;
+  createdBy: { id: string; name: string } | null;
+};
+
+export type ContractorSummary = {
+  from: string;
+  to: string;
+  items: {
+    contractorId: string;
+    name: string;
+    minutes: number;
+    hours: number;
+    days: number;
+    openShifts: number;
+    total: number;
+  }[];
+  totals: { contractors: number; hours: number; days: number; total: number; openShifts: number };
 };
 
 export type DocSignature = { id: string; role: string; signerName: string; signedAt: string };

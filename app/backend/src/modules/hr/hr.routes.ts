@@ -9,6 +9,7 @@ import { ok } from "../../utils/response";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { uploadDocument } from "../../middlewares/upload";
 import { computeHrAlerts, countVacationDays, nextRegistration } from "./hr.service";
+import { holidaysForYear, runHolidayNotices, upcomingHolidays, ymd } from "./holidays.service";
 import timeclockRoutes from "./timeclock.routes";
 
 const router = Router();
@@ -466,6 +467,95 @@ router.get(
   requirePermission("hr.read"),
   asyncHandler(async (req, res) => {
     return ok(res, await computeHrAlerts(req.user!.organizationId));
+  })
+);
+
+// ---------------- Feriados ----------------
+// Nacionais + estaduais (CE) + municipais (Fortaleza) saem do calendário;
+// recessos e pontos facultativos da casa são cadastrados aqui.
+
+// GET /api/hr/holidays?year=2026
+router.get(
+  "/holidays",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    if (year < 2000 || year > 2100) throw new BadRequestError("Ano inválido");
+    const list = await holidaysForYear(req.user!.organizationId, year);
+    return ok(res, { year, holidays: list });
+  })
+);
+
+// GET /api/hr/holidays/upcoming?days=60
+router.get(
+  "/holidays/upcoming",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 60, 1), 400);
+    return ok(res, await upcomingHolidays(req.user!.organizationId, days));
+  })
+);
+
+// POST /api/hr/holidays  -> recesso / ponto facultativo da empresa
+router.post(
+  "/holidays",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use o formato aaaa-mm-dd"),
+        name: z.string().trim().min(2).max(200),
+        scope: z.enum(["NACIONAL", "ESTADUAL", "MUNICIPAL", "EMPRESA"]).default("EMPRESA"),
+        optional: z.boolean().default(false),
+        notes: nullable(2000),
+      })
+      .parse(req.body);
+
+    const date = new Date(`${input.date}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) throw new BadRequestError("Data inválida");
+    const existing = await prisma.companyHoliday.findFirst({
+      where: { organizationId: req.user!.organizationId, date, name: input.name },
+      select: { id: true },
+    });
+    if (existing) throw new BadRequestError("Já existe um feriado com esse nome nessa data");
+
+    const row = await prisma.companyHoliday.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        date,
+        name: input.name,
+        scope: input.scope,
+        optional: input.optional,
+        notes: input.notes || null,
+        createdById: req.user!.id,
+      },
+    });
+    await audit(req.user!.id, "COMPANY_HOLIDAY_CREATED", "CompanyHoliday", row.id, { date: input.date, name: input.name });
+    return ok(res, { id: row.id, date: ymd(row.date), name: row.name, scope: row.scope, optional: row.optional }, "Feriado cadastrado");
+  })
+);
+
+// DELETE /api/hr/holidays/:id  (só os cadastrados pela empresa)
+router.delete(
+  "/holidays/:id",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const row = await prisma.companyHoliday.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId } });
+    if (!row) throw new NotFoundError("Feriado não encontrado");
+    await prisma.companyHoliday.delete({ where: { id: row.id } });
+    await audit(req.user!.id, "COMPANY_HOLIDAY_DELETED", "CompanyHoliday", row.id);
+    return ok(res, { id: row.id }, "Feriado removido");
+  })
+);
+
+// POST /api/hr/holidays/notify  -> dispara os avisos dos próximos dias
+router.post(
+  "/holidays/notify",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.body?.days) || 7, 1), 60);
+    const result = await runHolidayNotices(days);
+    return ok(res, result, result.holidays ? `${result.holidays} feriado(s) avisado(s)` : "Nenhum feriado novo para avisar");
   })
 );
 

@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDownload, apiGet, apiPatch, apiPost } from "@/services/api";
+import { DispatchChecklistCard } from "@/components/dispatch-checklist";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
 import { ProductionItemsPanel } from "./production-items";
@@ -349,6 +350,8 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
       <CutPlanCard projectId={projectId} canManage={canManage} cutPlan={o.cutPlan} onChange={(id) => patch.mutate({ cutPlanImportId: id })} saving={patch.isPending} />
 
       <ProductionItemsPanel projectId={projectId} canManage={canManage} />
+
+      <DispatchChecklistCard projectId={projectId} canManage={canManage} />
 
       {o.events.length > 0 && (
         <Card>

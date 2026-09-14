@@ -9,6 +9,8 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { MEASUREMENT_PERIODS, serializeVisit, techProjectDueDate, visitInclude } from "./measurements.service";
 import { notifyClientWhatsApp } from "../../lib/client-comms";
+import { storage, buildStorageKey } from "../../lib/storage";
+import { uploadDocument } from "../../middlewares/upload";
 
 const router = Router();
 router.use(authenticate);
@@ -195,6 +197,197 @@ router.post(
       `${visit.project?.code} — ${visit.project?.name}: medição concluída. Prazo do projeto técnico: ${dueAt.toLocaleDateString("pt-BR")}.`
     );
     return ok(res, serializeVisit(visit), "Medição concluída");
+  })
+);
+
+// ---------------- Anexos e desenho da medição ----------------
+// Dois tipos: FILE (foto/documento enviado) e DRAWING (desenho feito à mão no
+// tablet — o canvas manda um PNG em dataURL). O desenho pode ser reaberto e
+// salvo por cima, então tem PUT.
+
+const attachmentInclude = { createdBy: { select: { id: true, name: true } } } as const;
+
+const serializeAttachment = (a: {
+  id: string; visitId: string; kind: string; title: string; fileName: string; mimeType: string;
+  sizeBytes: number; notes: string | null; createdAt: Date; updatedAt: Date;
+  createdBy: { id: string; name: string } | null;
+}) => ({
+  id: a.id,
+  visitId: a.visitId,
+  kind: a.kind,
+  title: a.title,
+  fileName: a.fileName,
+  mimeType: a.mimeType,
+  sizeBytes: a.sizeBytes,
+  notes: a.notes,
+  createdAt: a.createdAt,
+  updatedAt: a.updatedAt,
+  createdBy: a.createdBy,
+  downloadUrl: `/api/measurements/attachments/${a.id}/download`,
+});
+
+/** PNG em dataURL vindo do canvas do tablet -> Buffer. */
+function decodeDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
+  const m = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/);
+  if (!m) throw new BadRequestError("Desenho inválido (esperado PNG/JPEG em base64)");
+  const buffer = Buffer.from(m[2].replace(/\s/g, ""), "base64");
+  if (!buffer.length) throw new BadRequestError("Desenho vazio");
+  if (buffer.length > 12 * 1024 * 1024) throw new BadRequestError("Desenho muito grande (máx. 12 MB)");
+  return { buffer, mimeType: m[1] };
+}
+
+// GET /api/measurements/:id/attachments?kind=FILE|DRAWING
+router.get(
+  "/:id/attachments",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    await ensureVisit(req.params.id, req.user!.organizationId);
+    const kind = req.query.kind ? String(req.query.kind).toUpperCase() : null;
+    if (kind && kind !== "FILE" && kind !== "DRAWING") throw new BadRequestError("Tipo inválido");
+    const rows = await prisma.measurementAttachment.findMany({
+      where: { visitId: req.params.id, organizationId: req.user!.organizationId, ...(kind ? { kind: kind as never } : {}) },
+      include: attachmentInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, rows.map(serializeAttachment));
+  })
+);
+
+// POST /api/measurements/:id/attachments  (multipart: file + title?, notes?)
+router.post(
+  "/:id/attachments",
+  requirePermission("organization.manage"),
+  uploadDocument.single("file"),
+  asyncHandler(async (req, res) => {
+    const visit = await ensureVisit(req.params.id, req.user!.organizationId);
+    if (!req.file) throw new BadRequestError("Arquivo é obrigatório");
+    const input = z
+      .object({ title: z.string().trim().max(200).optional().nullable(), notes: z.string().trim().max(2000).optional().nullable() })
+      .parse(req.body);
+
+    const key = buildStorageKey(`measurements/${visit.id}`, req.file.originalname);
+    await storage.put(key, req.file.buffer, req.file.mimetype);
+    const row = await prisma.measurementAttachment.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        visitId: visit.id,
+        kind: "FILE",
+        title: nn(input.title) ?? req.file.originalname,
+        storageKey: key,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        notes: nn(input.notes),
+        createdById: req.user!.id,
+      },
+      include: attachmentInclude,
+    });
+    return ok(res, serializeAttachment(row), "Anexo enviado");
+  })
+);
+
+// POST /api/measurements/:id/drawings  { dataUrl, title?, notes? }
+router.post(
+  "/:id/drawings",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const visit = await ensureVisit(req.params.id, req.user!.organizationId);
+    const input = z
+      .object({
+        dataUrl: z.string().min(32),
+        title: z.string().trim().max(200).optional().nullable(),
+        notes: z.string().trim().max(2000).optional().nullable(),
+      })
+      .parse(req.body);
+
+    const { buffer, mimeType } = decodeDataUrl(input.dataUrl);
+    const fileName = `desenho-${Date.now()}.${mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg"}`;
+    const key = buildStorageKey(`measurements/${visit.id}`, fileName);
+    await storage.put(key, buffer, mimeType);
+
+    const row = await prisma.measurementAttachment.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        visitId: visit.id,
+        kind: "DRAWING",
+        title: nn(input.title) ?? "Desenho da medição",
+        storageKey: key,
+        fileName,
+        mimeType,
+        sizeBytes: buffer.byteLength,
+        notes: nn(input.notes),
+        createdById: req.user!.id,
+      },
+      include: attachmentInclude,
+    });
+    return ok(res, serializeAttachment(row), "Desenho salvo");
+  })
+);
+
+// PUT /api/measurements/drawings/:attachmentId  { dataUrl, title?, notes? }
+// Regravar o desenho por cima (continuar de onde parou no tablet).
+router.put(
+  "/drawings/:attachmentId",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const cur = await prisma.measurementAttachment.findFirst({
+      where: { id: req.params.attachmentId, organizationId: req.user!.organizationId, kind: "DRAWING" },
+    });
+    if (!cur) throw new NotFoundError("Desenho não encontrado");
+    const input = z
+      .object({
+        dataUrl: z.string().min(32),
+        title: z.string().trim().max(200).optional().nullable(),
+        notes: z.string().trim().max(2000).optional().nullable(),
+      })
+      .parse(req.body);
+
+    const { buffer, mimeType } = decodeDataUrl(input.dataUrl);
+    await storage.put(cur.storageKey, buffer, mimeType);
+    const row = await prisma.measurementAttachment.update({
+      where: { id: cur.id },
+      data: {
+        mimeType,
+        sizeBytes: buffer.byteLength,
+        title: input.title === undefined ? undefined : (nn(input.title) ?? cur.title),
+        notes: input.notes === undefined ? undefined : nn(input.notes),
+      },
+      include: attachmentInclude,
+    });
+    return ok(res, serializeAttachment(row), "Desenho atualizado");
+  })
+);
+
+// GET /api/measurements/attachments/:attachmentId/download
+router.get(
+  "/attachments/:attachmentId/download",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const a = await prisma.measurementAttachment.findFirst({
+      where: { id: req.params.attachmentId, organizationId: req.user!.organizationId },
+    });
+    if (!a) throw new NotFoundError("Anexo não encontrado");
+    const signed = await storage.getSignedUrl(a.storageKey, a.fileName);
+    if (signed) return res.redirect(signed);
+    const stream = await storage.getStream(a.storageKey);
+    res.setHeader("Content-Type", a.mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(a.fileName)}"`);
+    stream.pipe(res);
+  })
+);
+
+// DELETE /api/measurements/attachments/:attachmentId
+router.delete(
+  "/attachments/:attachmentId",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const a = await prisma.measurementAttachment.findFirst({
+      where: { id: req.params.attachmentId, organizationId: req.user!.organizationId },
+    });
+    if (!a) throw new NotFoundError("Anexo não encontrado");
+    await storage.remove(a.storageKey).catch(() => undefined);
+    await prisma.measurementAttachment.delete({ where: { id: a.id } });
+    return ok(res, { id: a.id }, "Anexo removido");
   })
 );
 
