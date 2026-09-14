@@ -170,6 +170,22 @@ export type Employee = {
   openPeriod: { daysRemaining: number; concessionLimit: string } | null;
 };
 
+export type EmployeeDocumentType = "CONTRATO" | "RESCISAO" | "FERIAS" | "RESPONSABILIDADE_FERRAMENTA" | "REGULAMENTO_INTERNO" | "OUTRO";
+export type EmployeeDocument = {
+  id: string;
+  type: EmployeeDocumentType;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  notes: string | null;
+  createdAt: string;
+  employeeId: string | null;
+  employee: { id: string; fullName: string; registration: string } | null;
+  uploadedBy: { id: string; name: string } | null;
+  downloadUrl: string;
+};
+
 export type VacationPeriod = {
   id: string;
   accrualStart: string;

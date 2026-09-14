@@ -101,6 +101,7 @@ model User {
   workspaceNotes           WorkspaceNote[]       @relation("WorkspaceNoteOwner")
   plannerItems             PlannerItem[]         @relation("PlannerItemOwner")
   hourBankAdjustments      HourBankAdjustment[]  @relation("HourBankAuthor")
+  uploadedEmployeeDocuments EmployeeDocument[]   @relation("EmployeeDocumentUploader")
 
   @@index([roleId])
   @@index([organizationId])
@@ -193,6 +194,7 @@ model Organization {
   workspaceNotes      WorkspaceNote[]
   plannerItems        PlannerItem[]
   hourBankAdjustments HourBankAdjustment[]
+  employeeDocuments   EmployeeDocument[]
 
   @@index([enterpriseId])
 }
@@ -1999,6 +2001,7 @@ model Employee {
   sector         String?
   email          String?
   phone          String?
+  address        String?
   admittedAt     DateTime
   terminatedAt   DateTime?
   weeklyHours    Int            @default(44)
@@ -2010,6 +2013,7 @@ model Employee {
   vacationRequests VacationRequest[]
   timeEntries      TimeEntry[]
   hourBank         HourBankAdjustment[] @relation("EmployeeHourBank")
+  documents        EmployeeDocument[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -2724,4 +2728,42 @@ model DreCategoryMapping {
 
   @@unique([organizationId, category])
   @@index([organizationId])
+}
+
+// ============================================================
+// RH — Documentos do colaborador
+// Contrato assinado, rescisão, comprovantes de férias, termo de
+// responsabilidade de ferramentas, regulamento interno, etc.
+// employeeId nulo = documento geral do RH (ex.: regulamento interno),
+// não preso a um colaborador específico.
+// ============================================================
+
+enum EmployeeDocumentType {
+  CONTRATO
+  RESCISAO
+  FERIAS
+  RESPONSABILIDADE_FERRAMENTA
+  REGULAMENTO_INTERNO
+  OUTRO
+}
+
+model EmployeeDocument {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String?
+  employee       Employee?            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type           EmployeeDocumentType @default(OUTRO)
+  title          String
+  storageKey     String
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  notes          String?              @db.Text
+  uploadedById   String?
+  uploadedBy     User?                @relation("EmployeeDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime             @default(now())
+
+  @@index([organizationId])
+  @@index([employeeId])
 }

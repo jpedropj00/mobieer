@@ -6,6 +6,8 @@ import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
+import { storage, buildStorageKey } from "../../lib/storage";
+import { uploadDocument } from "../../middlewares/upload";
 import { computeHrAlerts, countVacationDays, nextRegistration } from "./hr.service";
 import timeclockRoutes from "./timeclock.routes";
 
@@ -22,6 +24,7 @@ const employeeSchema = z.object({
   sector: nullable(120),
   email: z.string().email().optional().nullable().or(z.literal("")),
   phone: nullable(30),
+  address: nullable(255),
   admittedAt: z.coerce.date(),
   weeklyHours: z.coerce.number().int().min(1).max(60).default(44),
   status: z.enum(["ACTIVE", "ON_LEAVE", "TERMINATED"]).default("ACTIVE"),
@@ -138,6 +141,7 @@ router.post(
         sector: input.sector || null,
         email: input.email || null,
         phone: input.phone || null,
+        address: input.address || null,
         admittedAt: input.admittedAt,
         weeklyHours: input.weeklyHours,
         status: input.status,
@@ -164,6 +168,7 @@ router.patch(
         sector: input.sector === undefined ? undefined : input.sector || null,
         email: input.email === undefined ? undefined : input.email || null,
         phone: input.phone === undefined ? undefined : input.phone || null,
+        address: input.address === undefined ? undefined : input.address || null,
         admittedAt: input.admittedAt,
         weeklyHours: input.weeklyHours,
         status: input.status,
@@ -173,6 +178,112 @@ router.patch(
     });
     await audit(req.user!.id, "EMPLOYEE_UPDATED", "Employee", e.id);
     return ok(res, e, "Colaborador atualizado");
+  })
+);
+
+// ---------------- Documentos do colaborador ----------------
+// Contrato assinado, rescisão, comprovantes de férias, termo de
+// responsabilidade de ferramentas, regulamento interno etc.
+// employeeId ausente na query/corpo = documentos gerais do RH (não presos
+// a um colaborador específico, ex.: regulamento interno).
+
+const employeeDocInclude = {
+  employee: { select: { id: true, fullName: true, registration: true } },
+  uploadedBy: { select: { id: true, name: true } },
+} as const;
+
+const serializeEmployeeDoc = (d: {
+  id: string; type: string; title: string; fileName: string; mimeType: string; sizeBytes: number;
+  notes: string | null; createdAt: Date; employeeId: string | null;
+  employee: { id: string; fullName: string; registration: string } | null;
+  uploadedBy: { id: string; name: string } | null;
+}) => ({
+  id: d.id, type: d.type, title: d.title, fileName: d.fileName, mimeType: d.mimeType, sizeBytes: d.sizeBytes,
+  notes: d.notes, createdAt: d.createdAt, employeeId: d.employeeId, employee: d.employee,
+  uploadedBy: d.uploadedBy, downloadUrl: `/api/hr/employee-documents/${d.id}/download`,
+});
+
+// GET /api/hr/employee-documents?employeeId=  (sem employeeId -> documentos gerais do RH)
+router.get(
+  "/employee-documents",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    const employeeId = req.query.employeeId ? String(req.query.employeeId) : null;
+    if (employeeId) await getEmployee(employeeId, req.user!.organizationId);
+    const rows = await prisma.employeeDocument.findMany({
+      where: { organizationId: req.user!.organizationId, employeeId },
+      include: employeeDocInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, rows.map(serializeEmployeeDoc));
+  })
+);
+
+// POST /api/hr/employee-documents  (multipart: file + employeeId?, type, title, notes?)
+router.post(
+  "/employee-documents",
+  requirePermission("hr.employees.manage"),
+  uploadDocument.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new BadRequestError("Arquivo é obrigatório");
+    const input = z
+      .object({
+        employeeId: z.string().min(1).optional().nullable().or(z.literal("")),
+        type: z.enum(["CONTRATO", "RESCISAO", "FERIAS", "RESPONSABILIDADE_FERRAMENTA", "REGULAMENTO_INTERNO", "OUTRO"]).default("OUTRO"),
+        title: z.string().trim().min(2).max(255),
+        notes: nullable(2000),
+      })
+      .parse(req.body);
+    const employeeId = input.employeeId || null;
+    if (employeeId) await getEmployee(employeeId, req.user!.organizationId);
+
+    const key = buildStorageKey(`hr/${employeeId ?? "geral"}`, req.file.originalname);
+    await storage.put(key, req.file.buffer, req.file.mimetype);
+    const doc = await prisma.employeeDocument.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        employeeId,
+        type: input.type,
+        title: input.title,
+        storageKey: key,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        notes: input.notes || null,
+        uploadedById: req.user!.id,
+      },
+      include: employeeDocInclude,
+    });
+    await audit(req.user!.id, "EMPLOYEE_DOCUMENT_UPLOADED", "EmployeeDocument", doc.id, { type: input.type, employeeId });
+    return ok(res, serializeEmployeeDoc(doc), "Documento anexado");
+  })
+);
+
+router.get(
+  "/employee-documents/:id/download",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    const doc = await prisma.employeeDocument.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId } });
+    if (!doc) throw new NotFoundError("Documento não encontrado");
+    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    if (signed) return res.redirect(signed);
+    const stream = await storage.getStream(doc.storageKey);
+    res.setHeader("Content-Type", doc.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
+    stream.pipe(res);
+  })
+);
+
+router.delete(
+  "/employee-documents/:id",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const doc = await prisma.employeeDocument.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId } });
+    if (!doc) throw new NotFoundError("Documento não encontrado");
+    await storage.remove(doc.storageKey).catch(() => undefined);
+    await prisma.employeeDocument.delete({ where: { id: doc.id } });
+    await audit(req.user!.id, "EMPLOYEE_DOCUMENT_DELETED", "EmployeeDocument", doc.id);
+    return ok(res, { id: doc.id }, "Documento removido");
   })
 );
 

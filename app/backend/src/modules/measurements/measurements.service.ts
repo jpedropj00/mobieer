@@ -60,7 +60,8 @@ export const visitInclude = {
 
 /**
  * Job diário: cobra o projeto técnico quando o prazo de 12 dias está perto de
- * vencer (<= 3 dias) ou já venceu. Notifica o responsável pelo projeto.
+ * vencer (<= 3 dias) ou já venceu. Notifica o responsável pelo projeto e o
+ * técnico que fez a medição (quando houver).
  */
 export async function runMeasurementDeadlineAlerts() {
   const now = new Date();
@@ -72,31 +73,22 @@ export async function runMeasurementDeadlineAlerts() {
 
   let created = 0;
   for (const v of visits) {
-    const mgr = v.project.managerId;
-    if (!mgr) continue;
     if (v.project.status === "COMPLETED" || v.project.status === "CANCELLED") continue;
     const overdue = v.techProjectDueAt! < now;
-    const recent = await prisma.notification.findFirst({
-      where: {
-        userId: mgr,
-        type: "INFO",
-        title: "Prazo do projeto técnico",
-        createdAt: { gte: new Date(now.getTime() - DAY) },
-      },
-      select: { id: true },
-    });
-    if (recent) continue;
-    await prisma.notification.create({
-      data: {
-        type: "INFO",
-        title: "Prazo do projeto técnico",
-        message: overdue
-          ? `${v.project.code} — ${v.project.name}: o prazo de ${TECH_PROJECT_DAYS} dias do projeto técnico venceu em ${v.techProjectDueAt!.toLocaleDateString("pt-BR")}.`
-          : `${v.project.code} — ${v.project.name}: o projeto técnico vence em ${v.techProjectDueAt!.toLocaleDateString("pt-BR")}.`,
-        userId: mgr,
-      },
-    });
-    created++;
+    const message = overdue
+      ? `${v.project.code} — ${v.project.name}: o prazo de ${TECH_PROJECT_DAYS} dias do projeto técnico venceu em ${v.techProjectDueAt!.toLocaleDateString("pt-BR")}.`
+      : `${v.project.code} — ${v.project.name}: o projeto técnico vence em ${v.techProjectDueAt!.toLocaleDateString("pt-BR")}.`;
+
+    const recipients = new Set([v.project.managerId, v.technicianId].filter((id): id is string => Boolean(id)));
+    for (const userId of recipients) {
+      const recent = await prisma.notification.findFirst({
+        where: { userId, type: "INFO", title: "Prazo do projeto técnico", createdAt: { gte: new Date(now.getTime() - DAY) } },
+        select: { id: true },
+      });
+      if (recent) continue;
+      await prisma.notification.create({ data: { type: "INFO", title: "Prazo do projeto técnico", message, userId } });
+      created++;
+    }
   }
   return { alerted: created };
 }

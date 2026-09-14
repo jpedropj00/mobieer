@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, Clock, Loader2, Plus, Upload, UserPlus } from "lucide-react";
+import { AlertTriangle, CalendarClock, Clock, Download, FileText, Loader2, Paperclip, Plus, Trash2, Upload, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,10 +13,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage } from "@/lib/utils";
-import type { Employee, HourBank, HrAlert, TimeMirror, User, VacationRequest } from "@/types";
+import type { Employee, EmployeeDocument, EmployeeDocumentType, HourBank, HrAlert, TimeMirror, User, VacationRequest } from "@/types";
+
+const EMP_DOC_TYPE_LABEL: Record<EmployeeDocumentType, string> = {
+  CONTRATO: "Contrato assinado", RESCISAO: "Rescisão", FERIAS: "Documento de férias",
+  RESPONSABILIDADE_FERRAMENTA: "Responsabilidade por ferramentas", REGULAMENTO_INTERNO: "Regulamento interno", OUTRO: "Outro",
+};
+const fmtSize = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 const hhmm = (min: number) => {
   const s = min < 0 ? "-" : "";
@@ -60,9 +66,43 @@ export function HrPage() {
     enabled: canEmployees,
   });
 
-  const [dialog, setDialog] = useState<"employee" | "period" | "request" | "manualPunch" | "adjust" | null>(null);
+  const [tab, setTab] = useState("employees");
+  const [dialog, setDialog] = useState<"employee" | "period" | "request" | "manualPunch" | "adjust" | "docUpload" | null>(null);
   const [periodEmployeeId, setPeriodEmployeeId] = useState<string>("");
-  const [empForm, setEmpForm] = useState({ fullName: "", role: "", sector: "", admittedAt: "", weeklyHours: "44", userId: "" });
+  const [empForm, setEmpForm] = useState({ fullName: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
+
+  // Documentos do colaborador (contrato, rescisão, férias, ferramentas...)
+  const [docsEmployeeId, setDocsEmployeeId] = useState<string>("");
+  const [docForm, setDocForm] = useState<{ type: EmployeeDocumentType; title: string; notes: string; file: File | null }>({ type: "CONTRATO", title: "", notes: "", file: null });
+  const docFileRef = useRef<HTMLInputElement>(null);
+  const employeeDocs = useQuery({
+    queryKey: ["hr", "employee-documents", docsEmployeeId],
+    queryFn: () => apiGet<{ data: EmployeeDocument[] }>("/hr/employee-documents", docsEmployeeId ? { employeeId: docsEmployeeId } : undefined),
+  });
+  const uploadDoc = useMutation({
+    mutationFn: () => {
+      const fd = new FormData();
+      fd.append("file", docForm.file!);
+      if (docsEmployeeId) fd.append("employeeId", docsEmployeeId);
+      fd.append("type", docForm.type);
+      fd.append("title", docForm.title || docForm.file!.name);
+      if (docForm.notes) fd.append("notes", docForm.notes);
+      return apiPostForm("/hr/employee-documents", fd);
+    },
+    onSuccess: () => {
+      toast.success("Documento anexado");
+      setDialog(null);
+      setDocForm({ type: "CONTRATO", title: "", notes: "", file: null });
+      if (docFileRef.current) docFileRef.current.value = "";
+      qc.invalidateQueries({ queryKey: ["hr", "employee-documents"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao anexar")),
+  });
+  const deleteDoc = useMutation({
+    mutationFn: (id: string) => apiDelete(`/hr/employee-documents/${id}`),
+    onSuccess: () => { toast.success("Documento removido"); qc.invalidateQueries({ queryKey: ["hr", "employee-documents"] }); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao remover")),
+  });
   const [periodForm, setPeriodForm] = useState({ accrualStart: "", accrualEnd: "", daysEntitled: "30" });
   const [reqForm, setReqForm] = useState({ employeeId: "", startDate: "", endDate: "", sellDays: "0", note: "" });
 
@@ -141,6 +181,8 @@ export function HrPage() {
         fullName: empForm.fullName,
         role: empForm.role || null,
         sector: empForm.sector || null,
+        phone: empForm.phone || null,
+        address: empForm.address || null,
         admittedAt: empForm.admittedAt,
         weeklyHours: Number(empForm.weeklyHours || 44),
         userId: empForm.userId || null,
@@ -148,7 +190,7 @@ export function HrPage() {
     onSuccess: () => {
       toast.success("Colaborador cadastrado");
       setDialog(null);
-      setEmpForm({ fullName: "", role: "", sector: "", admittedAt: "", weeklyHours: "44", userId: "" });
+      setEmpForm({ fullName: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
       refreshAll();
     },
     onError: (e) => toast.error(errorMessage(e, "Falha ao cadastrar")),
@@ -209,7 +251,7 @@ export function HrPage() {
     <div className="space-y-6">
       <PageHeader title="RH" description="Colaboradores, férias, alertas e ponto eletrônico." />
 
-      <Tabs defaultValue="employees">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
           <TabsTrigger value="employees">Colaboradores ({empList.length})</TabsTrigger>
           <TabsTrigger value="vacations">Férias ({vacList.length})</TabsTrigger>
@@ -218,6 +260,7 @@ export function HrPage() {
           </TabsTrigger>
           <TabsTrigger value="ponto">Ponto</TabsTrigger>
           <TabsTrigger value="banco">Banco de horas</TabsTrigger>
+          <TabsTrigger value="documentos">Documentos</TabsTrigger>
         </TabsList>
 
         {/* ---- Colaboradores ---- */}
@@ -251,6 +294,16 @@ export function HrPage() {
                     <span className="text-xs text-amber-600">sem período aquisitivo</span>
                   )}
                   <Badge variant="secondary">{EMP_STATUS[e.status] ?? e.status}</Badge>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setDocsEmployeeId(e.id);
+                      setTab("documentos");
+                    }}
+                  >
+                    <Paperclip className="mr-2 h-4 w-4" /> Documentos
+                  </Button>
                   {canVacations && (
                     <Button
                       size="sm"
@@ -526,6 +579,68 @@ export function HrPage() {
             <EmptyState title="Sem dados no período" />
           )}
         </TabsContent>
+
+        {/* ---- Documentos do colaborador ---- */}
+        <TabsContent value="documentos" className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label>Colaborador</Label>
+              <Select value={docsEmployeeId || "GERAL"} onValueChange={(v) => setDocsEmployeeId(v === "GERAL" ? "" : v)}>
+                <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GERAL">Geral (RH — regulamento interno, avisos...)</SelectItem>
+                  {empList.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>{e.fullName} ({e.registration})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {canEmployees && (
+              <Button variant="outline" onClick={() => { setDocForm({ type: docsEmployeeId ? "CONTRATO" : "REGULAMENTO_INTERNO", title: "", notes: "", file: null }); setDialog("docUpload"); }}>
+                <Upload className="mr-2 h-4 w-4" /> Anexar documento
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Contrato assinado (colaborador ou terceirizado), rescisão, comprovantes de férias, termo de responsabilidade de ferramentas e documentos gerais do RH (regulamento interno, avisos).
+          </p>
+
+          {employeeDocs.isLoading ? (
+            <PageSkeleton />
+          ) : (employeeDocs.data?.data ?? []).length === 0 ? (
+            <EmptyState title="Nenhum documento" description="Anexe o primeiro documento acima." />
+          ) : (
+            <div className="space-y-2">
+              {employeeDocs.data!.data.map((d) => (
+                <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {d.title} <Badge variant="secondary" className="ml-1 align-middle">{EMP_DOC_TYPE_LABEL[d.type]}</Badge>
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {!docsEmployeeId && d.employee ? `${d.employee.fullName} · ` : ""}
+                        {fmtSize(d.sizeBytes)} · {fmt(d.createdAt)}{d.uploadedBy ? ` · ${d.uploadedBy.name}` : ""}
+                      </p>
+                      {d.notes && <p className="truncate text-xs text-muted-foreground">{d.notes}</p>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => apiDownload(`/hr/employee-documents/${d.id}/download`, d.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    {canEmployees && (
+                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { if (confirm("Remover este documento?")) deleteDoc.mutate(d.id); }}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* ---- Dialogs ---- */}
@@ -543,6 +658,12 @@ export function HrPage() {
             </Field>
             <Field label="Setor">
               <Input value={empForm.sector} onChange={(e) => setEmpForm({ ...empForm, sector: e.target.value })} />
+            </Field>
+            <Field label="Telefone">
+              <Input value={empForm.phone} onChange={(e) => setEmpForm({ ...empForm, phone: e.target.value })} />
+            </Field>
+            <Field label="Endereço" className="sm:col-span-2">
+              <Input value={empForm.address} onChange={(e) => setEmpForm({ ...empForm, address: e.target.value })} />
             </Field>
             <Field label="Admissão">
               <Input type="date" value={empForm.admittedAt} onChange={(e) => setEmpForm({ ...empForm, admittedAt: e.target.value })} />
@@ -729,6 +850,47 @@ export function HrPage() {
             <Button disabled={addAdjustment.isPending || (Number(adjForm.hours || 0) === 0 && Number(adjForm.minutes || 0) === 0)} onClick={() => addAdjustment.mutate()}>
               {addAdjustment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Lançar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "docUpload"} onOpenChange={(v) => !v && setDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Anexar documento{docsEmployeeId ? "" : " geral do RH"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {docsEmployeeId && (
+              <p className="text-sm text-muted-foreground">
+                Colaborador: <strong className="text-foreground">{empList.find((e) => e.id === docsEmployeeId)?.fullName}</strong>
+              </p>
+            )}
+            <Field label="Tipo">
+              <Select value={docForm.type} onValueChange={(v) => setDocForm({ ...docForm, type: v as EmployeeDocumentType })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(EMP_DOC_TYPE_LABEL) as [EmployeeDocumentType, string][]).map(([k, label]) => (
+                    <SelectItem key={k} value={k}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Título">
+              <Input value={docForm.title} onChange={(e) => setDocForm({ ...docForm, title: e.target.value })} placeholder="Ex.: Contrato de experiência — assinado" />
+            </Field>
+            <Field label="Observações (opcional)">
+              <Textarea rows={2} value={docForm.notes} onChange={(e) => setDocForm({ ...docForm, notes: e.target.value })} />
+            </Field>
+            <Field label="Arquivo">
+              <Input ref={docFileRef} type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" onChange={(e) => setDocForm({ ...docForm, file: e.target.files?.[0] ?? null })} />
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialog(null)}>Cancelar</Button>
+            <Button disabled={uploadDoc.isPending || !docForm.file} onClick={() => uploadDoc.mutate()}>
+              {uploadDoc.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Anexar
             </Button>
           </DialogFooter>
         </DialogContent>
