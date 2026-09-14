@@ -33,6 +33,7 @@ const serialize = (r: {
   format: string;
   status: string;
   itemCount: number;
+  totalValue: Prisma.Decimal | null;
   parsedJson: unknown;
   notes: string | null;
   createdAt: Date;
@@ -46,6 +47,7 @@ const serialize = (r: {
   format: r.format,
   status: r.status,
   itemCount: r.itemCount,
+  totalValue: r.totalValue != null ? Number(r.totalValue) : null,
   parsed: r.parsedJson ?? null,
   notes: r.notes,
   createdAt: r.createdAt,
@@ -83,6 +85,7 @@ router.post(
 
     let status = "UPLOADED";
     let itemCount = 0;
+    let totalValue: number | null = null;
     let parsed: unknown = null;
     let notes: string | null = null;
 
@@ -91,6 +94,7 @@ router.post(
         const p = parsePromobXml(decodeXmlBuffer(req.file.buffer));
         parsed = p;
         itemCount = p.totals.itens;
+        totalValue = p.totals.valor ?? null;
         status = p.totals.itens > 0 || p.totals.ambientes > 0 ? "PARSED" : "PARSE_FAILED";
         if (status === "PARSE_FAILED") notes = "XML lido, mas nenhum <ITEM>/<AMBIENTE> reconhecido nesta versão de export.";
       } catch (e) {
@@ -114,6 +118,7 @@ router.post(
         format,
         status,
         itemCount,
+        totalValue,
         parsedJson: parsed === null ? Prisma.DbNull : (parsed as Prisma.InputJsonValue),
         notes,
         createdById: req.user!.id,

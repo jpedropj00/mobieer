@@ -4,6 +4,7 @@ import { AlertTriangle, CalendarClock, Clock, Download, FileText, Loader2, Paper
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { HolidaysTab } from "@/components/hr-holidays";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -261,6 +262,7 @@ export function HrPage() {
           <TabsTrigger value="ponto">Ponto</TabsTrigger>
           <TabsTrigger value="banco">Banco de horas</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
+          <TabsTrigger value="feriados">Feriados</TabsTrigger>
         </TabsList>
 
         {/* ---- Colaboradores ---- */}
@@ -640,6 +642,10 @@ export function HrPage() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="feriados" className="space-y-4">
+          <HolidaysTab canManage={canEmployees} />
         </TabsContent>
       </Tabs>
 

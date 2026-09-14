@@ -7,6 +7,8 @@ export const PRODUCTION_SECTORS = [
   "FITA_BORDA",
   "FURACAO",
   "PRE_MONTAGEM",
+  "ACABAMENTO",
+  "LIMPEZA",
   "EMBALAGEM",
   "EXPEDICAO",
 ] as const;
@@ -17,8 +19,10 @@ export const SECTOR_LABEL: Record<ProductionSector, string> = {
   FITA_BORDA: "Fita de borda",
   FURACAO: "Furação",
   PRE_MONTAGEM: "Pré-montagem",
+  ACABAMENTO: "Acabamento",
+  LIMPEZA: "Limpeza",
   EMBALAGEM: "Embalagem",
-  EXPEDICAO: "Expedição",
+  EXPEDICAO: "Saída / entrega",
 };
 
 export function sectorIndex(s: string) {

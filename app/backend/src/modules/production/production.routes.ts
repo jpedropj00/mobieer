@@ -230,4 +230,112 @@ router.get(
   })
 );
 
+// ---------------- Checklist de saída (expedição/entrega) ----------------
+// Confere antes de o caminhão sair: produção concluída, material completo,
+// ferragens, insumos e o que estiver pendente (e qual).
+
+const serializeChecklist = (c: {
+  id: string; orderId: string; producaoCompleta: boolean; materialCompleto: boolean; ferragens: boolean;
+  insumos: boolean; pendencia: boolean; pendenciaDescricao: string | null; notes: string | null;
+  releasedAt: Date | null; updatedAt: Date; checkedBy: { id: string; name: string } | null;
+}) => ({
+  id: c.id,
+  orderId: c.orderId,
+  producaoCompleta: c.producaoCompleta,
+  materialCompleto: c.materialCompleto,
+  ferragens: c.ferragens,
+  insumos: c.insumos,
+  pendencia: c.pendencia,
+  pendenciaDescricao: c.pendenciaDescricao,
+  notes: c.notes,
+  releasedAt: c.releasedAt,
+  updatedAt: c.updatedAt,
+  checkedBy: c.checkedBy,
+  /** Pronto para sair: tudo conferido e sem pendência em aberto. */
+  ready: c.producaoCompleta && c.materialCompleto && c.ferragens && c.insumos && !c.pendencia,
+});
+
+const checklistInclude = { checkedBy: { select: { id: true, name: true } } } as const;
+
+// GET /api/production/projects/:projectId/dispatch
+router.get(
+  "/projects/:projectId/dispatch",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const project = await ensureProject(req.params.projectId, req.user!.organizationId);
+    const order = await prisma.productionOrder.findUnique({ where: { projectId: project.id }, select: { id: true } });
+    if (!order) return ok(res, null);
+    const c = await prisma.dispatchChecklist.findUnique({ where: { orderId: order.id }, include: checklistInclude });
+    return ok(res, c ? serializeChecklist(c) : null);
+  })
+);
+
+// PUT /api/production/projects/:projectId/dispatch
+router.put(
+  "/projects/:projectId/dispatch",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const project = await ensureProject(req.params.projectId, req.user!.organizationId);
+    const order = await getOrCreateOrder(project.id, req.user!.organizationId, req.user!.id);
+    const input = z
+      .object({
+        producaoCompleta: z.boolean().optional(),
+        materialCompleto: z.boolean().optional(),
+        ferragens: z.boolean().optional(),
+        insumos: z.boolean().optional(),
+        pendencia: z.boolean().optional(),
+        pendenciaDescricao: z.string().trim().max(2000).optional().nullable().or(z.literal("")),
+        notes: z.string().trim().max(2000).optional().nullable().or(z.literal("")),
+      })
+      .parse(req.body);
+
+    if (input.pendencia && !nn(input.pendenciaDescricao)) {
+      throw new BadRequestError("Descreva qual material está pendente");
+    }
+
+    const data = {
+      producaoCompleta: input.producaoCompleta,
+      materialCompleto: input.materialCompleto,
+      ferragens: input.ferragens,
+      insumos: input.insumos,
+      pendencia: input.pendencia,
+      pendenciaDescricao:
+        input.pendenciaDescricao === undefined ? undefined : input.pendencia === false ? null : nn(input.pendenciaDescricao),
+      notes: input.notes === undefined ? undefined : nn(input.notes),
+      checkedById: req.user!.id,
+    };
+
+    const saved = await prisma.dispatchChecklist.upsert({
+      where: { orderId: order.id },
+      create: { organizationId: req.user!.organizationId, orderId: order.id, ...data },
+      update: data,
+      include: checklistInclude,
+    });
+
+    // Marca/limpa a liberação conforme o checklist fecha ou reabre.
+    const ready = saved.producaoCompleta && saved.materialCompleto && saved.ferragens && saved.insumos && !saved.pendencia;
+    let final = saved;
+    if (ready && !saved.releasedAt) {
+      final = await prisma.dispatchChecklist.update({
+        where: { id: saved.id },
+        data: { releasedAt: new Date() },
+        include: checklistInclude,
+      });
+      await notify(
+        project.managerId,
+        "Pedido liberado para saída",
+        `${project.code} — ${project.name}: checklist de saída conferido, pronto para entrega.`
+      );
+    } else if (!ready && saved.releasedAt) {
+      final = await prisma.dispatchChecklist.update({
+        where: { id: saved.id },
+        data: { releasedAt: null },
+        include: checklistInclude,
+      });
+    }
+
+    return ok(res, serializeChecklist(final), ready ? "Checklist conferido — liberado para saída" : "Checklist atualizado");
+  })
+);
+
 export default router;

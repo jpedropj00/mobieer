@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { CalendarCheck, CheckCircle2, Clock, Loader2, Ruler } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock, Loader2, Paperclip, Ruler } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage } from "@/lib/utils";
+import { MeasurementAttachments } from "@/components/measurement-attachments";
 
 export type MeasurementVisit = {
   id: string;
@@ -94,6 +95,7 @@ export function MeasurementCard({
 }) {
   const { schedule, markDone, cancel } = useMeasurementActions(invalidate);
   const [dlg, setDlg] = useState<null | "schedule" | "done">(null);
+  const [showFiles, setShowFiles] = useState(false);
   const [sf, setSf] = useState({ scheduledAt: "", technicianId: "", teamNotes: "" });
   const [df, setDf] = useState("");
 
@@ -154,6 +156,18 @@ export function MeasurementCard({
         )}
         {visit.teamNotes && visit.status !== "REQUESTED" && <p className="text-xs text-muted-foreground">{visit.teamNotes}</p>}
       </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" variant={showFiles ? "secondary" : "outline"} onClick={() => setShowFiles((v) => !v)}>
+          <Paperclip className="mr-1 h-4 w-4" /> Anexos e desenho
+        </Button>
+      </div>
+
+      {showFiles && (
+        <div className="mt-3 rounded-lg border border-dashed border-border p-3">
+          <MeasurementAttachments visitId={visit.id} canManage={canManage} />
+        </div>
+      )}
 
       {canManage && visit.status !== "CANCELLED" && (
         <div className="mt-3 flex flex-wrap gap-2">

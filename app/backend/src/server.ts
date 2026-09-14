@@ -6,6 +6,7 @@ import { runVacationAlerts } from "./modules/hr/hr.service";
 import { runCommercialFollowupAlerts } from "./modules/commercial/commercial.service";
 import { runMeasurementDeadlineAlerts } from "./modules/measurements/measurements.service";
 import { runProductionDeliveryAlerts } from "./modules/production/production.service";
+import { runHolidayNotices } from "./modules/hr/holidays.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -20,6 +21,7 @@ async function main() {
   runCommercialFollowupAlerts().catch((e) => console.error("[commercial] followup falhou:", e));
   runMeasurementDeadlineAlerts().catch((e) => console.error("[measurements] deadline alerts falhou:", e));
   runProductionDeliveryAlerts().catch((e) => console.error("[production] delivery alerts falhou:", e));
+  runHolidayNotices().catch((e) => console.error("[hr] avisos de feriado falharam:", e));
   setInterval(() => {
     runVacationAlerts().catch((e) => console.error("[hr] runVacationAlerts falhou:", e));
   }, DAY_MS).unref();
@@ -31,6 +33,9 @@ async function main() {
   }, DAY_MS).unref();
   setInterval(() => {
     runProductionDeliveryAlerts().catch((e) => console.error("[production] delivery alerts falhou:", e));
+  }, DAY_MS).unref();
+  setInterval(() => {
+    runHolidayNotices().catch((e) => console.error("[hr] avisos de feriado falharam:", e));
   }, DAY_MS).unref();
 
   app.listen(env.port, () => {

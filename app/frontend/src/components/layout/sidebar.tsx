@@ -6,6 +6,7 @@ import {
   ArrowUpFromLine,
   BarChart3,
   CalendarClock,
+  HardHat,
   CalendarDays,
   ClipboardCheck,
   FileClock,
@@ -86,7 +87,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Pessoas",
-    items: [{ label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" }],
+    items: [
+      { label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" },
+      { label: "Montadores terceirizados", to: "/montadores", icon: HardHat, permission: "hr.read" },
+    ],
   },
   {
     label: "Comercial",

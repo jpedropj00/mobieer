@@ -25,6 +25,7 @@ import organizationRoutes from "./modules/organization/organization.routes";
 import businessRoutes from "./modules/business/business.routes";
 import documentsRoutes from "./modules/documents/documents.routes";
 import portalRoutes from "./modules/portal/portal.routes";
+import contractorsRoutes from "./modules/contractors/contractors.routes";
 import hrRoutes from "./modules/hr/hr.routes";
 import financeRoutes from "./modules/finance/finance.routes";
 import templatesRoutes from "./modules/templates/templates.routes";
@@ -80,6 +81,7 @@ export function createApp() {
   app.use("/api/documents", documentsRoutes);
   app.use("/api/portal", portalRoutes);
   app.use("/api/hr", hrRoutes);
+  app.use("/api/contractors", contractorsRoutes);
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial", commercialRoutes);
