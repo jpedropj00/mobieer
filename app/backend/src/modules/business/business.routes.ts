@@ -11,6 +11,9 @@ import { env } from "../../config/env";
 import { sendMail, renderInviteEmail } from "../../lib/mailer";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { uploadPhoto } from "../../middlewares/upload";
+import { pipeToResponse } from "../../utils/stream";
+import { enumQuery } from "../../utils/query";
+import { AssistanceStatus } from "@prisma/client";
 
 const router = Router();
 router.use(authenticate);
@@ -64,7 +67,7 @@ router.post("/clients/:id/accounts", requirePermission("organization.manage"), a
 router.post("/clients/:id/accounts/:accountId/resend", requirePermission("organization.manage"), asyncHandler(async (req, res) => { await ensureClient(req.params.id, req.user!.organizationId); const account = await prisma.clientAccount.findFirst({ where: { id: req.params.accountId, clientId: req.params.id } }); if (!account) throw new NotFoundError("Conta não encontrada"); if (account.status === "ACTIVE") throw new BadRequestError("Esta conta já está ativa"); const inviteToken = crypto.randomBytes(32).toString("hex"); await prisma.clientAccount.update({ where: { id: account.id }, data: { status: "INVITED", inviteToken, inviteExpiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) } }); await sendInvite(account.id, account.name, account.email, req.params.id, inviteToken); await audit(req.user!.id, "CLIENT_ACCOUNT_INVITE_RESENT", "ClientAccount", account.id); return ok(res, { id: account.id }, "Convite reenviado"); }));
 router.patch("/clients/:id/accounts/:accountId", requirePermission("organization.manage"), asyncHandler(async (req, res) => { await ensureClient(req.params.id, req.user!.organizationId); const account = await prisma.clientAccount.findFirst({ where: { id: req.params.accountId, clientId: req.params.id } }); if (!account) throw new NotFoundError("Conta não encontrada"); const input = z.object({ status: z.enum(["ACTIVE", "DISABLED"]) }).parse(req.body); if (input.status === "ACTIVE" && !account.passwordHash) throw new BadRequestError("A conta ainda não definiu senha pelo convite"); const value = await prisma.clientAccount.update({ where: { id: account.id }, data: { status: input.status }, select: { id: true, status: true } }); await audit(req.user!.id, "CLIENT_ACCOUNT_UPDATED", "ClientAccount", account.id, { status: input.status }); return ok(res, value, "Conta atualizada"); }));
 
-router.get("/assistances", requirePermission("organization.read"), asyncHandler(async (req, res) => { const values = await prisma.assistanceTicket.findMany({ where: { organizationId: req.user!.organizationId, ...(req.query.status ? { status: req.query.status as never } : {}), ...(req.query.assigneeId ? { assigneeId: String(req.query.assigneeId) } : {}) }, include: { client: { select: { id: true, name: true } }, project: { select: { id: true, code: true, name: true } }, assignee: { select: { id: true, name: true } }, attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByLabel: true, createdAt: true }, orderBy: { createdAt: "asc" } }, _count: { select: { kanbanTasks: true } } }, orderBy: { updatedAt: "desc" } }); return ok(res, values.map((a) => ({ ...a, attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/business/assistances/${a.id}/attachments/${att.id}/download` })) }))); }));
+router.get("/assistances", requirePermission("organization.read"), asyncHandler(async (req, res) => { const values = await prisma.assistanceTicket.findMany({ where: { organizationId: req.user!.organizationId, ...(req.query.status ? { status: enumQuery(req.query.status, AssistanceStatus, "status") } : {}), ...(req.query.assigneeId ? { assigneeId: String(req.query.assigneeId) } : {}) }, include: { client: { select: { id: true, name: true } }, project: { select: { id: true, code: true, name: true } }, assignee: { select: { id: true, name: true } }, attachments: { select: { id: true, fileName: true, mimeType: true, uploadedByLabel: true, createdAt: true }, orderBy: { createdAt: "asc" } }, _count: { select: { kanbanTasks: true } } }, orderBy: { updatedAt: "desc" } }); return ok(res, values.map((a) => ({ ...a, attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/business/assistances/${a.id}/attachments/${att.id}/download` })) }))); }));
 
 // Anexos de assistência (fotos) — visualização e upload pela equipe.
 router.get("/assistances/:id/attachments/:attId/download", requirePermission("organization.read"), asyncHandler(async (req, res) => {
@@ -75,7 +78,7 @@ router.get("/assistances/:id/attachments/:attId/download", requirePermission("or
   const stream = await storage.getStream(att.storageKey);
   res.setHeader("Content-Type", att.mimeType);
   res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(att.fileName)}"`);
-  stream.pipe(res);
+  return pipeToResponse(stream, res);
 }));
 router.post("/assistances/:id/attachments", requirePermission("organization.tasks.edit.all"), uploadPhoto.single("photo"), asyncHandler(async (req, res) => {
   const ticket = await prisma.assistanceTicket.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId }, select: { id: true, _count: { select: { attachments: true } } } });

@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiDelete, apiGet, apiPost } from "@/services/api";
 import type { Holiday, HolidayScope } from "@/types";
-import { cn, errorMessage } from "@/lib/utils";
+import { cn, errorMessage, localIsoDate } from "@/lib/utils";
 
 const SCOPE_LABEL: Record<HolidayScope, string> = {
   NACIONAL: "Nacional",
@@ -35,7 +35,7 @@ function fmtDay(iso: string) {
   const dt = new Date(Date.UTC(y, m - 1, d));
   return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")} · ${WEEKDAYS[dt.getUTCDay()]}`;
 }
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => localIsoDate();
 
 /**
  * Feriados nacionais, do Ceará e de Fortaleza (calculados) + recessos da casa.

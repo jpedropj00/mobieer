@@ -3,6 +3,7 @@ import { createBrowserRouter } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { GuestRoute, ProtectedRoute } from "@/router-guards";
 import { PermissionGate } from "@/components/permission-gate";
+import { RouteError } from "@/components/route-error";
 
 const LoginPage = lazy(() => import("@/pages/login").then((m) => ({ default: m.LoginPage })));
 const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })));
@@ -57,17 +58,22 @@ function LazyBoundary({ children }: { children: React.ReactNode }) {
 }
 
 export const router = createBrowserRouter([
-  { path: "/briefing", element: <LazyBoundary><BriefingPage /></LazyBoundary> },
+  { path: "/briefing", element: <LazyBoundary><BriefingPage /></LazyBoundary>, errorElement: <RouteError /> },
   {
     element: <GuestRoute />,
+    errorElement: <RouteError />,
     children: [{ path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> }],
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <RouteError />,
     children: [
       {
         element: <LazyBoundary><AppShell /></LazyBoundary>,
         children: [
+          {
+            errorElement: <RouteError />,
+            children: [
           { path: "/", element: <PermissionGate permission="dashboard.read"><DashboardPage /></PermissionGate> },
           { path: "/entrada", element: <PermissionGate permission="stock.entry"><StockEntryPage /></PermissionGate> },
           { path: "/saida", element: <PermissionGate permission="stock.exit"><StockExitPage /></PermissionGate> },
@@ -105,6 +111,8 @@ export const router = createBrowserRouter([
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },
           { path: "/auditoria", element: <PermissionGate permission="audit.read"><AuditPage /></PermissionGate> },
           { path: "/configuracoes", element: <SettingsPage /> },
+            ],
+          },
         ],
       },
     ],
@@ -112,6 +120,7 @@ export const router = createBrowserRouter([
   {
     path: "/portal",
     element: <LazyBoundary><PortalRoot /></LazyBoundary>,
+    errorElement: <RouteError />,
     children: [
       {
         element: <LazyBoundary><PortalGuestRoute /></LazyBoundary>,

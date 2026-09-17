@@ -1,15 +1,10 @@
 const API_BASE = "/api/portal";
 const TOKEN_KEY = "mobieer_portal_token";
 
-export class PortalApiError extends Error {
-  status: number;
-  details?: unknown;
-  constructor(status: number, message: string, details?: unknown) {
-    super(message);
-    this.status = status;
-    this.details = details;
-  }
-}
+import { ApiError, errorFromResponse, readJson, safeFetch } from "@/lib/errors";
+
+/** Mesmo formato do erro do app interno (mesmo `code`/`errorId`). */
+export class PortalApiError extends ApiError {}
 
 let token: string | null = localStorage.getItem(TOKEN_KEY);
 
@@ -23,12 +18,21 @@ export function getPortalToken() {
   return token;
 }
 
+async function portalFailure(res: Response, payload?: unknown) {
+  if (res.status === 401 && token) {
+    setPortalToken(null);
+    window.dispatchEvent(new Event("mobieer:portal-unauthorized"));
+  }
+  const e = await errorFromResponse(res, payload);
+  return new PortalApiError(e.status, e.message, e.details, e.code, e.errorId);
+}
+
 type Options = { method?: string; body?: unknown; headers?: Record<string, string> };
 
 export async function portalApi<T = unknown>(path: string, options: Options = {}): Promise<T> {
   const { method = "GET", body, headers } = options;
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await safeFetch(`${API_BASE}${path}`, {
     method,
     headers: {
       ...(isForm ? {} : { "Content-Type": "application/json" }),
@@ -38,19 +42,8 @@ export async function portalApi<T = unknown>(path: string, options: Options = {}
     body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
   });
 
-  let payload: unknown = null;
-  if ((res.headers.get("content-type") ?? "").includes("application/json")) {
-    payload = await res.json();
-  }
-
-  if (!res.ok) {
-    if (res.status === 401 && token) {
-      setPortalToken(null);
-      window.dispatchEvent(new Event("mobieer:portal-unauthorized"));
-    }
-    const message = (payload as { message?: string })?.message ?? `Erro ${res.status}`;
-    throw new PortalApiError(res.status, message, (payload as { details?: unknown })?.details);
-  }
+  const payload = await readJson(res);
+  if (!res.ok) throw await portalFailure(res, payload);
   return payload as T;
 }
 
@@ -61,17 +54,17 @@ export const portalDelete = <T>(path: string) => portalApi<T>(path, { method: "D
 
 /** Busca um arquivo autenticado e devolve um object URL (lembre de revogar). */
 export async function portalObjectUrl(path: string): Promise<string> {
-  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
-  if (!res.ok) throw new PortalApiError(res.status, `Erro ${res.status}`);
+  const res = await safeFetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+  if (!res.ok) throw await portalFailure(res);
   return URL.createObjectURL(await res.blob());
 }
 
 /** Baixa um documento autenticado (o backend responde com redirect assinado ou o arquivo). */
 export async function portalDownload(path: string, fileName: string) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await safeFetch(`${API_BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
-  if (!res.ok) throw new PortalApiError(res.status, `Erro ${res.status}`);
+  if (!res.ok) throw await portalFailure(res);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

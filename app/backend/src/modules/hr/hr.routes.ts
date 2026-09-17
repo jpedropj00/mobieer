@@ -11,6 +11,9 @@ import { uploadDocument } from "../../middlewares/upload";
 import { computeHrAlerts, countVacationDays, nextRegistration } from "./hr.service";
 import { holidaysForYear, runHolidayNotices, upcomingHolidays, ymd } from "./holidays.service";
 import timeclockRoutes from "./timeclock.routes";
+import { pipeToResponse } from "../../utils/stream";
+import { enumQuery } from "../../utils/query";
+import { VacationRequestStatus } from "@prisma/client";
 
 const router = Router();
 router.use(authenticate);
@@ -271,7 +274,7 @@ router.get(
     const stream = await storage.getStream(doc.storageKey);
     res.setHeader("Content-Type", doc.mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 
@@ -322,7 +325,7 @@ router.get(
     const rows = await prisma.vacationRequest.findMany({
       where: {
         employee: { organizationId: req.user!.organizationId },
-        ...(req.query.status ? { status: req.query.status as never } : {}),
+        ...(req.query.status ? { status: enumQuery(req.query.status, VacationRequestStatus, "status") } : {}),
         ...(req.query.employeeId ? { employeeId: String(req.query.employeeId) } : {}),
       },
       include: {

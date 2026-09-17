@@ -9,6 +9,7 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { decodeXmlBuffer, detectFormat, parsePromobXml } from "./promob.service";
+import { pipeToResponse } from "../../utils/stream";
 
 const router = Router();
 router.use(authenticate);
@@ -152,7 +153,7 @@ router.get(
     const stream = await storage.getStream(row.storageKey);
     res.setHeader("Content-Type", row.mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(row.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 

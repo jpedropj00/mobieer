@@ -5,14 +5,18 @@ import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "./hooks/use-auth";
 import { router } from "./router";
+import { shouldRetry } from "./lib/errors";
 import "./index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: shouldRetry,
       refetchOnWindowFocus: false,
       staleTime: 30_000,
+    },
+    mutations: {
+      retry: false,
     },
   },
 });

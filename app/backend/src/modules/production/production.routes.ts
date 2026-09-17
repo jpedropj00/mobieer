@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { Prisma, ProductionStage } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
@@ -12,6 +12,7 @@ import {
   STAGE_LABEL,
   STAGE_TIMESTAMP,
   getOrCreateOrder,
+  isDispatchReady,
   nextStage,
   orderInclude,
   serializeOrder,
@@ -20,6 +21,7 @@ import {
 import { generateSchedule } from "./schedule.service";
 import { aiEnabled } from "../../lib/ai";
 import { notifyClientWhatsApp } from "../../lib/client-comms";
+import { enumQuery } from "../../utils/query";
 
 const router = Router();
 router.use(authenticate);
@@ -44,12 +46,12 @@ router.get(
   "/",
   requirePermission("organization.read"),
   asyncHandler(async (req, res) => {
-    const stage = req.query.stage ? String(req.query.stage) : null;
+    const stage = enumQuery(req.query.stage, ProductionStage, "stage") ?? null;
     const showAll = req.query.all === "1" || req.query.all === "true";
     const rows = await prisma.productionOrder.findMany({
       where: {
         organizationId: req.user!.organizationId,
-        ...(stage ? { stage: stage as never } : showAll ? {} : { stage: { not: "DELIVERED" } }),
+        ...(stage ? { stage } : showAll ? {} : { stage: { not: "DELIVERED" } }),
       },
       include: orderInclude,
       orderBy: [{ stage: "asc" }, { estimatedDeliveryAt: "asc" }, { updatedAt: "desc" }],
@@ -252,7 +254,7 @@ const serializeChecklist = (c: {
   updatedAt: c.updatedAt,
   checkedBy: c.checkedBy,
   /** Pronto para sair: tudo conferido e sem pendência em aberto. */
-  ready: c.producaoCompleta && c.materialCompleto && c.ferragens && c.insumos && !c.pendencia,
+  ready: isDispatchReady(c),
 });
 
 const checklistInclude = { checkedBy: { select: { id: true, name: true } } } as const;
@@ -313,7 +315,7 @@ router.put(
     });
 
     // Marca/limpa a liberação conforme o checklist fecha ou reabre.
-    const ready = saved.producaoCompleta && saved.materialCompleto && saved.ferragens && saved.insumos && !saved.pendencia;
+    const ready = isDispatchReady(saved);
     let final = saved;
     if (ready && !saved.releasedAt) {
       final = await prisma.dispatchChecklist.update({

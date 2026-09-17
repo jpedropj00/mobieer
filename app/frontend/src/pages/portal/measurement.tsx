@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { errorMessage } from "@/lib/utils";
+import { errorMessage, localIsoDate } from "@/lib/utils";
 import { portalGet, portalPatch, portalPost } from "@/services/portal-api";
 
 type Visit = {
@@ -28,7 +28,7 @@ const PERIOD_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde", 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
 const fmtDateTime = (v: string | null) =>
   v ? new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localIsoDate();
 
 export function PortalMeasurement({ projectId }: { projectId: string }) {
   const qc = useQueryClient();

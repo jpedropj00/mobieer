@@ -1,16 +1,18 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { MeasurementStatus, Prisma } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
-import { MEASUREMENT_PERIODS, serializeVisit, techProjectDueDate, visitInclude } from "./measurements.service";
+import { MEASUREMENT_PERIODS, decodeDrawingDataUrl, serializeVisit, techProjectDueDate, visitInclude } from "./measurements.service";
 import { notifyClientWhatsApp } from "../../lib/client-comms";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { uploadDocument } from "../../middlewares/upload";
+import { pipeToResponse } from "../../utils/stream";
+import { enumQuery } from "../../utils/query";
 
 const router = Router();
 router.use(authenticate);
@@ -40,7 +42,7 @@ router.get(
     const rows = await prisma.measurementVisit.findMany({
       where: {
         organizationId: req.user!.organizationId,
-        ...(req.query.status ? { status: req.query.status as never } : {}),
+        ...(req.query.status ? { status: enumQuery(req.query.status, MeasurementStatus, "status") } : {}),
         ...(req.query.projectId ? { projectId: String(req.query.projectId) } : {}),
       },
       include: visitInclude,
@@ -226,15 +228,6 @@ const serializeAttachment = (a: {
   downloadUrl: `/api/measurements/attachments/${a.id}/download`,
 });
 
-/** PNG em dataURL vindo do canvas do tablet -> Buffer. */
-function decodeDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
-  const m = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/);
-  if (!m) throw new BadRequestError("Desenho inválido (esperado PNG/JPEG em base64)");
-  const buffer = Buffer.from(m[2].replace(/\s/g, ""), "base64");
-  if (!buffer.length) throw new BadRequestError("Desenho vazio");
-  if (buffer.length > 12 * 1024 * 1024) throw new BadRequestError("Desenho muito grande (máx. 12 MB)");
-  return { buffer, mimeType: m[1] };
-}
 
 // GET /api/measurements/:id/attachments?kind=FILE|DRAWING
 router.get(
@@ -300,7 +293,7 @@ router.post(
       })
       .parse(req.body);
 
-    const { buffer, mimeType } = decodeDataUrl(input.dataUrl);
+    const { buffer, mimeType } = decodeDrawingDataUrl(input.dataUrl);
     const fileName = `desenho-${Date.now()}.${mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg"}`;
     const key = buildStorageKey(`measurements/${visit.id}`, fileName);
     await storage.put(key, buffer, mimeType);
@@ -342,7 +335,7 @@ router.put(
       })
       .parse(req.body);
 
-    const { buffer, mimeType } = decodeDataUrl(input.dataUrl);
+    const { buffer, mimeType } = decodeDrawingDataUrl(input.dataUrl);
     await storage.put(cur.storageKey, buffer, mimeType);
     const row = await prisma.measurementAttachment.update({
       where: { id: cur.id },
@@ -372,7 +365,7 @@ router.get(
     const stream = await storage.getStream(a.storageKey);
     res.setHeader("Content-Type", a.mimeType);
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(a.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 

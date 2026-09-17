@@ -15,6 +15,7 @@ import { EmptyState, TableSkeleton } from "@/components/ui/states";
 import { MovementBadge } from "@/components/badges";
 import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/hooks/use-auth";
+import { errorFromResponse } from "@/lib/errors";
 
 const REPORT_TYPES = [
   { value: "stock", label: "Posição de estoque" },
@@ -37,14 +38,7 @@ function downloadExport(url: string) {
   return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
     .then(async (res) => {
       if (!res.ok) {
-        let msg = `Erro ${res.status}`;
-        try {
-          const j = await res.json();
-          msg = j.message ?? msg;
-        } catch {
-          /* ignore */
-        }
-        throw new Error(msg);
+        throw await errorFromResponse(res);
       }
       const disposition = res.headers.get("content-disposition") ?? "";
       const match = disposition.match(/filename="?([^";]+)"?/);

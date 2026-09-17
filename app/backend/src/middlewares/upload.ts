@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import { UnsupportedFileTypeError } from "../utils/ApiError";
 
 // Vercel Functions têm filesystem somente-leitura; /tmp é o espaço gravável.
 const uploadDir = process.env.VERCEL ? path.join("/tmp", "uploads") : path.resolve(process.cwd(), "uploads");
@@ -22,7 +23,7 @@ export const uploadImage = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("Arquivo deve ser uma imagem"));
+    else cb(new UnsupportedFileTypeError("Arquivo deve ser uma imagem"));
   },
 });
 
@@ -41,7 +42,7 @@ export const uploadAttachment = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/") || attachmentMimeTypes.has(file.mimetype)) cb(null, true);
-    else cb(new Error("Formato de arquivo não permitido"));
+    else cb(new UnsupportedFileTypeError("Formato de arquivo não permitido"));
   },
 });
 
@@ -52,7 +53,7 @@ export const uploadDocument = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/") || attachmentMimeTypes.has(file.mimetype)) cb(null, true);
-    else cb(new Error("Formato de arquivo não permitido"));
+    else cb(new UnsupportedFileTypeError("Formato de arquivo não permitido"));
   },
 });
 
@@ -63,7 +64,7 @@ export const uploadPhoto = multer({
   limits: { fileSize: 12 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("Envie uma imagem (JPG, PNG, HEIC, ...)"));
+    else cb(new UnsupportedFileTypeError("Envie uma imagem (JPG, PNG, HEIC, ...)"));
   },
 });
 
@@ -74,7 +75,7 @@ export const uploadPromob = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (/\.(xml|pdf|json|txt|promob)$/i.test(file.originalname)) cb(null, true);
-    else cb(new Error("Envie o arquivo exportado do Promob (.xml ou .pdf)"));
+    else cb(new UnsupportedFileTypeError("Envie o arquivo exportado do Promob (.xml ou .pdf)"));
   },
 });
 
@@ -85,6 +86,6 @@ export const uploadDataFile = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (/\.(csv|txt|afd|dat|xls|xlsx|tsv)$/i.test(file.originalname)) cb(null, true);
-    else cb(new Error("Envie um arquivo .csv, .txt ou .afd exportado do aparelho"));
+    else cb(new UnsupportedFileTypeError("Envie um arquivo .csv, .txt ou .afd exportado do aparelho"));
   },
 });

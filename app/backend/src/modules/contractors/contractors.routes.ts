@@ -16,6 +16,7 @@ import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
+import { localDay, localPeriod, shiftMinutes, summarizeShifts } from "./contractors.service";
 
 const router = Router();
 router.use(authenticate);
@@ -23,9 +24,6 @@ router.use(authenticate);
 const nn = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 const num = (v: Prisma.Decimal | null | undefined) => (v != null ? Number(v) : 0);
 
-/** Data local (Fortaleza) no formato aaaa-mm-dd, para contar diárias por dia. */
-const localDay = (d: Date) =>
-  d.toLocaleDateString("en-CA", { timeZone: "America/Fortaleza" }); // en-CA => yyyy-mm-dd
 
 async function ensureContractor(id: string, organizationId: string) {
   const c = await prisma.contractor.findFirst({ where: { id, organizationId } });
@@ -186,10 +184,8 @@ router.get(
   "/shifts",
   requirePermission("hr.read"),
   asyncHandler(async (req, res) => {
-    const from = req.query.from ? new Date(String(req.query.from)) : null;
-    const to = req.query.to ? new Date(String(req.query.to)) : null;
-    if (from && Number.isNaN(from.getTime())) throw new BadRequestError("Data inicial inválida");
-    if (to && Number.isNaN(to.getTime())) throw new BadRequestError("Data final inválida");
+    const hasPeriod = Boolean(req.query.from || req.query.to);
+    const period = hasPeriod ? localPeriod(req.query.from, req.query.to) : null;
 
     const rows = await prisma.contractorShift.findMany({
       where: {
@@ -197,9 +193,7 @@ router.get(
         ...(req.query.contractorId ? { contractorId: String(req.query.contractorId) } : {}),
         ...(req.query.projectId ? { projectId: String(req.query.projectId) } : {}),
         ...(req.query.open === "1" ? { checkOutAt: null } : {}),
-        ...(from || to
-          ? { checkInAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: new Date(to.getTime() + 86399999) } : {}) } }
-          : {}),
+        ...(period ? { checkInAt: { gte: period.from, lte: period.to } } : {}),
       },
       include: shiftInclude,
       orderBy: { checkInAt: "desc" },
@@ -270,7 +264,7 @@ router.post(
     if (checkOutAt <= cur.checkInAt) throw new BadRequestError("Check-out deve ser depois do check-in");
     if (checkOutAt.getTime() > Date.now() + 5 * 60000) throw new BadRequestError("Check-out não pode ser no futuro");
 
-    const minutes = Math.round((checkOutAt.getTime() - cur.checkInAt.getTime()) / 60000);
+    const minutes = shiftMinutes(cur.checkInAt, checkOutAt);
     const shift = await prisma.contractorShift.update({
       where: { id: cur.id },
       data: { checkOutAt, minutes, notes: input.notes === undefined ? undefined : nn(input.notes) },
@@ -313,7 +307,7 @@ router.patch(
       data: {
         checkInAt,
         checkOutAt,
-        minutes: checkOutAt ? Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000) : null,
+        minutes: checkOutAt ? shiftMinutes(checkInAt, checkOutAt) : null,
         projectId: input.projectId === undefined ? undefined : input.projectId || null,
         dailyRate: input.dailyRate === undefined ? undefined : new Prisma.Decimal(input.dailyRate),
         notes: input.notes === undefined ? undefined : nn(input.notes),
@@ -345,74 +339,30 @@ router.get(
   "/summary",
   requirePermission("hr.read"),
   asyncHandler(async (req, res) => {
-    const to = req.query.to ? new Date(String(req.query.to)) : new Date();
-    const from = req.query.from ? new Date(String(req.query.from)) : new Date(to.getTime() - 30 * 86400000);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) throw new BadRequestError("Período inválido");
+    const { from, to } = localPeriod(req.query.from, req.query.to);
 
     const shifts = await prisma.contractorShift.findMany({
       where: {
         organizationId: req.user!.organizationId,
         ...(req.query.contractorId ? { contractorId: String(req.query.contractorId) } : {}),
-        checkInAt: { gte: from, lte: new Date(to.getTime() + 86399999) },
+        checkInAt: { gte: from, lte: to },
       },
-      include: { contractor: { select: { id: true, name: true, dailyRate: true } } },
+      include: { contractor: { select: { id: true, name: true } } },
       orderBy: { checkInAt: "asc" },
     });
 
-    type Row = {
-      contractorId: string;
-      name: string;
-      minutes: number;
-      days: Map<string, number>; // dia -> diária congelada daquele dia
-      openShifts: number;
-    };
-    const byContractor = new Map<string, Row>();
-
-    for (const s of shifts) {
-      const row = byContractor.get(s.contractorId) ?? {
+    const summary = summarizeShifts(
+      shifts.map((s) => ({
         contractorId: s.contractorId,
-        name: s.contractor.name,
-        minutes: 0,
-        days: new Map<string, number>(),
-        openShifts: 0,
-      };
-      row.minutes += s.minutes ?? 0;
-      if (s.checkOutAt === null) row.openShifts++;
-      // Uma diária por dia trabalhado, mesmo com mais de um turno no dia.
-      const day = localDay(s.checkInAt);
-      const rate = num(s.dailyRate);
-      row.days.set(day, Math.max(row.days.get(day) ?? 0, rate));
-      byContractor.set(s.contractorId, row);
-    }
+        contractorName: s.contractor.name,
+        checkInAt: s.checkInAt,
+        checkOutAt: s.checkOutAt,
+        minutes: s.minutes,
+        dailyRate: num(s.dailyRate),
+      }))
+    );
 
-    const items = [...byContractor.values()]
-      .map((r) => {
-        const days = r.days.size;
-        const total = [...r.days.values()].reduce((a, b) => a + b, 0);
-        return {
-          contractorId: r.contractorId,
-          name: r.name,
-          minutes: r.minutes,
-          hours: Math.round((r.minutes / 60) * 100) / 100,
-          days,
-          openShifts: r.openShifts,
-          total: Math.round(total * 100) / 100,
-        };
-      })
-      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-
-    return ok(res, {
-      from,
-      to,
-      items,
-      totals: {
-        contractors: items.length,
-        hours: Math.round(items.reduce((a, i) => a + i.hours, 0) * 100) / 100,
-        days: items.reduce((a, i) => a + i.days, 0),
-        total: Math.round(items.reduce((a, i) => a + i.total, 0) * 100) / 100,
-        openShifts: items.reduce((a, i) => a + i.openShifts, 0),
-      },
-    });
+    return ok(res, { from, to, ...summary });
   })
 );
 

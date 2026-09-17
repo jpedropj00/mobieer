@@ -36,17 +36,8 @@ export function percentChange(current: number, previous: number): number | null 
   return Math.round(((current - previous) / previous) * 100);
 }
 
-export function isApiError(err: unknown): err is { message: string; details?: unknown } {
-  return typeof err === "object" && err !== null && "message" in err;
-}
-
-export function errorMessage(err: unknown, fallback = "Erro inesperado"): string {
-  if (isApiError(err)) {
-    const msg = (err as { message?: string }).message;
-    return msg || fallback;
-  }
-  return fallback;
-}
+// Tratamento de erro centralizado em lib/errors (reexportado para os imports existentes).
+export { errorMessage, isApiError } from "./errors";
 
 export const UNITS: Record<string, string> = {
   UNIT: "Unidade",
@@ -58,3 +49,13 @@ export const UNITS: Record<string, string> = {
   ROLL: "Rolo",
   PAIR: "Par",
 };
+
+/**
+ * Data de hoje (ou de `d`) no fuso do navegador, em aaaa-mm-dd.
+ * `toISOString().slice(0, 10)` usa UTC: em Fortaleza, depois das 21h ele já
+ * devolve o dia seguinte (lançamento financeiro caindo na data errada, etc.).
+ */
+export function localIsoDate(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}

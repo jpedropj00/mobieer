@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api";
-import { cn, errorMessage } from "@/lib/utils";
+import { cn, errorMessage, localIsoDate } from "@/lib/utils";
 
 type Note = { id: string; title: string | null; body: string; pinned: boolean; color: string | null; updatedAt: string };
 type PlannerItem = { id: string; weekOf: string; weekday: number; text: string; done: boolean; position: number };
@@ -22,7 +22,7 @@ function mondayOf(d: Date): Date {
   x.setUTCDate(x.getUTCDate() + (dow === 0 ? -6 : 1 - dow));
   return x;
 }
-const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const isoDate = (d: Date) => localIsoDate(d);
 const fmtDay = (weekOf: string, weekday: number) => {
   const d = new Date(`${weekOf}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + weekday);

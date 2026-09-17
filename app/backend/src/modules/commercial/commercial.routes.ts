@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { CommercialLeadStatus, Prisma } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
+import { enumQuery } from "../../utils/query";
 
 const router = Router();
 router.use(authenticate);
@@ -123,7 +124,7 @@ router.get(
       where: {
         organizationId: req.user!.organizationId,
         ...sellerScope(req),
-        ...(req.query.status ? { status: req.query.status as never } : {}),
+        ...(req.query.status ? { status: enumQuery(req.query.status, CommercialLeadStatus, "status") } : {}),
       },
       include: {
         seller: { select: { id: true, name: true } },

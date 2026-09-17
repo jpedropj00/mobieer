@@ -17,13 +17,13 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { KpiCard } from "@/components/kpi-card";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
-import { errorMessage } from "@/lib/utils";
+import { errorMessage, localIsoDate } from "@/lib/utils";
 import type { Contractor, ContractorShift, ContractorSummary } from "@/types";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDateTime = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const hhmm = (min: number) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const isoDay = (d: Date) => localIsoDate(d);
 
 type ProjectRow = { id: string; name: string };
 

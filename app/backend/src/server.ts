@@ -10,6 +10,25 @@ import { runHolidayNotices } from "./modules/hr/holidays.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Rede de segurança do processo. Rotas já passam pelo errorHandler; isto pega o
+// que escapa (promessa sem catch, callback de biblioteca) e deixa rastro no log.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+process.on("uncaughtException", (err) => {
+  // Estado do processo não é mais confiável: registra e sai para o supervisor reiniciar.
+  console.error("[uncaughtException]", err);
+  process.exit(1);
+});
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    prisma
+      .$disconnect()
+      .catch(() => undefined)
+      .finally(() => process.exit(0));
+  });
+}
+
 async function main() {
   const app = createApp();
 

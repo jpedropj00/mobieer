@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import { createReadStream, existsSync, mkdirSync } from "fs";
 import type { Readable } from "stream";
 import { env } from "../config/env";
+import { NotFoundError, StorageError } from "../utils/ApiError";
 
 /**
  * Camada de armazenamento de arquivos com dois adaptadores:
@@ -41,12 +42,12 @@ const diskAdapter: StorageAdapter = {
   },
   async getStream(key) {
     const target = path.join(diskRoot, key);
-    if (!existsSync(target)) throw new Error(`Arquivo não encontrado: ${key}`);
+    if (!existsSync(target)) throw new NotFoundError("Arquivo não encontrado no armazenamento");
     return createReadStream(target);
   },
   async getBytes(key) {
     const target = path.join(diskRoot, key);
-    if (!existsSync(target)) throw new Error(`Arquivo não encontrado: ${key}`);
+    if (!existsSync(target)) throw new NotFoundError("Arquivo não encontrado no armazenamento");
     return fs.readFile(target);
   },
   async getSignedUrl() {
@@ -83,14 +84,16 @@ const supabaseAdapter: StorageAdapter = {
       body: new Blob([data]),
     });
     if (!res.ok) {
-      throw new Error(`Falha ao enviar ao Supabase Storage (${res.status}): ${await res.text()}`);
+      throw new StorageError("Falha ao enviar o arquivo ao armazenamento", { status: res.status, body: (await res.text()).slice(0, 300) });
     }
     return { storageKey: key, sizeBytes: data.byteLength };
   },
   async getStream(key) {
     const res = await fetch(supabaseObjectUrl(key), { headers: supabaseHeaders() });
     if (!res.ok || !res.body) {
-      throw new Error(`Falha ao baixar do Supabase Storage (${res.status})`);
+      throw res.status === 404 || res.status === 400
+        ? new NotFoundError("Arquivo não encontrado no armazenamento")
+        : new StorageError("Falha ao baixar o arquivo do armazenamento", { status: res.status });
     }
     // Web ReadableStream -> Node Readable
     const { Readable } = await import("stream");
@@ -98,7 +101,9 @@ const supabaseAdapter: StorageAdapter = {
   },
   async getBytes(key) {
     const res = await fetch(supabaseObjectUrl(key), { headers: supabaseHeaders() });
-    if (!res.ok) throw new Error(`Falha ao baixar do Supabase Storage (${res.status})`);
+    if (!res.ok) throw res.status === 404 || res.status === 400
+        ? new NotFoundError("Arquivo não encontrado no armazenamento")
+        : new StorageError("Falha ao baixar o arquivo do armazenamento", { status: res.status });
     return Buffer.from(await res.arrayBuffer());
   },
   async getSignedUrl(key, fileName) {

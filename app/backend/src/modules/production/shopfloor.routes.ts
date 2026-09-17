@@ -19,6 +19,7 @@ import {
   serializeItem,
   summarizeItems,
 } from "./shopfloor.service";
+import { enumQuery } from "../../utils/query";
 
 const router = Router();
 router.use(authenticate);
@@ -46,7 +47,7 @@ router.get(
         organizationId: req.user!.organizationId,
         status: "IN_PROGRESS",
         ...(req.query.projectId ? { order: { projectId: String(req.query.projectId) } } : {}),
-        ...(req.query.sector ? { sector: req.query.sector as never } : {}),
+        ...(req.query.sector ? { sector: enumQuery(req.query.sector, PRODUCTION_SECTORS, "sector") } : {}),
       },
       include: itemInclude,
       orderBy: [{ position: "asc" }, { updatedAt: "asc" }],

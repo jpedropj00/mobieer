@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { Prisma, TechApprovalStatus } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
@@ -9,6 +9,7 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "./techproject.service";
 import { notifyClientWhatsApp } from "../../lib/client-comms";
+import { enumQuery } from "../../utils/query";
 
 const router = Router();
 router.use(authenticate);
@@ -33,7 +34,7 @@ router.get(
     const rows = await prisma.technicalProjectApproval.findMany({
       where: {
         organizationId: req.user!.organizationId,
-        ...(req.query.status ? { status: req.query.status as never } : { status: { not: "DRAFT" } }),
+        ...(req.query.status ? { status: enumQuery(req.query.status, TechApprovalStatus, "status") } : { status: { not: "DRAFT" } }),
       },
       include: approvalInclude,
       orderBy: [{ status: "asc" }, { updatedAt: "desc" }],

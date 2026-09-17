@@ -10,6 +10,7 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { SignatureError, createSignatureRequest, getSignatureStatus, signatureEnabled } from "../../lib/signature-provider";
+import { pipeToResponse } from "../../utils/stream";
 
 const router = Router();
 router.use(authenticate);
@@ -382,7 +383,7 @@ router.get(
     const stream = await storage.getStream(doc.storageKey);
     res.setHeader("Content-Type", doc.mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 

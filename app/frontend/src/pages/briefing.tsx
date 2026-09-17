@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { errorFromResponse, errorMessage } from "@/lib/errors";
 
 const FALLBACK_ENV = [
   "Suíte Master", "Cozinha", "Sala", "Suíte Hóspede", "Suíte Filhos", "Banheiro",
@@ -59,10 +60,10 @@ export function BriefingPage() {
           notes: form.notes.trim() || null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.message ?? "Erro ao enviar");
+      if (!res.ok) throw await errorFromResponse(res);
       setDone(true);
     } catch (err) {
-      toast.error((err as Error).message || "Não foi possível enviar. Tente novamente.");
+      toast.error(errorMessage(err, "Não foi possível enviar. Tente novamente."));
     } finally {
       setSending(false);
     }

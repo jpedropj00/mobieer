@@ -20,6 +20,7 @@ import {
   orderInclude as productionInclude,
   serializeOrder as serializeProductionOrder,
 } from "../production/production.service";
+import { pipeToResponse } from "../../utils/stream";
 
 const router = Router();
 
@@ -301,7 +302,7 @@ router.get(
     const stream = await storage.getStream(doc.storageKey);
     res.setHeader("Content-Type", doc.mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 
@@ -378,7 +379,7 @@ router.get(
     const stream = await storage.getStream(att.storageKey);
     res.setHeader("Content-Type", att.mimeType);
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(att.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 
