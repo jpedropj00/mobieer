@@ -8,7 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { MEASUREMENT_PERIODS, decodeDrawingDataUrl, serializeVisit, techProjectDueDate, visitInclude } from "./measurements.service";
-import { notifyClientWhatsApp } from "../../lib/client-comms";
+import { fmtVisit, sendAutomation } from "../../lib/automations";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { uploadDocument } from "../../middlewares/upload";
 import { pipeToResponse } from "../../utils/stream";
@@ -161,10 +161,16 @@ router.patch(
       await notify(visit.technicianId, "Medição agendada", `${visit.project?.code} — ${visit.project?.name}: medição em ${visit.scheduledAt.toLocaleDateString("pt-BR")}.`);
     }
     if (nowScheduled && visit.scheduledAt) {
-      void notifyClientWhatsApp(
-        visit.project?.clientId,
-        `Sua medição do projeto ${visit.project?.code} foi agendada para ${visit.scheduledAt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. — MOBIEER`
-      );
+      void sendAutomation("MEASUREMENT_SCHEDULED", {
+        organizationId: req.user!.organizationId,
+        clientId: visit.project?.clientId,
+        vars: {
+          "projeto.codigo": visit.project?.code ?? "",
+          "projeto.nome": visit.project?.name ?? "",
+          "medicao.data": fmtVisit(visit.scheduledAt),
+        },
+        dedupeKey: `measurement-scheduled:${visit.id}:${visit.scheduledAt.toISOString()}`,
+      });
     }
     return ok(res, serializeVisit(visit), "Medição atualizada");
   })

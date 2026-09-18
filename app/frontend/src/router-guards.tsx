@@ -28,3 +28,16 @@ export function GuestRoute() {
   if (isAuthenticated) return <Navigate to="/" replace />;
   return <Outlet />;
 }
+
+/**
+ * Página inicial conforme o perfil: montador vai direto para a área dele;
+ * quem não vê o dashboard de estoque cai no painel da loja ou no chat.
+ */
+export function HomeRoute({ dashboard }: { dashboard: React.ReactNode }) {
+  const { user, can } = useAuth();
+  if (can("dashboard.read")) return <>{dashboard}</>;
+  if (user?.role === "MONTADOR") return <Navigate to="/montador" replace />;
+  if (can("finance.read") || can("commercial.read")) return <Navigate to="/painel-loja" replace />;
+  if (can("chat.use")) return <Navigate to="/chat" replace />;
+  return <>{dashboard}</>;
+}

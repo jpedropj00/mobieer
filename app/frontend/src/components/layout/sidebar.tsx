@@ -6,6 +6,10 @@ import {
   ArrowUpFromLine,
   BarChart3,
   CalendarClock,
+  GanttChartSquare,
+  MessagesSquare,
+  PieChart,
+  Timer,
   HardHat,
   CalendarDays,
   ClipboardCheck,
@@ -31,6 +35,7 @@ import {
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useChatUnread } from "@/hooks/use-chat-unread";
 import { Logo } from "./logo";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -39,7 +44,14 @@ type NavItem = {
   to: string;
   icon: LucideIcon;
   permission?: string;
+  /** Basta ter uma destas. */
+  anyPermission?: string[];
+  /** Só aparece para estes perfis. */
+  roles?: string[];
+  /** Esconde destes perfis. */
+  hideForRoles?: string[];
   end?: boolean;
+  badge?: "chat";
 };
 
 type NavGroup = {
@@ -49,7 +61,13 @@ type NavGroup = {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    items: [{ label: "Dashboard", to: "/", icon: LayoutDashboard, permission: "dashboard.read", end: true }],
+    items: [
+      { label: "Dashboard", to: "/", icon: LayoutDashboard, permission: "dashboard.read", end: true },
+      { label: "Painel da loja", to: "/painel-loja", icon: PieChart, anyPermission: ["finance.read", "commercial.read"] },
+      { label: "Pipeline da loja", to: "/pipeline", icon: GanttChartSquare, permission: "organization.read", hideForRoles: ["MONTADOR"] },
+      { label: "Minha montagem", to: "/montador", icon: Timer, roles: ["MONTADOR"] },
+      { label: "Chat", to: "/chat", icon: MessagesSquare, permission: "chat.use", badge: "chat" },
+    ],
   },
   {
     label: "Estoque",
@@ -115,12 +133,19 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 export function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const location = useLocation();
+  const chatUnread = useChatUnread(can("chat.use"));
+
+  const visible = (i: NavItem) =>
+    (!i.permission || can(i.permission)) &&
+    (!i.anyPermission || i.anyPermission.some((p) => can(p))) &&
+    (!i.roles || (user && i.roles.includes(user.role))) &&
+    (!i.hideForRoles || !user || !i.hideForRoles.includes(user.role));
 
   const groups = NAV_GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((i) => !i.permission || can(i.permission)),
+    items: g.items.filter(visible),
   })).filter((g) => g.items.length > 0);
 
   const link = (item: NavItem) => (
@@ -143,7 +168,17 @@ export function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavig
         <>
           {isActive && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary" />}
           <item.icon className={cn("h-[18px] w-[18px] shrink-0", isActive ? "text-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground")} />
-          {!collapsed && <span>{item.label}</span>}
+          {!collapsed && <span className="flex-1">{item.label}</span>}
+          {item.badge === "chat" && chatUnread > 0 && (
+            <span
+              className={cn(
+                "rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 text-primary-foreground",
+                collapsed && "absolute right-1 top-1"
+              )}
+            >
+              {chatUnread > 99 ? "99+" : chatUnread}
+            </span>
+          )}
         </>
       )}
     </NavLink>

@@ -262,20 +262,8 @@ export async function buildContractContext(
   };
 }
 
-/** Substitui {{campo}} pelos valores. Marcador desconhecido vira "____". */
-export function renderTemplate(body: string, values: Record<string, string>) {
-  const missing = new Set<string>();
-  const text = body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, key: string) => {
-    const v = values[key];
-    if (v === undefined) {
-      missing.add(key);
-      return "____";
-    }
-    if (v === "") missing.add(key);
-    return v;
-  });
-  return { text, missing: [...missing] };
-}
+// Substituição de marcadores compartilhada com as automações de mensagem.
+export { renderTemplate } from "../../utils/template";
 
 /**
  * Gera o PDF do contrato. O corpo é texto puro: linhas em MAIÚSCULAS curtas

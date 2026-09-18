@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { uploadPromob } from "../../middlewares/upload";
@@ -7,8 +7,8 @@ import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
-import { storage, buildStorageKey } from "../../lib/storage";
-import { decodeXmlBuffer, detectFormat, parsePromobXml } from "./promob.service";
+import { storage } from "../../lib/storage";
+import { createPromobImport } from "./promob.import";
 import { pipeToResponse } from "../../utils/stream";
 
 const router = Router();
@@ -32,6 +32,7 @@ const serialize = (r: {
   mimeType: string;
   sizeBytes: number;
   format: string;
+  source?: string;
   status: string;
   itemCount: number;
   totalValue: Prisma.Decimal | null;
@@ -46,6 +47,7 @@ const serialize = (r: {
   mimeType: r.mimeType,
   sizeBytes: r.sizeBytes,
   format: r.format,
+  source: r.source ?? "MANUAL",
   status: r.status,
   itemCount: r.itemCount,
   totalValue: r.totalValue != null ? Number(r.totalValue) : null,
@@ -80,53 +82,14 @@ router.post(
     const project = await ensureProject(req.params.projectId, req.user!.organizationId);
     if (!req.file) throw new BadRequestError("Envie o arquivo exportado do Promob");
 
-    const format = detectFormat(req.file.originalname, req.file.mimetype);
-    const key = buildStorageKey(project.id, `promob-${req.file.originalname}`);
-    await storage.put(key, req.file.buffer, req.file.mimetype || "application/octet-stream");
-
-    let status = "UPLOADED";
-    let itemCount = 0;
-    let totalValue: number | null = null;
-    let parsed: unknown = null;
-    let notes: string | null = null;
-
-    if (format === "XML") {
-      try {
-        const p = parsePromobXml(decodeXmlBuffer(req.file.buffer));
-        parsed = p;
-        itemCount = p.totals.itens;
-        totalValue = p.totals.valor ?? null;
-        status = p.totals.itens > 0 || p.totals.ambientes > 0 ? "PARSED" : "PARSE_FAILED";
-        if (status === "PARSE_FAILED") notes = "XML lido, mas nenhum <ITEM>/<AMBIENTE> reconhecido nesta versão de export.";
-      } catch (e) {
-        status = "PARSE_FAILED";
-        notes = `Falha ao ler o XML: ${e instanceof Error ? e.message : e}`;
-      }
-    } else if (format === "PDF") {
-      notes = "PDF armazenado. A extração automática de itens só é feita para o XML de orçamento do Promob.";
-    } else {
-      notes = "Formato não reconhecido — arquivo armazenado para conferência manual.";
-    }
-
-    const row = await prisma.promobImport.create({
-      data: {
-        organizationId: req.user!.organizationId,
-        projectId: project.id,
-        fileName: req.file.originalname,
-        storageKey: key,
-        mimeType: req.file.mimetype || "application/octet-stream",
-        sizeBytes: req.file.size,
-        format,
-        status,
-        itemCount,
-        totalValue,
-        parsedJson: parsed === null ? Prisma.DbNull : (parsed as Prisma.InputJsonValue),
-        notes,
-        createdById: req.user!.id,
-      },
-      include: { createdBy: { select: { id: true, name: true } } },
+    const row = await createPromobImport({
+      organizationId: req.user!.organizationId,
+      projectId: project.id,
+      file: req.file,
+      createdById: req.user!.id,
+      source: "MANUAL",
     });
-    return ok(res, serialize(row), status === "PARSED" ? `Importado: ${itemCount} item(ns)` : "Arquivo importado");
+    return ok(res, serialize(row), row.status === "PARSED" ? `Importado: ${row.itemCount} item(ns)` : "Arquivo importado");
   })
 );
 

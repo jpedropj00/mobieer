@@ -71,7 +71,7 @@ export function CommercialPage() {
 
   const [oppForm, setOppForm] = useState({ title: "", stageId: "", estimatedValue: "", expectedCloseAt: "", nextAction: "" });
   const [leadForm, setLeadForm] = useState({ name: "", phone: "", email: "", source: "", interest: "" });
-  const [convForm, setConvForm] = useState({ title: "", estimatedValue: "", stageId: "" });
+  const [convForm, setConvForm] = useState({ title: "", estimatedValue: "", stageId: "", name: "", document: "", email: "", phone: "", address: "" });
   const [intForm, setIntForm] = useState({ type: "CALL", summary: "", result: "", nextAction: "", nextActionAt: "" });
   const [moveStage, setMoveStage] = useState("");
 
@@ -88,8 +88,20 @@ export function CommercialPage() {
     onError: (e) => toast.error(errorMessage(e, "Falha ao criar")),
   });
   const doConvert = useMutation({
-    mutationFn: () => apiPost(`/commercial/leads/${convertLead!.id}/convert`, { title: convForm.title || undefined, estimatedValue: Number(convForm.estimatedValue || 0), stageId: convForm.stageId || undefined }),
-    onSuccess: () => { toast.success("Lead convertido em oportunidade"); setDialog(null); setConvertLead(null); refresh(); },
+    mutationFn: () =>
+      apiPost<{ message?: string }>(`/commercial/leads/${convertLead!.id}/convert`, {
+        title: convForm.title || undefined,
+        estimatedValue: Number(convForm.estimatedValue || 0),
+        stageId: convForm.stageId || undefined,
+        client: {
+          name: convForm.name || undefined,
+          document: convForm.document || null,
+          email: convForm.email || null,
+          phone: convForm.phone || null,
+          address: convForm.address || null,
+        },
+      }),
+    onSuccess: (r) => { toast.success(r.message ?? "Lead convertido em oportunidade"); setDialog(null); setConvertLead(null); refresh(); },
     onError: (e) => toast.error(errorMessage(e, "Falha ao converter")),
   });
   const logInteraction = useMutation({
@@ -208,7 +220,7 @@ export function CommercialPage() {
                     {l.briefing ? "Ver briefing" : "Briefing"}
                   </Button>
                   {canLeads && l.status !== "CONVERTED" && l.status !== "LOST" && (
-                    <Button size="sm" variant="outline" onClick={() => { setConvertLead(l); setConvForm({ title: l.interest ? `${l.name} — ${l.interest}` : l.name, estimatedValue: "", stageId: "" }); setDialog("convert"); }}>
+                    <Button size="sm" variant="outline" onClick={() => { setConvertLead(l); setConvForm({ title: l.interest ? `${l.name} — ${l.interest}` : l.name, estimatedValue: "", stageId: "", name: l.name, document: l.document ?? "", email: l.email ?? "", phone: l.phone ?? "", address: "" }); setDialog("convert"); }}>
                       Converter <ArrowRight className="ml-1 h-3.5 w-3.5" />
                     </Button>
                   )}
@@ -400,6 +412,19 @@ export function CommercialPage() {
           <DialogHeader><DialogTitle>Converter lead — {convertLead?.name}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Cria um cliente e uma oportunidade na primeira etapa do funil.</p>
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <p className="text-sm font-medium">Cadastro do cliente</p>
+              <p className="text-xs text-muted-foreground">
+                Confira e complete. Se ele se cadastrou pelo site, ao concluir o acesso dele passa do briefing para o portal completo.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Nome"><Input value={convForm.name} onChange={(e) => setConvForm({ ...convForm, name: e.target.value })} /></Field>
+                <Field label="CPF/CNPJ"><Input value={convForm.document} onChange={(e) => setConvForm({ ...convForm, document: e.target.value })} /></Field>
+                <Field label="E-mail"><Input value={convForm.email} onChange={(e) => setConvForm({ ...convForm, email: e.target.value })} /></Field>
+                <Field label="Telefone"><Input value={convForm.phone} onChange={(e) => setConvForm({ ...convForm, phone: e.target.value })} /></Field>
+              </div>
+              <Field label="Endereço da obra"><Input value={convForm.address} onChange={(e) => setConvForm({ ...convForm, address: e.target.value })} /></Field>
+            </div>
             <Field label="Título da oportunidade"><Input value={convForm.title} onChange={(e) => setConvForm({ ...convForm, title: e.target.value })} /></Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Valor estimado (R$)"><Input type="number" value={convForm.estimatedValue} onChange={(e) => setConvForm({ ...convForm, estimatedValue: e.target.value })} /></Field>

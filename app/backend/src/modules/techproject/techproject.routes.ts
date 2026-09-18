@@ -8,7 +8,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "./techproject.service";
-import { notifyClientWhatsApp } from "../../lib/client-comms";
+import { sendAutomation } from "../../lib/automations";
 import { enumQuery } from "../../utils/query";
 
 const router = Router();
@@ -113,10 +113,12 @@ router.patch(
       include: approvalInclude,
     });
     if (input.action === "publish") {
-      void notifyClientWhatsApp(
-        project.clientId,
-        `O projeto técnico do contrato ${project.code} está disponível no portal para sua revisão e aprovação. — MOBIEER`
-      );
+      void sendAutomation("TECH_APPROVAL_READY", {
+        organizationId: req.user!.organizationId,
+        clientId: project.clientId,
+        vars: { "projeto.codigo": project.code, "projeto.nome": project.name },
+        dedupeKey: `tech-approval:${approval.id}:${approval.reviewRound}`,
+      });
     }
     return ok(res, serializeApproval(approval, { includeSignature: true }), input.action === "publish" ? "Projeto técnico enviado ao cliente" : "Atualizado");
   })

@@ -20,8 +20,9 @@ import {
 } from "./production.service";
 import { generateSchedule } from "./schedule.service";
 import { aiEnabled } from "../../lib/ai";
-import { notifyClientWhatsApp } from "../../lib/client-comms";
+import { sendAutomation } from "../../lib/automations";
 import { enumQuery } from "../../utils/query";
+import { deliveryEstimateFor, leadTimeDashboard } from "./leadtime.service";
 
 const router = Router();
 router.use(authenticate);
@@ -165,11 +166,16 @@ router.post(
       );
     }
     if (forward) {
-      const msg =
-        target === "DELIVERED"
-          ? `Seu projeto ${project.code} foi entregue e montado. Obrigado pela confiança! — MOBIEER`
-          : `Atualização do seu projeto ${project.code}: etapa "${STAGE_LABEL[target]}". — MOBIEER`;
-      void notifyClientWhatsApp(project.clientId, msg);
+      void sendAutomation("PRODUCTION_STAGE", {
+        organizationId: req.user!.organizationId,
+        clientId: project.clientId,
+        vars: {
+          "projeto.codigo": project.code,
+          "projeto.nome": project.name,
+          "producao.etapa": target === "DELIVERED" ? "Entregue e montado" : STAGE_LABEL[target],
+        },
+        dedupeKey: `production-stage:${cur.id}:${target}`,
+      });
     }
     return ok(res, serializeOrder(order), `Etapa atualizada para "${STAGE_LABEL[target]}"`);
   })
@@ -220,6 +226,27 @@ router.post(
       serializeOrder(updated),
       schedule.source === "AI" ? "Cronograma gerado pela IA" : "Cronograma estimado (configure AI_API_KEY para usar a IA)"
     );
+  })
+);
+
+// GET /api/production/lead-times -> prazos medidos (fábrica, montagem, por cômodo)
+router.get(
+  "/lead-times",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => ok(res, await leadTimeDashboard(req.user!.organizationId)))
+);
+
+// GET /api/production/projects/:projectId/estimate -> mesma previsão que o cliente vê
+router.get(
+  "/projects/:projectId/estimate",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const project = await ensureProject(req.params.projectId, req.user!.organizationId);
+    const order = await prisma.productionOrder.findUnique({
+      where: { projectId: project.id },
+      select: { organizationId: true, stage: true, releasedAt: true },
+    });
+    return ok(res, order ? await deliveryEstimateFor(order) : null);
   })
 );
 

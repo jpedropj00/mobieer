@@ -1,0 +1,8 @@
+{
+  "apiUrl": "https://SEU-BACKEND.vercel.app",
+  "token": "mbx_COLE_AQUI_O_TOKEN_GERADO_NO_MOBIEER",
+  "watchFolder": "C:\\Promob\\Exportacoes",
+  "recursive": false,
+  "extensions": [".xml", ".pdf"],
+  "intervalSeconds": 30
+}

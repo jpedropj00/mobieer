@@ -96,6 +96,9 @@ const PERMISSIONS = [
   { code: "hr.timeclock.manage", label: "Importar e ajustar ponto eletrônico", module: "RH" },
   { code: "finance.read", label: "Ver financeiro (lançamentos e resumo)", module: "Financeiro" },
   { code: "finance.manage", label: "Lançar e gerenciar movimentos financeiros", module: "Financeiro" },
+  { code: "chat.use", label: "Usar o chat interno", module: "Chat" },
+  { code: "chat.manage", label: "Criar grupos e gerenciar membros do chat", module: "Chat" },
+  { code: "contractors.self", label: "Área do montador (ponto, cômodos e produtividade próprios)", module: "Montadores" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -265,7 +268,19 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     description: "Apenas consulta dados",
     perms: ["dashboard.read", "products.read", "stock.read", "activities.read", "agenda.read", "reports.read", "notifications.read", "organization.read", "documents.read"],
   },
+  {
+    name: "MONTADOR",
+    label: "Montador terceirizado",
+    description: "Acesso do montador: registra ponto e cômodos, vê a própria produtividade e usa o chat",
+    perms: ["contractors.self", "chat.use", "notifications.read"],
+  },
 ];
+
+// Chat para todos os perfis; gestão/RH também gerenciam grupos (ADMIN já tem tudo).
+for (const def of ROLE_DEFS) {
+  if (def.name !== "ADMIN" && !def.perms.includes("chat.use")) def.perms.push("chat.use");
+  if ((def.name === "MANAGER" || def.name === "RH") && !def.perms.includes("chat.manage")) def.perms.push("chat.manage");
+}
 
 const USERS = [
   { name: "Admin Principal", email: "admin@mobieer.com.br", password: "admin123", position: "Administrador", sector: "TI", role: "ADMIN" },

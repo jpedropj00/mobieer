@@ -106,6 +106,9 @@ model User {
   companyHolidays         CompanyHoliday[]        @relation("CompanyHolidayAuthor")
   dispatchChecklists      DispatchChecklist[]     @relation("DispatchChecklistChecker")
   contractorShifts        ContractorShift[]       @relation("ContractorShiftAuthor")
+  chatMemberships         ChatMember[]            @relation("ChatMemberUser")
+  chatMessages            ChatMessage[]           @relation("ChatMessageAuthor")
+  contractorProfile       Contractor?             @relation("ContractorUser")
 
   @@index([roleId])
   @@index([organizationId])
@@ -205,6 +208,13 @@ model Organization {
   dispatchChecklists  DispatchChecklist[]
   contractors         Contractor[]
   contractorShifts    ContractorShift[]
+  messageAutomations  MessageAutomation[]
+  messageLogs         MessageLog[]
+  chatChannels        ChatChannel[]
+  installationTasks   InstallationTask[]
+  contractorBonuses   ContractorBonus[]
+  bonusPolicy         BonusPolicy?
+  integrationTokens   IntegrationToken[]
 
   @@index([enterpriseId])
 }
@@ -1016,6 +1026,7 @@ model Project {
   fiscalInvoices FiscalInvoice[]
   promobImports  PromobImport[]
   contractorShifts ContractorShift[]
+  installationTasks InstallationTask[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1028,6 +1039,8 @@ model AssistanceTicket {
   number         String
   title          String
   description    String             @db.Text
+  problemType    String? // tipo do problema escolhido pelo cliente
+  roomLabel      String? // ambiente/cômodo afetado
   status         AssistanceStatus   @default(OPEN)
   priority       KanbanTaskPriority @default(NORMAL)
   dueAt          DateTime?
@@ -1047,8 +1060,16 @@ model AssistanceTicket {
   openedByClientAccountId String?
   openedByClientAccount   ClientAccount? @relation(fields: [openedByClientAccountId], references: [id], onDelete: SetNull)
   origin         AssistanceOrigin   @default(INTERNAL)
+  scheduledAt           DateTime? // data escolhida pelo cliente
+  schedulePeriod        String? // MANHA | TARDE | QUALQUER
+  optionsSentAt         DateTime? // gestão enviou as datas possíveis
+  clientConfirmedAt     DateTime? // cliente confirmou na véspera
+  reminderSentAt        DateTime?
+  confirmToken          String?   @unique // link de confirmação sem login
+  rescheduleRequestedAt DateTime?
   kanbanTasks    KanbanTask[]
   attachments    AssistanceAttachment[]
+  visitOptions   AssistanceVisitOption[]
 
   @@unique([organizationId, number])
   @@index([organizationId, status, priority])
@@ -1443,6 +1464,8 @@ model CommercialLead {
   seller            User?                   @relation("LeadSeller", fields: [sellerId], references: [id], onDelete: SetNull)
   convertedClientId String?
   convertedClient   Client?                 @relation(fields: [convertedClientId], references: [id], onDelete: SetNull)
+  document          String? // CPF/CNPJ informado pelo próprio cliente
+  account           ClientAccount?
   opportunities     CommercialOpportunity[]
   interactions      CommercialInteraction[]
   history           CommercialHistory[]
@@ -1501,6 +1524,7 @@ model CommercialOpportunity {
   nextActionAt    DateTime?
   lostReason      String?
   lostReasonCode  LostReason?
+  wonAt           DateTime? // quando virou venda (base de "vendas do mês" e ticket médio)
   position        Int                     @default(0)
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
@@ -1523,6 +1547,7 @@ model CommercialOpportunity {
   financeTransactions FinanceTransaction[]
 
   @@index([organizationId, status, expectedCloseAt])
+  @@index([organizationId, wonAt])
   @@index([stageId, position])
   @@index([sellerId])
   @@index([clientId])
@@ -2270,10 +2295,19 @@ model TaxRule {
   @@index([organizationId, regimeTributario, tipoImposto, ativo])
 }
 
+enum ClientAccessLevel {
+  BRIEFING // cadastro curto pelo site: só responde o briefing
+  FULL // cadastro completado pela equipe: portal inteiro
+}
+
 model ClientAccount {
   id           String              @id @default(cuid())
-  clientId     String
-  client       Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId     String? // vazio enquanto for só lead (acesso BRIEFING)
+  client       Client?             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  leadId       String?             @unique // lead que nasceu do cadastro pelo site
+  lead         CommercialLead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  accessLevel  ClientAccessLevel   @default(FULL)
+  document     String?             @unique // CPF informado no cadastro (só dígitos)
   name         String
   email        String              @unique
   passwordHash String?
@@ -2537,6 +2571,7 @@ model PromobImport {
   mimeType       String
   sizeBytes      Int
   format         String       @default("OTHER") // XML | PDF | OTHER
+  source         String       @default("MANUAL") // MANUAL (tela) | SYNC (sincronizador do Promob)
   status         String       @default("UPLOADED") // UPLOADED | PARSED | PARSE_FAILED
   itemCount      Int          @default(0)
   totalValue     Decimal?     @db.Decimal(14, 2) // total do orçamento, quando o XML traz valores
@@ -2895,9 +2930,13 @@ model Contractor {
   dailyRate      Decimal           @default(0) @db.Decimal(12, 2) // valor da diária
   active         Boolean           @default(true)
   notes          String?           @db.Text
+  userId         String?           @unique // acesso do montador ao sistema
+  user           User?             @relation("ContractorUser", fields: [userId], references: [id], onDelete: SetNull)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   shifts         ContractorShift[]
+  installationTasks InstallationTask[]
+  bonuses        ContractorBonus[]
 
   @@index([organizationId, active])
 }
@@ -2923,4 +2962,266 @@ model ContractorShift {
   @@index([organizationId, checkInAt])
   @@index([contractorId, checkInAt])
   @@index([projectId])
+}
+
+// ============================================================
+// FASE 6 — Pipeline da loja, assistência agendada pelo cliente,
+// automações de WhatsApp, chat, montadores com login, tempo por
+// cômodo com meta própria e bonificação, integração Promob.
+// ============================================================
+
+// 6.1 — Assistência: a gestão propõe datas, o cliente escolhe e confirma
+model AssistanceVisitOption {
+  id          String           @id @default(cuid())
+  ticketId    String
+  ticket      AssistanceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  startsAt    DateTime
+  period      String? // MANHA | TARDE | QUALQUER
+  chosenAt    DateTime?
+  createdById String?
+  createdAt   DateTime         @default(now())
+
+  @@index([ticketId])
+}
+
+// 6.2 — Automações de mensagem (WhatsApp)
+enum MessageEvent {
+  CLIENT_WELCOME
+  LEAD_RECEIVED
+  PORTAL_ACCESS
+  MEASUREMENT_SCHEDULED
+  TECH_APPROVAL_READY
+  PRODUCTION_STAGE
+  ASSISTANCE_RECEIVED
+  ASSISTANCE_OPTIONS
+  ASSISTANCE_SCHEDULED
+  ASSISTANCE_REMINDER
+  POST_SALE_FOLLOWUP
+}
+
+enum MessageStatus {
+  SENT // entregue ao provedor
+  LOGGED // WhatsApp não configurado: ficou só no log
+  SKIPPED // automação desligada ou sem telefone
+  FAILED
+}
+
+model MessageAutomation {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event            MessageEvent
+  enabled          Boolean      @default(true)
+  body             String       @db.Text // texto com marcadores {{cliente.nome}}
+  metaTemplateName String? // template aprovado na Meta (conversa fora da janela de 24h)
+  delayDays        Int          @default(0)
+  updatedById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, event])
+}
+
+model MessageLog {
+  id                String        @id @default(cuid())
+  organizationId    String
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event             MessageEvent
+  clientId          String?
+  leadId            String?
+  to                String?
+  body              String        @db.Text
+  status            MessageStatus
+  error             String?
+  providerMessageId String?
+  dedupeKey         String? // evita mandar a mesma mensagem duas vezes
+  createdAt         DateTime      @default(now())
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, createdAt])
+  @@index([clientId])
+}
+
+// 6.3 — Chat interno: dois canais fixos, com envio de documentos
+enum ChatChannelKind {
+  TEAM // "Equipe": só a equipe interna
+  CONTRACTORS // "Equipe + montadores"
+}
+
+model ChatChannel {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  kind           ChatChannelKind
+  name           String?
+  createdById    String?
+  lastMessageAt  DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  members        ChatMember[]
+  messages       ChatMessage[]
+
+  @@unique([organizationId, kind])
+}
+
+model ChatMember {
+  id         String      @id @default(cuid())
+  channelId  String
+  channel    ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User        @relation("ChatMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime?
+  joinedAt   DateTime    @default(now())
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id         String      @id @default(cuid())
+  channelId  String
+  channel    ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?       @relation("ChatMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  body       String      @db.Text
+  storageKey String?
+  fileName   String?
+  mimeType   String?
+  sizeBytes  Int?
+  editedAt   DateTime?
+  deletedAt  DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([channelId, createdAt])
+}
+
+// 6.4 — Montagem por cômodo, meta própria e bonificação
+enum RoomType {
+  COZINHA
+  BANHEIRO
+  LAVABO
+  DORMITORIO
+  CLOSET
+  SALA
+  HOME_OFFICE
+  LAVANDERIA
+  AREA_GOURMET
+  VARANDA
+  CORREDOR
+  OUTRO
+}
+
+enum InstallationStatus {
+  PENDING
+  IN_PROGRESS
+  PAUSED
+  DONE
+  CANCELLED
+}
+
+enum InstallationReview {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model InstallationTask {
+  id             String                @id @default(cuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId   String
+  contractor     Contractor            @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  roomType       RoomType
+  roomLabel      String? // ex.: "Banheiro da suíte"
+  status         InstallationStatus    @default(PENDING)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  workedMinutes  Int                   @default(0) // soma dos intervalos trabalhados (sem pausas)
+  targetMinutes  Int? // meta própria congelada na conclusão
+  review         InstallationReview    @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNotes    String?               @db.Text
+  notes          String?               @db.Text
+  createdById    String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  logs           InstallationTaskLog[]
+  bonus          ContractorBonus?
+
+  @@index([organizationId, status])
+  @@index([contractorId, roomType, status])
+  @@index([projectId])
+}
+
+model InstallationTaskLog {
+  id        String           @id @default(cuid())
+  taskId    String
+  task      InstallationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  startedAt DateTime
+  endedAt   DateTime?
+  minutes   Int?
+
+  @@index([taskId])
+}
+
+enum BonusStatus {
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+model ContractorBonus {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contractorId   String
+  contractor     Contractor       @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  taskId         String           @unique
+  task           InstallationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  roomType       RoomType
+  targetMinutes  Int
+  actualMinutes  Int
+  gainPct        Decimal          @db.Decimal(6, 2)
+  amount         Decimal          @db.Decimal(12, 2)
+  status         BonusStatus      @default(APPROVED)
+  paidAt         DateTime?
+  decidedById    String?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([organizationId, status])
+  @@index([contractorId, createdAt])
+}
+
+model BonusPolicy {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  enabled        Boolean      @default(false)
+  minSamples     Int          @default(3) // cômodos concluídos do mesmo tipo antes de existir meta
+  tiers          Json // [{ "minGainPct": 10, "amount": 30 }, ...]
+  maxPerMonth    Decimal?     @db.Decimal(12, 2)
+  updatedById    String?
+  updatedAt      DateTime     @updatedAt
+}
+
+// 6.5 — Tokens de integração (sincronizador do Promob)
+model IntegrationToken {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  tokenHash      String       @unique // sha-256; o token puro só aparece na criação
+  prefix         String // início do token, para identificar na lista
+  scopes         String[]
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
 }

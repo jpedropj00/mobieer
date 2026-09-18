@@ -70,6 +70,15 @@ export const env = {
     graphVersion: process.env.WHATSAPP_GRAPH_VERSION || "v21.0",
     // idioma padrão dos templates aprovados na Meta
     templateLang: process.env.WHATSAPP_TEMPLATE_LANG || "pt_BR",
+    // webhook de mensagens recebidas (confirmação da assistência pelo WhatsApp)
+    webhookVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "",
+    appSecret: process.env.WHATSAPP_APP_SECRET || "",
+  },
+
+  // --- Agendador (Vercel Cron). O Vercel envia "Authorization: Bearer CRON_SECRET".
+  //     Sem CRON_SECRET o endpoint /api/cron/* fica bloqueado em produção. ---
+  cron: {
+    secret: process.env.CRON_SECRET || "",
   },
 
   // --- IA (cronograma de produção). Cliente compatível com a API da OpenAI:

@@ -21,9 +21,9 @@ export function PortalLoginPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      const level = await login(email.trim(), password);
       const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
-      navigate(from ?? "/portal", { replace: true });
+      navigate(level === "BRIEFING" ? "/portal/briefing" : from ?? "/portal", { replace: true });
     } catch (err) {
       toast.error(errorMessage(err, "Não foi possível entrar"));
     } finally {
@@ -57,6 +57,12 @@ export function PortalLoginPage() {
             </Link>
           </p>
         </form>
+        <div className="mt-4 rounded-xl border border-border bg-card p-4 text-center text-sm">
+          Ainda não tem acesso?{" "}
+          <Link to="/portal/cadastro" className="font-medium text-primary hover:underline">
+            Cadastre-se e conte sobre o seu projeto
+          </Link>
+        </div>
       </div>
     </div>
   );

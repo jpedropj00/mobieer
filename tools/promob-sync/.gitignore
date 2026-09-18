@@ -1,0 +1,4 @@
+# segredo e estado local do sincronizador
+promob-sync.config.json
+promob-sync.state.json
+promob-sync.log

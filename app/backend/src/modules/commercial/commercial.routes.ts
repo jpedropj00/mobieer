@@ -8,6 +8,8 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { enumQuery } from "../../utils/query";
+import { isValidCpf, onlyDigits } from "../../utils/document";
+import { sendAutomation } from "../../lib/automations";
 
 const router = Router();
 router.use(authenticate);
@@ -251,7 +253,10 @@ router.post(
   "/leads/:id/convert",
   requirePermission("commercial.leads.manage"),
   asyncHandler(async (req, res) => {
-    const lead = await prisma.commercialLead.findFirst({ where: { id: req.params.id, organizationId: req.user!.organizationId } });
+    const lead = await prisma.commercialLead.findFirst({
+      where: { id: req.params.id, organizationId: req.user!.organizationId },
+      include: { briefing: { select: { address: true } }, account: { select: { id: true } } },
+    });
     if (!lead) throw new NotFoundError("Lead não encontrado");
     if (lead.status === "CONVERTED") throw new BadRequestError("Lead já convertido");
 
@@ -261,18 +266,38 @@ router.post(
         title: z.string().trim().min(2).max(200).optional(),
         estimatedValue: z.coerce.number().min(0).default(0),
         stageId: z.string().min(1).optional(),
+        // "completar o cadastro": dados do cliente conferidos pela equipe
+        client: z
+          .object({
+            name: z.string().trim().min(2).max(255).optional(),
+            document: z.string().trim().max(30).optional().nullable(),
+            email: z.string().trim().email().optional().nullable().or(z.literal("")),
+            phone: z.string().trim().max(30).optional().nullable(),
+            address: z.string().trim().max(500).optional().nullable(),
+          })
+          .optional(),
       })
       .parse(req.body);
 
+    const document = onlyDigits(input.client?.document ?? lead.document) || null;
+    if (document && document.length === 11 && !isValidCpf(document)) throw new BadRequestError("CPF inválido", { field: "document" }, "VALIDATION_ERROR");
+
     const result = await prisma.$transaction(async (tx) => {
       let clientId = input.clientId ?? null;
+      if (!clientId && document) {
+        // mesmo CPF já é cliente: liga ao cadastro existente em vez de duplicar
+        const existing = await tx.client.findFirst({ where: { organizationId: req.user!.organizationId, document }, select: { id: true } });
+        clientId = existing?.id ?? null;
+      }
       if (!clientId) {
         const client = await tx.client.create({
           data: {
             organizationId: req.user!.organizationId,
-            name: lead.name,
-            email: lead.email,
-            phone: lead.phone,
+            name: input.client?.name ?? lead.name,
+            document,
+            email: (input.client?.email || lead.email) ?? null,
+            phone: input.client?.phone ?? lead.phone,
+            address: input.client?.address ?? lead.briefing?.address ?? null,
             notes: lead.interest ? `Interesse: ${lead.interest}` : null,
             sellerId: lead.sellerId,
           },
@@ -306,11 +331,28 @@ router.post(
         where: { id: lead.id },
         data: { status: "CONVERTED", convertedAt: new Date(), convertedClientId: clientId },
       });
-      return { clientId, opportunityId: opp.id };
+      // Quem se cadastrou pelo site ganha acesso completo ao portal.
+      let accessUpgraded = false;
+      if (lead.account) {
+        await tx.clientAccount.update({ where: { id: lead.account.id }, data: { clientId, accessLevel: "FULL" } });
+        accessUpgraded = true;
+      }
+      return { clientId, opportunityId: opp.id, accessUpgraded };
     });
 
     await audit(req.user!.id, "COMMERCIAL_LEAD_CONVERTED", "CommercialLead", lead.id, result);
-    return ok(res, result, "Lead convertido em oportunidade");
+    if (result.accessUpgraded) {
+      void sendAutomation("PORTAL_ACCESS", {
+        organizationId: req.user!.organizationId,
+        clientId: result.clientId,
+        dedupeKey: `portal-upgrade:${lead.account!.id}`,
+      });
+    }
+    return ok(
+      res,
+      result,
+      result.accessUpgraded ? "Cadastro completado — o cliente já tem acesso ao portal completo" : "Lead convertido em oportunidade"
+    );
   })
 );
 
@@ -479,6 +521,10 @@ router.patch(
       if (input.lostReasonCode) data.lostReasonCode = input.lostReasonCode;
     }
     if (input.action === "reopen") data.status = "OPEN";
+
+    // Carimbo da venda: grava ao ganhar; limpa se reabrir ou perder.
+    if (data.status === "WON" && cur.status !== "WON") data.wonAt = new Date();
+    else if (data.status && data.status !== "WON" && cur.status === "WON") data.wonAt = null;
 
     const opp = await prisma.commercialOpportunity.update({ where: { id: cur.id }, data, include: oppInclude });
 

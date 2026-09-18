@@ -39,6 +39,16 @@ import shopFloorRoutes from "./modules/production/shopfloor.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import promobRoutes from "./modules/promob/promob.routes";
 import workspaceRoutes from "./modules/workspace/workspace.routes";
+import assistanceRoutes from "./modules/assistance/assistance.routes";
+import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
+import cronRoutes from "./modules/cron/cron.routes";
+import storeRoutes from "./modules/store/store.routes";
+import chatRoutes from "./modules/chat/chat.routes";
+import installationRoutes from "./modules/contractors/installation.routes";
+import meContractorRoutes from "./modules/contractors/me-contractor.routes";
+import automationsRoutes from "./modules/automations/automations.routes";
+import whatsappWebhookRoutes from "./modules/integrations/whatsapp-webhook.routes";
+import integrationsRoutes from "./modules/integrations/integrations.routes";
 import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
@@ -50,7 +60,15 @@ export function createApp() {
       credentials: true,
     })
   );
-  app.use(express.json({ limit: "5mb" }));
+  app.use(
+    express.json({
+      limit: "5mb",
+      // corpo cru guardado para validar a assinatura do webhook do WhatsApp
+      verify: (req, _res, buf) => {
+        if (req.url?.startsWith("/api/integrations/")) (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true }));
 
   app.get("/health", (_req, res) => res.json({ success: true, message: "MOBIEER API OK" }));
@@ -82,6 +100,16 @@ export function createApp() {
   app.use("/api/portal", portalRoutes);
   app.use("/api/hr", hrRoutes);
   app.use("/api/contractors", contractorsRoutes);
+  app.use("/api/assistance", assistanceRoutes);
+  app.use("/api/public", publicConfirmRoutes);
+  app.use("/api/cron", cronRoutes);
+  app.use("/api/automations", automationsRoutes);
+  app.use("/api/store", storeRoutes);
+  app.use("/api/chat", chatRoutes);
+  app.use("/api/installations", installationRoutes);
+  app.use("/api/me/contractor", meContractorRoutes);
+  app.use("/api/integrations", whatsappWebhookRoutes);
+  app.use("/api/integrations", integrationsRoutes);
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial", commercialRoutes);

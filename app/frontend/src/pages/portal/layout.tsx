@@ -29,32 +29,34 @@ function PortalLoader() {
 }
 
 export function PortalProtectedRoute() {
-  const { isAuthenticated, isLoading } = usePortalAuth();
+  const { isAuthenticated, isLoading, level } = usePortalAuth();
   const location = useLocation();
   if (isLoading) return <PortalLoader />;
   if (!isAuthenticated) return <Navigate to="/portal/login" state={{ from: location }} replace />;
+  // Cadastro curto pelo site: só o briefing até a equipe completar o cadastro.
+  if (level === "BRIEFING" && location.pathname !== "/portal/briefing") return <Navigate to="/portal/briefing" replace />;
   return <Outlet />;
 }
 
 export function PortalGuestRoute() {
-  const { isAuthenticated, isLoading } = usePortalAuth();
+  const { isAuthenticated, isLoading, level } = usePortalAuth();
   if (isLoading) return <PortalLoader />;
-  if (isAuthenticated) return <Navigate to="/portal" replace />;
+  if (isAuthenticated) return <Navigate to={level === "BRIEFING" ? "/portal/briefing" : "/portal"} replace />;
   return <Outlet />;
 }
 
 export function PortalLayout() {
-  const { client, account, logout } = usePortalAuth();
+  const { client, account, level, logout } = usePortalAuth();
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-4">
-          <Link to="/portal" className="text-lg text-foreground">
+          <Link to={level === "BRIEFING" ? "/portal/briefing" : "/portal"} className="text-lg text-foreground">
             <PortalWordmark />
           </Link>
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium leading-tight">{client?.name}</p>
+              <p className="text-sm font-medium leading-tight">{client?.name ?? account?.name}</p>
               <p className="text-xs text-muted-foreground leading-tight">{account?.email}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={logout} title="Sair">

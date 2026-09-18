@@ -17,6 +17,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { localDay, localPeriod, shiftMinutes, summarizeShifts } from "./contractors.service";
+import { setContractorActive } from "./installation.service";
 
 const router = Router();
 router.use(authenticate);
@@ -34,6 +35,7 @@ async function ensureContractor(id: string, organizationId: string) {
 const serializeContractor = (c: {
   id: string; name: string; document: string | null; phone: string | null; address: string | null;
   specialty: string | null; dailyRate: Prisma.Decimal; active: boolean; notes: string | null; createdAt: Date;
+  userId?: string | null;
   shifts?: { checkOutAt: Date | null }[];
 }) => ({
   id: c.id,
@@ -48,6 +50,7 @@ const serializeContractor = (c: {
   createdAt: c.createdAt,
   /** Está na obra agora (tem turno aberto). */
   onSite: (c.shifts ?? []).some((s) => s.checkOutAt === null),
+  hasAccess: Boolean(c.userId),
 });
 
 const serializeShift = (s: {
@@ -149,11 +152,20 @@ router.patch(
         specialty: input.specialty === undefined ? undefined : nn(input.specialty),
         dailyRate: input.dailyRate === undefined ? undefined : new Prisma.Decimal(input.dailyRate),
         notes: input.notes === undefined ? undefined : nn(input.notes),
-        active: input.active,
       },
+    });
+    let message = "Montador atualizado";
+    if (input.active !== undefined && input.active !== cur.active) {
+      const { hadAccess } = await setContractorActive(cur.id, input.active);
+      message = input.active
+        ? `Montador reativado${hadAccess ? " — acesso ao sistema liberado de novo" : ""}`
+        : `Montador desativado${hadAccess ? " — acesso ao sistema bloqueado" : ""}`;
+    }
+    const fresh = await prisma.contractor.findUniqueOrThrow({
+      where: { id: c.id },
       include: { shifts: { where: { checkOutAt: null }, select: { checkOutAt: true } } },
     });
-    return ok(res, serializeContractor(c), "Montador atualizado");
+    return ok(res, serializeContractor(fresh), message);
   })
 );
 
@@ -164,13 +176,14 @@ router.delete(
   asyncHandler(async (req, res) => {
     const cur = await ensureContractor(req.params.id, req.user!.organizationId);
     const shifts = await prisma.contractorShift.count({ where: { contractorId: cur.id } });
-    if (shifts > 0) {
-      const c = await prisma.contractor.update({
+    const tasks = await prisma.installationTask.count({ where: { contractorId: cur.id } });
+    if (shifts > 0 || tasks > 0 || cur.userId) {
+      await setContractorActive(cur.id, false);
+      const c = await prisma.contractor.findUniqueOrThrow({
         where: { id: cur.id },
-        data: { active: false },
         include: { shifts: { where: { checkOutAt: null }, select: { checkOutAt: true } } },
       });
-      return ok(res, serializeContractor(c), "Montador tem turnos registrados — foi desativado em vez de excluído");
+      return ok(res, serializeContractor(c), "Montador tem histórico — foi desativado (e perdeu o acesso) em vez de excluído");
     }
     await prisma.contractor.delete({ where: { id: cur.id } });
     return ok(res, { id: cur.id }, "Montador removido");
@@ -362,7 +375,37 @@ router.get(
       }))
     );
 
-    return ok(res, { from, to, ...summary });
+    // Bônus de produtividade aprovados/pagos no período entram no fechamento.
+    const bonuses = await prisma.contractorBonus.groupBy({
+      by: ["contractorId"],
+      where: {
+        organizationId: req.user!.organizationId,
+        status: { in: ["APPROVED", "PAID"] },
+        createdAt: { gte: from, lte: to },
+        ...(req.query.contractorId ? { contractorId: String(req.query.contractorId) } : {}),
+      },
+      _sum: { amount: true },
+    });
+    const bonusBy = new Map(bonuses.map((b) => [b.contractorId, num(b._sum.amount)]));
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const items = summary.items.map((i) => {
+      const bonus = round2(bonusBy.get(i.contractorId) ?? 0);
+      return { ...i, bonus, totalWithBonus: round2(i.total + bonus) };
+    });
+    // montador só com bônus no período (sem turno) também aparece
+    for (const [contractorId, amount] of bonusBy) {
+      if (items.some((i) => i.contractorId === contractorId)) continue;
+      const c = await prisma.contractor.findUnique({ where: { id: contractorId }, select: { name: true } });
+      items.push({ contractorId, name: c?.name ?? "—", minutes: 0, hours: 0, days: 0, openShifts: 0, total: 0, bonus: round2(amount), totalWithBonus: round2(amount) });
+    }
+    const bonusTotal = round2(items.reduce((a, i) => a + i.bonus, 0));
+
+    return ok(res, {
+      from,
+      to,
+      items,
+      totals: { ...summary.totals, contractors: items.length, bonus: bonusTotal, totalWithBonus: round2(summary.totals.total + bonusTotal) },
+    });
   })
 );
 
