@@ -15,8 +15,19 @@ import { ValidationError } from "../../utils/ApiError";
 
 const FORTALEZA_TZ = "America/Fortaleza";
 
-/** Dia local de Fortaleza (aaaa-mm-dd) — o vencimento é sempre lido no fuso da loja. */
+/** Dia local de Fortaleza (aaaa-mm-dd). Usado para saber que dia é "hoje" na loja. */
 export const localDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: FORTALEZA_TZ });
+
+/**
+ * Dia do vencimento (aaaa-mm-dd), lido em UTC.
+ *
+ * Vencimento é data de calendário, não instante. O `<input type="date">` manda
+ * "2026-09-14", que vira 2026-09-14T00:00:00Z; lido no fuso de Fortaleza
+ * (UTC-3) isso voltaria para o dia 13 e o documento apareceria vencido um dia
+ * antes da hora — e cairia na semana errada no calendário de vencimentos.
+ * Por isso o vencimento é sempre lido em UTC, e só o "hoje" usa o fuso da loja.
+ */
+export const dueDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "UTC" });
 
 /** Situações que a tela mostra e os filtros aceitam. */
 export const FINANCE_SITUATIONS = ["PENDENTE", "A_VENCER", "VENCIDO", "PARCIAL", "PAGO", "CANCELADO"] as const;
@@ -60,7 +71,7 @@ export function statusAfterPayments(amount: number, paidAmount: number): Finance
 
 /** Dias inteiros entre hoje e o vencimento, no calendário de Fortaleza. Negativo = vencido. */
 export function daysUntilDue(dueDate: Date, now = new Date()): number {
-  const due = Date.parse(`${localDay(dueDate)}T00:00:00Z`);
+  const due = Date.parse(`${dueDay(dueDate)}T00:00:00Z`);
   const today = Date.parse(`${localDay(now)}T00:00:00Z`);
   return Math.round((due - today) / 86_400_000);
 }
@@ -118,7 +129,7 @@ export function weekStart(day: string): string {
 
 /** Chave do balde de vencimento conforme a visão escolhida. */
 export function dueBucket(dueDate: Date, grouping: DueGrouping): string {
-  const day = localDay(dueDate);
+  const day = dueDay(dueDate);
   if (grouping === "day") return day;
   if (grouping === "month") return day.slice(0, 7);
   return weekStart(day);

@@ -17,6 +17,7 @@ import {
   assertPaymentAmount,
   daysUntilDue,
   dueBucket,
+  dueDay,
   financeSituation,
   groupByDue,
   isOpen,
@@ -117,10 +118,37 @@ test("dias até o vencimento contam no calendário de Fortaleza", () => {
   assert.equal(daysUntilDue(dia("2026-09-15"), HOJE), -3, "vencido há 3 dias");
 });
 
-test("vencimento na virada do dia não escorrega de fuso", () => {
-  // 19/09 00:30 UTC ainda é 18/09 em Fortaleza (UTC-3)
-  assert.equal(localDay(new Date("2026-09-19T00:30:00Z")), "2026-09-18");
-  assert.equal(daysUntilDue(new Date("2026-09-19T00:30:00Z"), HOJE), 0, "ainda vence hoje, não amanhã");
+test("o dia do vencimento é a data de calendário, lida em UTC", () => {
+  // o <input type="date"> manda "2026-09-19" e vira meia-noite UTC
+  const digitado = new Date("2026-09-19T00:00:00Z");
+  assert.equal(dueDay(digitado), "2026-09-19", "é o dia que a pessoa escolheu");
+  assert.equal(localDay(digitado), "2026-09-18", "em Fortaleza seria o dia anterior — por isso o vencimento não usa o fuso local");
+});
+
+test("vencimento digitado não aparece vencido um dia antes", () => {
+  // regressão: lendo o vencimento em Fortaleza, 19/09 virava 18/09 e o
+  // documento ficava VENCIDO no dia 19, com um dia de antecedência errada
+  const vence19 = new Date("2026-09-19T00:00:00Z");
+  const dia19 = new Date("2026-09-19T12:00:00Z");
+  assert.equal(daysUntilDue(vence19, dia19), 0, "no dia 19 ele vence hoje");
+  assert.equal(financeSituation(doc(vence19), 3, dia19), "A_VENCER", "vence hoje, não está vencido");
+  assert.equal(financeSituation(doc(vence19), 3, HOJE), "A_VENCER", "no dia 18 ainda falta um dia");
+});
+
+test("o 'hoje' continua sendo o dia da loja, em Fortaleza", () => {
+  // 19/09 00:30 UTC ainda é 18/09 em Fortaleza: para a loja o dia não virou
+  const madrugada = new Date("2026-09-19T00:30:00Z");
+  assert.equal(localDay(madrugada), "2026-09-18");
+  const vence18 = new Date("2026-09-18T00:00:00Z");
+  assert.equal(daysUntilDue(vence18, madrugada), 0, "às 21:30 de Fortaleza, o que vence hoje ainda não venceu");
+});
+
+test("vencimento cai na semana certa, inclusive gravado com hora", () => {
+  // regressão do calendário: 14/09 (segunda) caía na semana de 07/09
+  const comHora = new Date("2026-09-14T01:56:34Z");
+  assert.equal(dueBucket(comHora, "week"), "2026-09-14", "é a própria segunda, não a semana anterior");
+  assert.equal(dueBucket(new Date("2026-09-14T00:00:00Z"), "week"), "2026-09-14");
+  assert.equal(dueBucket(new Date("2026-09-13T23:00:00Z"), "week"), "2026-09-07", "domingo fecha a semana anterior");
 });
 
 const doc = (dueDate: Date | null, status: FinanceStatus = FinanceStatus.PENDENTE, alertDays: number | null = null) => ({ status, dueDate, alertDays });
