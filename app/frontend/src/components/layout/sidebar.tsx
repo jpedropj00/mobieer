@@ -108,6 +108,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" },
       { label: "Montadores externos", to: "/montadores", icon: HardHat, permission: "hr.read" },
+      { label: "Solicitação de peças", to: "/solicitacao-pecas", icon: Package, permission: "parts.read" },
     ],
   },
   {

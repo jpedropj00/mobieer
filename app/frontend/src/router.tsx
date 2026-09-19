@@ -36,6 +36,7 @@ const ChatPage = lazy(() => import("@/pages/chat").then((m) => ({ default: m.Cha
 const ContractorAreaPage = lazy(() => import("@/pages/contractor-area").then((m) => ({ default: m.ContractorAreaPage })));
 const StorePipelinePage = lazy(() => import("@/pages/store-pipeline").then((m) => ({ default: m.StorePipelinePage })));
 const StoreDashboardPage = lazy(() => import("@/pages/store-dashboard").then((m) => ({ default: m.StoreDashboardPage })));
+const PartsPage = lazy(() => import("@/pages/parts").then((m) => ({ default: m.PartsPage })));
 const ContractorsPage = lazy(() => import("@/pages/contractors").then((m) => ({ default: m.ContractorsPage })));
 const ProductionPage = lazy(() => import("@/pages/production").then((m) => ({ default: m.ProductionPage })));
 const FactoryBoardPage = lazy(() => import("@/pages/production-items").then((m) => ({ default: m.FactoryBoardPage })));
@@ -111,6 +112,7 @@ export const router = createBrowserRouter([
           { path: "/clientes-projetos/:projectId", element: <PermissionGate permission="organization.read"><ProjectDetailPage /></PermissionGate> },
           { path: "/medicoes", element: <PermissionGate permission="organization.read"><MeasurementsPage /></PermissionGate> },
           { path: "/montadores", element: <PermissionGate permission="hr.read"><ContractorsPage /></PermissionGate> },
+          { path: "/solicitacao-pecas", element: <PermissionGate permission="parts.read"><PartsPage /></PermissionGate> },
           { path: "/producao", element: <PermissionGate permission="organization.read"><ProductionPage /></PermissionGate> },
           { path: "/producao/fabrica", element: <PermissionGate permission="organization.read"><FactoryBoardPage /></PermissionGate> },
           { path: "/modelos", element: <PermissionGate permission="documents.read"><TemplatesPage /></PermissionGate> },

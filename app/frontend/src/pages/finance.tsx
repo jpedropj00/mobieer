@@ -4,6 +4,7 @@ import { Area, ComposedChart, Bar, BarChart, CartesianGrid, Legend, Line, Respon
 import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIcon, Layers, Loader2, Plus, Target, Trash2, Upload, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { FinanceDocuments } from "@/components/finance-documents";
 import { KpiCard } from "@/components/kpi-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -277,6 +278,7 @@ export function FinancePage() {
       <Tabs defaultValue="resumo">
         <TabsList className="flex-wrap">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
+          <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="lancamentos">Lançamentos ({rows.length})</TabsTrigger>
           <TabsTrigger value="cartoes">Cartões ({cards.data?.data.length ?? 0})</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
@@ -384,6 +386,10 @@ export function FinancePage() {
         </TabsContent>
 
         {/* ---- Lançamentos ---- */}
+        <TabsContent value="documentos">
+          <FinanceDocuments />
+        </TabsContent>
+
         <TabsContent value="lancamentos" className="space-y-4">
           <div className="flex flex-wrap gap-3">
             <Select value={filters.type || "ALL"} onValueChange={(v) => setFilters({ ...filters, type: v === "ALL" ? "" : v })}>
