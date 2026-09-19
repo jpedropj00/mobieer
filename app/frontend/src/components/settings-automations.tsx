@@ -31,6 +31,7 @@ type WhatsAppStatus = {
   configured: boolean;
   number: { displayPhoneNumber: string; verifiedName: string; qualityRating: string | null; verified: boolean; isTestNumber: boolean } | null;
   templates: WhatsAppTemplate[];
+  token: { valid: boolean; expiresAt: string | null; expired: boolean; daysLeft: number | null };
   webhook: { verifyTokenSet: boolean; appSecretSet: boolean; url: string };
   warnings: string[];
   error?: string;
@@ -279,15 +280,20 @@ function WhatsAppStatusCard({ status, loading }: { status?: WhatsAppStatus; load
   }
 
   const approved = status.templates.filter((t) => t.status === "APPROVED");
+  const tokenBad = status.token.expired || !status.token.valid;
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
           <span>Conta do WhatsApp</span>
-          {status.number && (
-            <Badge variant={status.number.isTestNumber ? "warning" : "success"}>
-              {status.number.isTestNumber ? "número de teste" : "conectado"}
-            </Badge>
+          {tokenBad ? (
+            <Badge variant="danger">{status.token.expired ? "token expirado" : "token inválido"}</Badge>
+          ) : (
+            status.number && (
+              <Badge variant={status.number.isTestNumber ? "warning" : "success"}>
+                {status.number.isTestNumber ? "número de teste" : "conectado"}
+              </Badge>
+            )
           )}
         </CardTitle>
       </CardHeader>
@@ -306,12 +312,22 @@ function WhatsAppStatusCard({ status, loading }: { status?: WhatsAppStatus; load
           Templates aprovados: {approved.length === 0 ? "nenhum" : approved.map((t) => `${t.name} (${t.language})`).join(", ")}
         </p>
         <p className="text-xs text-muted-foreground">
+          Token de acesso:{" "}
+          {status.token.expiresAt
+            ? `temporário, vence em ${new Date(status.token.expiresAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
+            : status.token.valid
+              ? "permanente (System User)"
+              : "revogado na Meta"}
+        </p>
+        <p className="text-xs text-muted-foreground">
           Webhook de respostas: <span className="font-mono">{status.webhook.url}</span> ·{" "}
           {status.webhook.verifyTokenSet ? "token de verificação definido" : "sem token de verificação"} ·{" "}
           {status.webhook.appSecretSet ? "assinatura conferida" : "sem App Secret"}
         </p>
         {status.warnings.map((w) => (
-          <p key={w} className="rounded-md bg-warning/10 p-2 text-xs">{w}</p>
+          <p key={w} className={`rounded-md p-2 text-xs ${tokenBad && /token/i.test(w) ? "bg-destructive/10 font-medium" : "bg-warning/10"}`}>
+            {w}
+          </p>
         ))}
       </CardContent>
     </Card>
