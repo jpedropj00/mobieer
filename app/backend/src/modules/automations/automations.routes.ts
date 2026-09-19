@@ -12,6 +12,7 @@ import { ValidationError } from "../../utils/ApiError";
 import { enumQuery, intQuery } from "../../utils/query";
 import { ok } from "../../utils/response";
 import { renderTemplate, templateKeys } from "../../utils/template";
+import { whatsappStatus } from "../../lib/whatsapp-status";
 
 /** Configuração das mensagens automáticas: /api/automations */
 const router = Router();
@@ -44,6 +45,13 @@ router.get(
       automations: list.map((a) => ({ ...a, defaultBody: AUTOMATION_DEFAULTS[a.event].body, preview: renderTemplate(a.body, EXAMPLES).text })),
     });
   })
+);
+
+// GET /api/automations/whatsapp/status -> numero conectado, templates e avisos
+router.get(
+  "/whatsapp/status",
+  requirePermission("settings.manage"),
+  asyncHandler(async (_req, res) => ok(res, await whatsappStatus()))
 );
 
 // PUT /api/automations/:event

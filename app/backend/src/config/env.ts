@@ -33,6 +33,9 @@ export const env = {
   port: Number(process.env.PORT || 3333),
   databaseUrl: process.env.DATABASE_URL || "",
   appUrl: (process.env.APP_URL || frontendUrls[0] || "http://localhost:5173").replace(/\/$/, ""),
+  // endereço público da API (o backend fica em outro domínio no Vercel).
+  // Usado em links que apontam para o próprio backend, como o webhook do WhatsApp.
+  apiUrl: (process.env.API_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") || `http://localhost:${process.env.PORT || 3333}`).replace(/\/$/, ""),
   frontendUrls,
 
   jwtSecret: resolvedJwtSecret,
@@ -70,8 +73,10 @@ export const env = {
     graphVersion: process.env.WHATSAPP_GRAPH_VERSION || "v21.0",
     // idioma padrão dos templates aprovados na Meta
     templateLang: process.env.WHATSAPP_TEMPLATE_LANG || "pt_BR",
+    // id da conta do WhatsApp Business (WABA) - usado para listar os templates aprovados
+    accountId: (process.env.WHATSAPP_ACCOUNT_ID || process.env.WHATSAPP_PHONE_ACCOUNT_ID || "").trim(),
     // webhook de mensagens recebidas (confirmação da assistência pelo WhatsApp)
-    webhookVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "",
+    webhookVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_MY_TOKEN || "",
     appSecret: process.env.WHATSAPP_APP_SECRET || "",
   },
 
