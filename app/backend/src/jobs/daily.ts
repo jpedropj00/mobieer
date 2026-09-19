@@ -13,6 +13,7 @@ import { runHolidayNotices } from "../modules/hr/holidays.service";
 import { runVacationAlerts } from "../modules/hr/hr.service";
 import { runMeasurementDeadlineAlerts } from "../modules/measurements/measurements.service";
 import { runProductionDeliveryAlerts } from "../modules/production/production.service";
+import { runFinanceDueAlerts } from "../modules/finance/alerts.service";
 
 const DAY_MS = 86400000;
 
@@ -51,6 +52,7 @@ export const DAILY_JOBS: { name: string; run: () => Promise<unknown> }[] = [
   { name: "feriados", run: () => runHolidayNotices() },
   { name: "assistencia-lembretes", run: () => runAssistanceReminders() },
   { name: "pos-venda", run: () => runPostSaleFollowups() },
+  { name: "financeiro-vencimentos", run: () => runFinanceDueAlerts() },
 ];
 
 export async function runDailyJobs() {
