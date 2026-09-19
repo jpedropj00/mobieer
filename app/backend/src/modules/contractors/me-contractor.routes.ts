@@ -9,7 +9,11 @@ import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
-import { ForbiddenError, InvalidStateError, ValidationError } from "../../utils/ApiError";
+import { ForbiddenError, InvalidStateError, NotFoundError, ValidationError } from "../../utils/ApiError";
+import { storage } from "../../lib/storage";
+import { dateQuery } from "../../utils/query";
+import { pipeToResponse } from "../../utils/stream";
+import { STATUS_LABEL as PART_STATUS_LABEL } from "../parts/parts.service";
 import { ok } from "../../utils/response";
 import { localDay, localPeriod, shiftMinutes } from "./contractors.service";
 import { currentTarget, finishTask, pauseTask, serializeTask, startTask, taskInclude } from "./installation.service";
@@ -227,6 +231,146 @@ router.get(
       bonusPending: bonuses.filter((b) => b.status === "APPROVED").reduce((a, b) => a + num(b.amount), 0),
       bonusPaid: bonuses.filter((b) => b.status === "PAID").reduce((a, b) => a + num(b.amount), 0),
     });
+  })
+);
+
+// ===========================================================================
+// Fase 7: solicitação de peças, documentos, agenda e notificações do montador
+// ===========================================================================
+
+/**
+ * Tudo aqui é filtrado pelo cadastro do montador logado. Um montador nunca
+ * enxerga solicitação, documento ou agenda de outro — e um montador desativado
+ * nem passa do `me()`, que barra logo no começo.
+ */
+
+// GET /api/me/contractor/part-requests — as próprias solicitações
+router.get(
+  "/part-requests",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const rows = await prisma.partRequest.findMany({
+      where: {
+        organizationId: req.user!.organizationId,
+        OR: [{ contractorId: c.id }, { createdById: req.user!.id }],
+        ...(req.query.open === "true" ? { status: { notIn: ["CONCLUIDA", "RECUSADA", "CANCELADA"] } } : {}),
+      },
+      select: {
+        id: true, number: true, title: true, status: true, priority: true,
+        roomLabel: true, neededAt: true, refusalReason: true, createdAt: true,
+        project: { select: { id: true, code: true, name: true } },
+        _count: { select: { items: true, photos: true } },
+      },
+      orderBy: [{ neededAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+      take: 100,
+    });
+    return ok(
+      res,
+      rows.map((r) => ({
+        ...r,
+        statusLabel: PART_STATUS_LABEL[r.status],
+        itemCount: r._count.items,
+        photoCount: r._count.photos,
+      }))
+    );
+  })
+);
+
+// GET /api/me/contractor/documents — contrato e documentos pessoais
+router.get(
+  "/documents",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const docs = await prisma.contractorDocument.findMany({
+      where: { contractorId: c.id },
+      select: { id: true, kind: true, title: true, fileName: true, mimeType: true, size: true, expiresAt: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, docs);
+  })
+);
+
+// GET /api/me/contractor/documents/:id/file
+router.get(
+  "/documents/:id/file",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const doc = await prisma.contractorDocument.findFirst({ where: { id: req.params.id, contractorId: c.id } });
+    if (!doc) throw new NotFoundError("Documento não encontrado");
+    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    if (signed) return res.redirect(signed);
+    const stream = await storage.getStream(doc.storageKey);
+    res.setHeader("Content-Type", doc.mimeType ?? "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.fileName)}"`);
+    return pipeToResponse(stream, res);
+  })
+);
+
+// GET /api/me/contractor/agenda?from=&to= — cômodos e visitas do período
+router.get(
+  "/agenda",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const from = dateQuery(req.query.from, "data inicial") ?? new Date();
+    const to = dateQuery(req.query.to, "data final") ?? new Date(from.getTime() + 30 * 86400000);
+
+    const [tarefas, turnos, solicitacoes] = await Promise.all([
+      prisma.installationTask.findMany({
+        where: { contractorId: c.id, status: { in: ["PENDING", "IN_PROGRESS", "PAUSED"] } },
+        select: {
+          id: true, roomType: true, roomLabel: true, status: true, startedAt: true,
+          project: { select: { id: true, code: true, name: true, dueAt: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.contractorShift.findMany({
+        where: { contractorId: c.id, checkInAt: { gte: from, lte: to } },
+        select: { id: true, checkInAt: true, checkOutAt: true, minutes: true, project: { select: { id: true, code: true, name: true } } },
+        orderBy: { checkInAt: "asc" },
+      }),
+      prisma.partRequest.findMany({
+        where: { contractorId: c.id, neededAt: { gte: from, lte: to }, status: { notIn: ["CONCLUIDA", "RECUSADA", "CANCELADA"] } },
+        select: { id: true, number: true, title: true, neededAt: true, status: true },
+        orderBy: { neededAt: "asc" },
+      }),
+    ]);
+
+    return ok(res, {
+      periodo: { from, to },
+      comodos: tarefas.map((t) => ({ ...t, roomLabel: t.roomLabel ?? ROOM_LABEL[t.roomType] })),
+      turnos,
+      solicitacoes: solicitacoes.map((s) => ({ ...s, statusLabel: PART_STATUS_LABEL[s.status] })),
+    });
+  })
+);
+
+// GET /api/me/contractor/notifications — as próprias notificações
+router.get(
+  "/notifications",
+  asyncHandler(async (req, res) => {
+    await me(req);
+    const rows = await prisma.notification.findMany({
+      where: { userId: req.user!.id },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      select: { id: true, type: true, title: true, message: true, read: true, link: true, createdAt: true },
+    });
+    const unread = await prisma.notification.count({ where: { userId: req.user!.id, read: false } });
+    return ok(res, { items: rows, unreadCount: unread });
+  })
+);
+
+// PATCH /api/me/contractor/notifications/:id/read
+router.patch(
+  "/notifications/:id/read",
+  asyncHandler(async (req, res) => {
+    await me(req);
+    const updated = await prisma.notification.updateMany({
+      where: { id: req.params.id, userId: req.user!.id },
+      data: { read: true },
+    });
+    if (!updated.count) throw new NotFoundError("Notificação não encontrada");
+    return ok(res, { id: req.params.id, read: true });
   })
 );
 

@@ -43,6 +43,7 @@ import assistanceRoutes from "./modules/assistance/assistance.routes";
 import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
 import cronRoutes from "./modules/cron/cron.routes";
 import storeRoutes from "./modules/store/store.routes";
+import partsRoutes from "./modules/parts/parts.routes";
 import chatRoutes from "./modules/chat/chat.routes";
 import installationRoutes from "./modules/contractors/installation.routes";
 import meContractorRoutes from "./modules/contractors/me-contractor.routes";
@@ -106,6 +107,7 @@ export function createApp() {
   app.use("/api/automations", automationsRoutes);
   app.use("/api/store", storeRoutes);
   app.use("/api/chat", chatRoutes);
+  app.use("/api/parts", partsRoutes);
   app.use("/api/installations", installationRoutes);
   app.use("/api/me/contractor", meContractorRoutes);
   app.use("/api/integrations", whatsappWebhookRoutes);
