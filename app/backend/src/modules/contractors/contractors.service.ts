@@ -1,5 +1,5 @@
 /**
- * Regras de cálculo dos montadores terceirizados (sem acesso a banco, para
+ * Regras de cálculo dos montadores externos (sem acesso a banco, para
  * poder testar isoladamente).
  */
 import { InvalidQueryError, ValidationError } from "../../utils/ApiError";

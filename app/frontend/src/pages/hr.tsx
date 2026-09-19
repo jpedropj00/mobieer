@@ -604,7 +604,7 @@ export function HrPage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Contrato assinado (colaborador ou terceirizado), rescisão, comprovantes de férias, termo de responsabilidade de ferramentas e documentos gerais do RH (regulamento interno, avisos).
+            Contrato assinado (colaborador ou montador externo), rescisão, comprovantes de férias, termo de responsabilidade de ferramentas e documentos gerais do RH (regulamento interno, avisos).
           </p>
 
           {employeeDocs.isLoading ? (

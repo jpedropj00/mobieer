@@ -1,5 +1,5 @@
 /**
- * Montadores terceirizados: cadastro, check-in/check-out na obra, contagem de
+ * Montadores externos: cadastro, check-in/check-out na obra, contagem de
  * horas e de diárias.
  *
  * A diária é congelada no turno (`ContractorShift.dailyRate`) no momento do

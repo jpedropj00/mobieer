@@ -31,7 +31,7 @@ type ProjectRow = { id: string; name: string };
 const EMPTY_FORM = { name: "", document: "", phone: "", address: "", specialty: "", dailyRate: "", notes: "" };
 
 /**
- * Montadores terceirizados: cadastro, check-in/check-out na obra e o
+ * Montadores externos: cadastro, check-in/check-out na obra e o
  * fechamento por horas e diárias.
  */
 export function ContractorsPage() {
@@ -151,7 +151,7 @@ export function ContractorsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Montadores terceirizados"
+        title="Montadores externos"
         description="Check-in e check-out na obra, contagem de horas e fechamento por diária."
       >
         {canManage && (
@@ -199,7 +199,7 @@ export function ContractorsPage() {
 
         <TabsContent value="equipe" className="space-y-4 pt-4">
           {list.length === 0 ? (
-            <EmptyState title="Nenhum montador" description="Cadastre os terceirizados para controlar horas e diárias." />
+            <EmptyState title="Nenhum montador" description="Cadastre os montadores externos para controlar horas e diárias." />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {list.map((c) => (
@@ -380,7 +380,7 @@ export function ContractorsPage() {
       <Dialog open={dialog === "new" || dialog === "edit"} onOpenChange={(v) => !v && setDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? `Editar ${editing.name}` : "Novo montador terceirizado"}</DialogTitle>
+            <DialogTitle>{editing ? `Editar ${editing.name}` : "Novo montador externo"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">

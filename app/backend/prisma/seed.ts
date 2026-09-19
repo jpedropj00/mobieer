@@ -270,7 +270,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
   },
   {
     name: "MONTADOR",
-    label: "Montador terceirizado",
+    label: "Montador externo",
     description: "Acesso do montador: registra ponto e cômodos, vê a própria produtividade e usa o chat",
     perms: ["contractors.self", "chat.use", "notifications.read"],
   },

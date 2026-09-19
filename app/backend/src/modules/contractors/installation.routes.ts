@@ -72,7 +72,7 @@ router.post(
           name: contractor.name,
           email: input.email,
           password: hash,
-          position: contractor.specialty ?? "Montador terceirizado",
+          position: contractor.specialty ?? "Montador externo",
           sector: "Montagem",
           roleId: role.id,
           organizationId: req.user!.organizationId,
