@@ -1,15 +1,9 @@
 const API_BASE = "/api";
 
-export class ApiError extends Error {
-  status: number;
-  details?: unknown;
+import { ApiError, errorFromResponse, readJson, safeFetch } from "@/lib/errors";
 
-  constructor(status: number, message: string, details?: unknown) {
-    super(message);
-    this.status = status;
-    this.details = details;
-  }
-}
+// Reexportado para quem já importa daqui.
+export { ApiError };
 
 let accessToken: string | null = localStorage.getItem("mobieer_token");
 
@@ -21,6 +15,15 @@ export function setToken(token: string | null) {
 
 export function getToken() {
   return accessToken;
+}
+
+/** Resposta de erro -> ApiError; 401 com sessão ativa derruba o login. */
+async function failure(response: Response, payload?: unknown) {
+  if (response.status === 401 && accessToken) {
+    setToken(null);
+    window.dispatchEvent(new Event("mobieer:unauthorized"));
+  }
+  return errorFromResponse(response, payload);
 }
 
 type RequestOptions = {
@@ -43,7 +46,7 @@ export async function api<T = unknown>(path: string, options: RequestOptions = {
     if (qs) url += `?${qs}`;
   }
 
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -53,21 +56,8 @@ export async function api<T = unknown>(path: string, options: RequestOptions = {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
-  const contentType = response.headers.get("content-type") ?? "";
-  let payload: unknown = null;
-  if (contentType.includes("application/json")) {
-    payload = await response.json();
-  }
-
-  if (!response.ok) {
-    if (response.status === 401 && accessToken) {
-      setToken(null);
-      window.dispatchEvent(new Event("mobieer:unauthorized"));
-    }
-    const message = (payload as { message?: string })?.message ?? `Erro ${response.status}`;
-    throw new ApiError(response.status, message, (payload as { details?: unknown })?.details);
-  }
-
+  const payload = await readJson(response);
+  if (!response.ok) throw await failure(response, payload);
   return payload as T;
 }
 
@@ -84,37 +74,31 @@ export async function apiUpload<T>(path: string, file: File): Promise<T> {
 }
 
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await safeFetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
     body: form,
   });
-  const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-  if (!response.ok) {
-    if (response.status === 401 && accessToken) {
-      setToken(null);
-      window.dispatchEvent(new Event("mobieer:unauthorized"));
-    }
-    throw new ApiError(response.status, payload?.message ?? `Erro ${response.status}`);
-  }
+  const payload = await readJson(response);
+  if (!response.ok) throw await failure(response, payload);
   return payload as T;
 }
 
 /** Busca um arquivo autenticado e devolve um object URL (lembre de revogar). */
 export async function apiObjectUrl(path: string): Promise<string> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await safeFetch(`${API_BASE}${path}`, {
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
-  if (!response.ok) throw new ApiError(response.status, `Erro ${response.status}`);
+  if (!response.ok) throw await failure(response);
   return URL.createObjectURL(await response.blob());
 }
 
 /** Baixa um arquivo autenticado (o backend responde com redirect assinado ou o arquivo). */
 export async function apiDownload(path: string, fileName: string) {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await safeFetch(`${API_BASE}${path}`, {
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
   });
-  if (!response.ok) throw new ApiError(response.status, `Erro ${response.status}`);
+  if (!response.ok) throw await failure(response);
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

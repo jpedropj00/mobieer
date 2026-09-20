@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { env } from "../../config/env";
-import { authenticateClient, signPortalToken } from "../../middlewares/portalAuth";
+import { authenticateClient, authenticatePortalAccount, signPortalToken } from "../../middlewares/portalAuth";
 import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError, UnauthorizedError } from "../../utils/ApiError";
@@ -20,22 +20,38 @@ import {
   orderInclude as productionInclude,
   serializeOrder as serializeProductionOrder,
 } from "../production/production.service";
+import { pipeToResponse } from "../../utils/stream";
+import {
+  ASSISTANCE_PROBLEM_TYPES,
+  MAX_ASSISTANCE_PHOTOS_ON_OPEN,
+  MIN_ASSISTANCE_DESCRIPTION,
+  MIN_ASSISTANCE_PHOTOS,
+  validateAssistanceRequest,
+  confirmVisit,
+  onAssistanceOpenedByClient,
+  requestReschedule,
+  scheduleSelect,
+  scheduleVisit,
+  serializeSchedule,
+} from "../assistance/assistance.service";
+import { deliveryEstimateFor } from "../production/leadtime.service";
+import { briefingAnswersSchema, briefingForLead, saveBriefing } from "../briefing/briefing.service";
+import { isValidCpf, onlyDigits } from "../../utils/document";
+import { rateLimit } from "../../utils/rate-limit";
+import { ConflictError, ForbiddenError } from "../../utils/ApiError";
 
 const router = Router();
 
 const passwordSchema = z.string().min(8, "A senha deve ter ao menos 8 caracteres").max(100);
 
-async function companyNameForClient(clientId: string) {
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
-    select: { organization: { select: { name: true, enterprise: { select: { tradeName: true, legalName: true } } } } },
-  });
-  return (
-    client?.organization.enterprise.tradeName ||
-    client?.organization.enterprise.legalName ||
-    client?.organization.name ||
-    "MOBIEER"
-  );
+async function companyNameForAccount(account: { clientId: string | null; leadId: string | null }) {
+  const orgSelect = { select: { name: true, enterprise: { select: { tradeName: true, legalName: true } } } } as const;
+  const org = account.clientId
+    ? (await prisma.client.findUnique({ where: { id: account.clientId }, select: { organization: orgSelect } }))?.organization
+    : account.leadId
+      ? (await prisma.commercialLead.findUnique({ where: { id: account.leadId }, select: { organization: orgSelect } }))?.organization
+      : null;
+  return org?.enterprise.tradeName || org?.enterprise.legalName || org?.name || "MOBIEER";
 }
 
 function portalLink(pathname: string, query: Record<string, string>) {
@@ -49,6 +65,7 @@ function portalLink(pathname: string, query: Record<string, string>) {
 
 router.post(
   "/auth/login",
+  rateLimit({ name: "portal-login", windowMs: 15 * 60 * 1000, max: 20 }),
   asyncHandler(async (req, res) => {
     const { email, password } = z
       .object({ email: z.string().email(), password: z.string().min(1) })
@@ -62,17 +79,17 @@ router.post(
     if (!account || !account.passwordHash || account.status !== "ACTIVE") {
       throw new UnauthorizedError("Credenciais inválidas");
     }
-    if (account.client.status !== "ACTIVE") throw new UnauthorizedError("Cadastro do cliente inativo");
-
     const valid = await bcrypt.compare(password, account.passwordHash);
     if (!valid) throw new UnauthorizedError("Credenciais inválidas");
+    if (account.client && account.client.status !== "ACTIVE") throw new UnauthorizedError("Cadastro do cliente inativo");
 
     await prisma.clientAccount.update({ where: { id: account.id }, data: { lastLogin: new Date() } });
 
     return ok(res, {
-      token: signPortalToken(account.id, account.clientId),
+      token: signPortalToken(account.id),
+      level: account.accessLevel,
       account: { id: account.id, name: account.name, email: account.email },
-      client: { id: account.client.id, name: account.client.name },
+      client: account.client ? { id: account.client.id, name: account.client.name } : null,
     });
   })
 );
@@ -104,7 +121,8 @@ router.post(
       data: { passwordHash, status: "ACTIVE", inviteToken: null, inviteExpiry: null, lastLogin: new Date() },
     });
     return ok(res, {
-      token: signPortalToken(updated.id, updated.clientId),
+      token: signPortalToken(updated.id),
+      level: updated.accessLevel,
       account: { id: updated.id, name: updated.name, email: updated.email },
     });
   })
@@ -121,7 +139,7 @@ router.post(
         where: { id: account.id },
         data: { resetToken, resetTokenExpiry: new Date(Date.now() + 60 * 60 * 1000) },
       });
-      const companyName = await companyNameForClient(account.clientId);
+      const companyName = await companyNameForAccount(account);
       const mail = renderResetEmail({
         name: account.name,
         companyName,
@@ -150,8 +168,118 @@ router.post(
   })
 );
 
+// POST /api/portal/auth/signup { name, email, cpf, password }
+// Cadastro curto pelo site: vira lead com acesso só ao briefing.
+router.post(
+  "/auth/signup",
+  rateLimit({ name: "portal-signup", windowMs: 60 * 60 * 1000, max: 10 }),
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({
+        name: z.string().trim().min(3, "Informe o nome completo").max(200),
+        email: z.string().trim().toLowerCase().email("E-mail inválido"),
+        cpf: z.string().trim().min(11).max(20),
+        password: passwordSchema,
+        // campo invisível no formulário: robô preenche, pessoa não
+        website: z.string().max(0).optional(),
+      })
+      .parse(req.body);
+
+    const cpf = onlyDigits(input.cpf);
+    if (!isValidCpf(cpf)) throw new BadRequestError("CPF inválido", { field: "cpf" }, "VALIDATION_ERROR");
+
+    const [emailTaken, cpfTaken] = await Promise.all([
+      prisma.clientAccount.findUnique({ where: { email: input.email }, select: { id: true } }),
+      prisma.clientAccount.findUnique({ where: { document: cpf }, select: { id: true } }),
+    ]);
+    if (emailTaken) throw new ConflictError("Já existe um acesso com este e-mail. Entre com sua senha ou use \"Esqueci a senha\".", { field: "email" }, "DUPLICATE");
+    if (cpfTaken) throw new ConflictError("Já existe um acesso com este CPF. Entre com seu e-mail e senha.", { field: "cpf" }, "DUPLICATE");
+
+    const org = await prisma.organization.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+    if (!org) throw new BadRequestError("Organização não configurada");
+
+    const passwordHash = await bcrypt.hash(input.password, 12);
+    const account = await prisma.$transaction(async (tx) => {
+      const lead = await tx.commercialLead.create({
+        data: { organizationId: org.id, name: input.name, email: input.email, document: cpf, source: "Site", status: "NEW" },
+      });
+      return tx.clientAccount.create({
+        data: {
+          leadId: lead.id,
+          accessLevel: "BRIEFING",
+          document: cpf,
+          name: input.name,
+          email: input.email,
+          passwordHash,
+          status: "ACTIVE",
+          lastLogin: new Date(),
+        },
+      });
+    });
+    await prisma.auditLog.create({
+      data: { action: "PORTAL_SIGNUP", entity: "ClientAccount", entityId: account.id, details: { leadId: account.leadId } },
+    });
+
+    return ok(
+      res,
+      { token: signPortalToken(account.id), level: account.accessLevel, account: { id: account.id, name: account.name, email: account.email }, client: null },
+      "Cadastro criado. Agora responda o briefing."
+    );
+  })
+);
+
 // ============================================================
-// DADOS DO CLIENTE (token do portal)
+// SESSÃO E BRIEFING (qualquer conta ativa, inclusive só-briefing)
+// ============================================================
+
+// GET /api/portal/session -> quem é e o que pode acessar
+router.get(
+  "/session",
+  authenticatePortalAccount,
+  asyncHandler(async (req, res) => {
+    const a = req.portalAccount!;
+    const lead = a.leadId
+      ? await prisma.commercialLead.findUnique({ where: { id: a.leadId }, select: { status: true, briefing: { select: { submittedAt: true } } } })
+      : null;
+    return ok(res, {
+      account: { id: a.accountId, name: a.name, email: a.email },
+      level: a.level,
+      hasClient: Boolean(a.clientId),
+      briefing: a.leadId ? { submittedAt: lead?.briefing?.submittedAt ?? null, leadStatus: lead?.status ?? null } : null,
+    });
+  })
+);
+
+// GET /api/portal/briefing
+router.get(
+  "/briefing",
+  authenticatePortalAccount,
+  asyncHandler(async (req, res) => {
+    const a = req.portalAccount!;
+    if (!a.leadId) throw new NotFoundError("Não há briefing ligado a este acesso");
+    return ok(res, await briefingForLead(a.leadId));
+  })
+);
+
+// PUT /api/portal/briefing
+router.put(
+  "/briefing",
+  authenticatePortalAccount,
+  asyncHandler(async (req, res) => {
+    const a = req.portalAccount!;
+    if (!a.leadId) throw new ForbiddenError("Não há briefing ligado a este acesso");
+    const input = briefingAnswersSchema.parse(req.body);
+    const { firstTime } = await saveBriefing(a.leadId, input);
+    return ok(
+      res,
+      await briefingForLead(a.leadId),
+      firstTime ? "Briefing enviado! Nossa equipe vai entrar em contato." : "Respostas atualizadas"
+    );
+  })
+);
+
+// ============================================================
+// DADOS DO CLIENTE (cadastro completo)
 // ============================================================
 
 router.use(authenticateClient);
@@ -209,14 +337,14 @@ router.get(
         productionOrder: { select: { stage: true, estimatedDeliveryAt: true, deliveredAt: true } },
         assistances: {
           select: {
-            id: true,
-            number: true,
-            title: true,
-            status: true,
+            ...scheduleSelect,
             priority: true,
             createdAt: true,
             resolvedAt: true,
             origin: true,
+            problemType: true,
+            roomLabel: true,
+            description: true,
             attachments: { select: { id: true, fileName: true, mimeType: true, createdAt: true }, orderBy: { createdAt: "asc" } },
           },
           orderBy: { createdAt: "desc" },
@@ -247,8 +375,19 @@ router.get(
       production: project.productionOrder ?? null,
       feedbackFormUrl: project.feedbackFormUrl || env.clientFeedbackFormUrl || null,
       assistances: project.assistances.map((a) => ({
-        ...a,
+        id: a.id,
+        number: a.number,
+        title: a.title,
+        status: a.status,
+        priority: a.priority,
+        createdAt: a.createdAt,
+        resolvedAt: a.resolvedAt,
+        origin: a.origin,
+        problemType: a.problemType,
+        roomLabel: a.roomLabel,
+        description: a.description,
         attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/portal/assistances/${a.id}/attachments/${att.id}/download` })),
+        schedule: serializeSchedule(a),
       })),
       documents: docs.map((d) => ({
         ...d,
@@ -301,7 +440,7 @@ router.get(
     const stream = await storage.getStream(doc.storageKey);
     res.setHeader("Content-Type", doc.mimeType);
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 
@@ -311,11 +450,10 @@ router.get(
     const items = await prisma.assistanceTicket.findMany({
       where: { clientId: req.portal!.clientId },
       select: {
-        id: true,
-        number: true,
-        title: true,
+        ...scheduleSelect,
         description: true,
-        status: true,
+        problemType: true,
+        roomLabel: true,
         priority: true,
         origin: true,
         createdAt: true,
@@ -328,8 +466,20 @@ router.get(
     return ok(
       res,
       items.map((a) => ({
-        ...a,
+        id: a.id,
+        number: a.number,
+        title: a.title,
+        description: a.description,
+        problemType: a.problemType,
+        roomLabel: a.roomLabel,
+        status: a.status,
+        priority: a.priority,
+        origin: a.origin,
+        createdAt: a.createdAt,
+        resolvedAt: a.resolvedAt,
+        project: a.project,
         attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/portal/assistances/${a.id}/attachments/${att.id}/download` })),
+        schedule: serializeSchedule(a),
       }))
     );
   })
@@ -378,7 +528,7 @@ router.get(
     const stream = await storage.getStream(att.storageKey);
     res.setHeader("Content-Type", att.mimeType);
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(att.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 
@@ -723,54 +873,161 @@ router.get(
       where: { projectId: project.id },
       include: productionInclude,
     });
-    return ok(res, order ? serializeProductionOrder(order) : null);
+    if (!order) return ok(res, null);
+    const deliveryEstimate = await deliveryEstimateFor(order);
+    return ok(res, { ...serializeProductionOrder(order), deliveryEstimate });
   })
 );
 
+// POST /api/portal/assistances  (multipart: problemType, roomLabel, description, projectId?, photos[])
+// Só o cliente abre assistência: com tipo do problema, ambiente, descrição detalhada e fotos.
 router.post(
   "/assistances",
+  uploadPhoto.array("photos", MAX_ASSISTANCE_PHOTOS_ON_OPEN + 1),
   asyncHandler(async (req, res) => {
     const input = z
       .object({
-        title: z.string().trim().min(3).max(255),
-        description: z.string().trim().min(5).max(10000),
-        projectId: z.string().min(1).optional().nullable(),
+        problemType: z.string().trim().max(80).default(""),
+        roomLabel: z.string().trim().max(120).default(""),
+        description: z.string().max(10000).default(""),
+        projectId: z.string().trim().min(1).optional().nullable().or(z.literal("")),
       })
-      .parse(req.body);
+      .parse(req.body ?? {});
+    const photos = (req.files as Express.Multer.File[] | undefined) ?? [];
 
     const client = await prisma.client.findUnique({
       where: { id: req.portal!.clientId },
-      select: { organizationId: true },
+      select: { organizationId: true, _count: { select: { projects: true } } },
     });
     if (!client) throw new BadRequestError("Cliente inválido");
 
-    if (input.projectId) {
-      const project = await prisma.project.findFirst({
-        where: { id: input.projectId, clientId: req.portal!.clientId },
-        select: { id: true },
-      });
+    const projectId = input.projectId || null;
+    const valid = validateAssistanceRequest({
+      problemType: input.problemType,
+      roomLabel: input.roomLabel,
+      description: input.description,
+      photoCount: photos.length,
+      projectId,
+      clientHasProjects: client._count.projects > 0,
+    });
+    if (projectId) {
+      const project = await prisma.project.findFirst({ where: { id: projectId, clientId: req.portal!.clientId }, select: { id: true } });
       if (!project) throw new BadRequestError("Projeto inválido");
     }
 
-    const count = await prisma.assistanceTicket.count({ where: { organizationId: client.organizationId } });
-    const number = `AST-${String(count + 1).padStart(5, "0")}`;
+    // Fotos primeiro; se o registro falhar, elas são apagadas.
+    const stored: { key: string; file: Express.Multer.File }[] = [];
+    try {
+      for (const file of photos) {
+        const key = buildStorageKey(`assistances/${req.portal!.clientId}`, file.originalname);
+        await storage.put(key, file.buffer, file.mimetype);
+        stored.push({ key, file });
+      }
 
-    const ticket = await prisma.assistanceTicket.create({
-      data: {
-        number,
+      // número sequencial; em corrida rara (mesmo número), tenta de novo
+      let ticket: { id: string; number: string; title: string; status: string; createdAt: Date } | null = null;
+      for (let attempt = 0; attempt < 3 && !ticket; attempt++) {
+        const count = await prisma.assistanceTicket.count({ where: { organizationId: client.organizationId } });
+        const number = `AST-${String(count + 1 + attempt).padStart(5, "0")}`;
+        try {
+          ticket = await prisma.assistanceTicket.create({
+            data: {
+              number,
+              organizationId: client.organizationId,
+              clientId: req.portal!.clientId,
+              projectId,
+              title: valid.title,
+              problemType: input.problemType,
+              roomLabel: valid.roomLabel,
+              description: valid.description,
+              status: "OPEN",
+              origin: "CLIENT_PORTAL",
+              openedByClientAccountId: req.portal!.accountId,
+              attachments: {
+                create: stored.map(({ key, file }) => ({
+                  storageKey: key,
+                  fileName: file.originalname,
+                  mimeType: file.mimetype,
+                  sizeBytes: file.size,
+                  uploadedByClientAccountId: req.portal!.accountId,
+                  uploadedByLabel: "Cliente",
+                })),
+              },
+            },
+            select: { id: true, number: true, title: true, status: true, createdAt: true },
+          });
+        } catch (e) {
+          if ((e as { code?: string }).code !== "P2002" || attempt === 2) throw e;
+        }
+      }
+
+      await onAssistanceOpenedByClient({
+        id: ticket!.id,
+        number: ticket!.number,
+        title: ticket!.title,
         organizationId: client.organizationId,
         clientId: req.portal!.clientId,
-        projectId: input.projectId ?? null,
-        title: input.title,
-        description: input.description,
-        status: "OPEN",
-        origin: "CLIENT_PORTAL",
-        openedByClientAccountId: req.portal!.accountId,
-      },
-      select: { id: true, number: true, title: true, status: true, createdAt: true },
-    });
+      });
+      return ok(res, ticket, "Pedido de assistência enviado. A equipe vai te mandar as datas para a visita.");
+    } catch (e) {
+      await Promise.all(stored.map(({ key }) => storage.remove(key).catch(() => undefined)));
+      throw e;
+    }
+  })
+);
 
-    return ok(res, ticket, "Chamado aberto");
+// GET /api/portal/assistances/options -> tipos de problema e limites do formulário
+router.get(
+  "/assistances/options",
+  asyncHandler(async (_req, res) =>
+    ok(res, {
+      problemTypes: ASSISTANCE_PROBLEM_TYPES,
+      minPhotos: MIN_ASSISTANCE_PHOTOS,
+      maxPhotos: MAX_ASSISTANCE_PHOTOS_ON_OPEN,
+      minDescription: MIN_ASSISTANCE_DESCRIPTION,
+    })
+  )
+);
+
+// ---------------- Agendamento da visita de assistência ----------------
+
+// POST /api/portal/assistances/:id/choose  { optionId }
+router.post(
+  "/assistances/:id/choose",
+  asyncHandler(async (req, res) => {
+    const input = z.object({ optionId: z.string().min(1) }).parse(req.body);
+    const t = await scheduleVisit({
+      ticketId: req.params.id,
+      scope: { clientId: req.portal!.clientId },
+      optionId: input.optionId,
+      actor: { kind: "CLIENT" },
+    });
+    return ok(res, serializeSchedule(t), "Data escolhida. Um dia antes enviamos um lembrete para confirmar.");
+  })
+);
+
+async function ownTicket(id: string, clientId: string) {
+  const t = await prisma.assistanceTicket.findFirst({ where: { id, clientId }, select: { id: true } });
+  if (!t) throw new NotFoundError("Chamado não encontrado");
+  return t;
+}
+
+// POST /api/portal/assistances/:id/confirm
+router.post(
+  "/assistances/:id/confirm",
+  asyncHandler(async (req, res) => {
+    const own = await ownTicket(req.params.id, req.portal!.clientId);
+    return ok(res, serializeSchedule(await confirmVisit(own.id, "PORTAL")), "Visita confirmada");
+  })
+);
+
+// POST /api/portal/assistances/:id/reschedule  { reason? }
+router.post(
+  "/assistances/:id/reschedule",
+  asyncHandler(async (req, res) => {
+    const own = await ownTicket(req.params.id, req.portal!.clientId);
+    const input = z.object({ reason: z.string().trim().max(500).optional().nullable() }).parse(req.body ?? {});
+    return ok(res, serializeSchedule(await requestReschedule(own.id, "PORTAL", input.reason ?? null)), "Pedido de nova data enviado à equipe");
   })
 );
 

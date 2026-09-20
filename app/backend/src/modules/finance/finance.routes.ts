@@ -9,11 +9,13 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import taxRoutes from "./tax.routes";
 import extrasRoutes from "./extras.routes";
+import documentsRoutes from "./documents.routes";
 import { DRE_LINE_KEYS, DRE_LINE_LABEL, buildDre } from "./dre.service";
 
 const router = Router();
 router.use(authenticate);
 router.use("/tax", taxRoutes);
+router.use("/documents", documentsRoutes);
 router.use("/", extrasRoutes);
 
 const txSchema = z.object({

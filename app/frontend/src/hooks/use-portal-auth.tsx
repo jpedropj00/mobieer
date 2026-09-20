@@ -3,79 +3,122 @@ import { getPortalToken, portalApi, portalPost, setPortalToken } from "@/service
 
 export type PortalAccount = { id: string; name: string; email: string };
 export type PortalClient = { id: string; name: string };
+/** BRIEFING = cadastro curto pelo site (só o briefing); FULL = portal completo. */
+export type PortalLevel = "BRIEFING" | "FULL";
+
+type Session = {
+  account: PortalAccount;
+  level: PortalLevel;
+  hasClient: boolean;
+  briefing: { submittedAt: string | null; leadStatus: string | null } | null;
+};
+
+type AuthResponse = { data: { token: string; level: PortalLevel; account: PortalAccount; client: PortalClient | null } };
 
 type PortalAuthValue = {
   account: PortalAccount | null;
   client: PortalClient | null;
+  level: PortalLevel | null;
+  briefing: Session["briefing"];
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<PortalLevel>;
+  signup: (input: { name: string; email: string; cpf: string; password: string; website?: string }) => Promise<void>;
   loginWithToken: (token: string, account: PortalAccount) => Promise<void>;
+  /** Recarrega a sessão (ex.: depois de enviar o briefing ou quando o acesso é ampliado). */
+  refresh: () => Promise<void>;
   logout: () => void;
 };
 
 const PortalAuthContext = createContext<PortalAuthValue | null>(null);
 
 export function PortalAuthProvider({ children }: { children: React.ReactNode }) {
-  const [account, setAccount] = useState<PortalAccount | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [client, setClient] = useState<PortalClient | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(getPortalToken()));
 
-  const loadMe = useCallback(async () => {
+  const clear = useCallback(() => {
+    setSession(null);
+    setClient(null);
+  }, []);
+
+  const loadSession = useCallback(async () => {
     if (!getPortalToken()) {
       setIsLoading(false);
       return;
     }
     try {
-      const res = await portalApi<{ data: { account: PortalAccount; client: PortalClient } }>("/me");
-      setAccount(res.data.account);
-      setClient(res.data.client);
+      const res = await portalApi<{ data: Session }>("/session");
+      setSession(res.data);
+      if (res.data.level === "FULL") {
+        const me = await portalApi<{ data: { client: PortalClient } }>("/me");
+        setClient(me.data.client);
+      } else {
+        setClient(null);
+      }
     } catch {
-      setAccount(null);
-      setClient(null);
+      clear();
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [clear]);
 
   useEffect(() => {
-    void loadMe();
-  }, [loadMe]);
+    void loadSession();
+  }, [loadSession]);
 
   useEffect(() => {
-    const onUnauthorized = () => {
-      setAccount(null);
-      setClient(null);
-    };
-    window.addEventListener("mobieer:portal-unauthorized", onUnauthorized);
-    return () => window.removeEventListener("mobieer:portal-unauthorized", onUnauthorized);
-  }, []);
+    window.addEventListener("mobieer:portal-unauthorized", clear);
+    return () => window.removeEventListener("mobieer:portal-unauthorized", clear);
+  }, [clear]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await portalPost<{ data: { token: string; account: PortalAccount; client: PortalClient } }>("/auth/login", {
-      email,
-      password,
-    });
-    setPortalToken(res.data.token);
-    setAccount(res.data.account);
-    setClient(res.data.client);
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await portalPost<AuthResponse>("/auth/login", { email, password });
+      setPortalToken(res.data.token);
+      await loadSession();
+      return res.data.level;
+    },
+    [loadSession]
+  );
 
-  const loginWithToken = useCallback(async (token: string, acc: PortalAccount) => {
-    setPortalToken(token);
-    setAccount(acc);
-    await loadMe();
-  }, [loadMe]);
+  const signup = useCallback(
+    async (input: { name: string; email: string; cpf: string; password: string; website?: string }) => {
+      const res = await portalPost<AuthResponse>("/auth/signup", input);
+      setPortalToken(res.data.token);
+      await loadSession();
+    },
+    [loadSession]
+  );
+
+  const loginWithToken = useCallback(
+    async (token: string) => {
+      setPortalToken(token);
+      await loadSession();
+    },
+    [loadSession]
+  );
 
   const logout = useCallback(() => {
     setPortalToken(null);
-    setAccount(null);
-    setClient(null);
-  }, []);
+    clear();
+  }, [clear]);
 
   const value = useMemo<PortalAuthValue>(
-    () => ({ account, client, isLoading, isAuthenticated: Boolean(account), login, loginWithToken, logout }),
-    [account, client, isLoading, login, loginWithToken, logout]
+    () => ({
+      account: session?.account ?? null,
+      client,
+      level: session?.level ?? null,
+      briefing: session?.briefing ?? null,
+      isLoading,
+      isAuthenticated: Boolean(session),
+      login,
+      signup,
+      loginWithToken,
+      refresh: loadSession,
+      logout,
+    }),
+    [session, client, isLoading, login, signup, loginWithToken, loadSession, logout]
   );
 
   return <PortalAuthContext.Provider value={value}>{children}</PortalAuthContext.Provider>;

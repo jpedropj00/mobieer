@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { FiscalInvoiceStatus, Prisma } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
@@ -11,6 +11,8 @@ import { env } from "../../config/env";
 import { NfeError, NfeNotConfiguredError, cancelInvoice, getInvoice, issueInvoice, nfeEnabled } from "../../lib/nfe";
 import { storage } from "../../lib/storage";
 import { buildInvoiceRef, fiscalInclude, serializeInvoice } from "./fiscal.service";
+import { pipeToResponse } from "../../utils/stream";
+import { enumQuery } from "../../utils/query";
 
 const router = Router();
 router.use(authenticate);
@@ -44,7 +46,7 @@ router.get(
     const rows = await prisma.fiscalInvoice.findMany({
       where: {
         organizationId: req.user!.organizationId,
-        ...(req.query.status ? { status: req.query.status as never } : {}),
+        ...(req.query.status ? { status: enumQuery(req.query.status, FiscalInvoiceStatus, "status") } : {}),
         ...(req.query.projectId ? { projectId: String(req.query.projectId) } : {}),
       },
       include: fiscalInclude,
@@ -77,7 +79,7 @@ router.get(
     const stream = await storage.getStream(key);
     res.setHeader("Content-Type", kind === "xml" ? "application/xml" : "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${inv.ref}.${kind}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 

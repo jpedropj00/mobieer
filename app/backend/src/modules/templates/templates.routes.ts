@@ -16,6 +16,7 @@ import {
   renderTemplate,
   contractPdf,
 } from "./contract.service";
+import { pipeToResponse } from "../../utils/stream";
 
 const router = Router();
 router.use(authenticate);
@@ -192,7 +193,7 @@ router.get(
     const stream = await storage.getStream(t.storageKey);
     res.setHeader("Content-Type", t.mimeType ?? "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(t.fileName)}"`);
-    stream.pipe(res);
+    return pipeToResponse(stream, res);
   })
 );
 

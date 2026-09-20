@@ -17,6 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/hooks/use-auth";
+import { AutomationsSettings } from "@/components/settings-automations";
+import { IntegrationsSettings } from "@/components/settings-integrations";
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1, "Senha atual obrigatória"),
@@ -220,14 +222,24 @@ export function SettingsPage() {
         <TabsList>
           <TabsTrigger value="account">Minha conta</TabsTrigger>
           {can("settings.manage") && <TabsTrigger value="system">Sistema</TabsTrigger>}
+          {can("settings.manage") && <TabsTrigger value="mensagens">Mensagens automáticas</TabsTrigger>}
+          {can("settings.manage") && <TabsTrigger value="integracoes">Integrações</TabsTrigger>}
         </TabsList>
         <TabsContent value="account">
           <AccountTab />
         </TabsContent>
         {can("settings.manage") && (
-          <TabsContent value="system">
-            <SystemTab />
-          </TabsContent>
+          <>
+            <TabsContent value="mensagens">
+              <AutomationsSettings />
+            </TabsContent>
+            <TabsContent value="integracoes">
+              <IntegrationsSettings />
+            </TabsContent>
+            <TabsContent value="system">
+              <SystemTab />
+            </TabsContent>
+          </>
         )}
       </Tabs>
     </div>

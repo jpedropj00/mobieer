@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react";
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
-import { GuestRoute, ProtectedRoute } from "@/router-guards";
+import { GuestRoute, HomeRoute, ProtectedRoute } from "@/router-guards";
 import { PermissionGate } from "@/components/permission-gate";
+import { RouteError } from "@/components/route-error";
 
 const LoginPage = lazy(() => import("@/pages/login").then((m) => ({ default: m.LoginPage })));
 const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })));
@@ -31,12 +32,19 @@ const MyTasksPage = lazy(() => import("@/pages/my-tasks").then((m) => ({ default
 const BusinessPage = lazy(() => import("@/pages/business").then((m) => ({ default: m.BusinessPage })));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail").then((m) => ({ default: m.ProjectDetailPage })));
 const MeasurementsPage = lazy(() => import("@/pages/measurements").then((m) => ({ default: m.MeasurementsPage })));
+const ChatPage = lazy(() => import("@/pages/chat").then((m) => ({ default: m.ChatPage })));
+const ContractorAreaPage = lazy(() => import("@/pages/contractor-area").then((m) => ({ default: m.ContractorAreaPage })));
+const StorePipelinePage = lazy(() => import("@/pages/store-pipeline").then((m) => ({ default: m.StorePipelinePage })));
+const StoreDashboardPage = lazy(() => import("@/pages/store-dashboard").then((m) => ({ default: m.StoreDashboardPage })));
+const PartsPage = lazy(() => import("@/pages/parts").then((m) => ({ default: m.PartsPage })));
 const ContractorsPage = lazy(() => import("@/pages/contractors").then((m) => ({ default: m.ContractorsPage })));
 const ProductionPage = lazy(() => import("@/pages/production").then((m) => ({ default: m.ProductionPage })));
 const FactoryBoardPage = lazy(() => import("@/pages/production-items").then((m) => ({ default: m.FactoryBoardPage })));
 const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage })));
 const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
-const BriefingPage = lazy(() => import("@/pages/briefing").then((m) => ({ default: m.BriefingPage })));
+const ConfirmVisitPage = lazy(() => import("@/pages/confirm-visit").then((m) => ({ default: m.ConfirmVisitPage })));
+const PortalSignupPage = lazy(() => import("@/pages/portal/signup").then((m) => ({ default: m.PortalSignupPage })));
+const PortalBriefingPage = lazy(() => import("@/pages/portal/briefing").then((m) => ({ default: m.PortalBriefingPage })));
 const FinancePage = lazy(() => import("@/pages/finance").then((m) => ({ default: m.FinancePage })));
 const FiscalPage = lazy(() => import("@/pages/fiscal").then((m) => ({ default: m.FiscalPage })));
 const TemplatesPage = lazy(() => import("@/pages/templates").then((m) => ({ default: m.TemplatesPage })));
@@ -57,18 +65,29 @@ function LazyBoundary({ children }: { children: React.ReactNode }) {
 }
 
 export const router = createBrowserRouter([
-  { path: "/briefing", element: <LazyBoundary><BriefingPage /></LazyBoundary> },
+  // o briefing agora começa pelo cadastro curto no portal
+  { path: "/briefing", element: <Navigate to="/portal/cadastro" replace /> },
+  { path: "/confirmar-visita/:token", element: <LazyBoundary><ConfirmVisitPage /></LazyBoundary>, errorElement: <RouteError /> },
   {
     element: <GuestRoute />,
+    errorElement: <RouteError />,
     children: [{ path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> }],
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <RouteError />,
     children: [
       {
         element: <LazyBoundary><AppShell /></LazyBoundary>,
         children: [
-          { path: "/", element: <PermissionGate permission="dashboard.read"><DashboardPage /></PermissionGate> },
+          {
+            errorElement: <RouteError />,
+            children: [
+          { path: "/", element: <HomeRoute dashboard={<PermissionGate permission="dashboard.read"><DashboardPage /></PermissionGate>} /> },
+          { path: "/chat", element: <PermissionGate permission="chat.use"><ChatPage /></PermissionGate> },
+          { path: "/montador", element: <PermissionGate permission="contractors.self"><ContractorAreaPage /></PermissionGate> },
+          { path: "/pipeline", element: <PermissionGate permission="organization.read"><StorePipelinePage /></PermissionGate> },
+          { path: "/painel-loja", element: <StoreDashboardPage /> },
           { path: "/entrada", element: <PermissionGate permission="stock.entry"><StockEntryPage /></PermissionGate> },
           { path: "/saida", element: <PermissionGate permission="stock.exit"><StockExitPage /></PermissionGate> },
           { path: "/movimentacoes", element: <PermissionGate permission="stock.movements"><MovementsPage /></PermissionGate> },
@@ -93,6 +112,7 @@ export const router = createBrowserRouter([
           { path: "/clientes-projetos/:projectId", element: <PermissionGate permission="organization.read"><ProjectDetailPage /></PermissionGate> },
           { path: "/medicoes", element: <PermissionGate permission="organization.read"><MeasurementsPage /></PermissionGate> },
           { path: "/montadores", element: <PermissionGate permission="hr.read"><ContractorsPage /></PermissionGate> },
+          { path: "/solicitacao-pecas", element: <PermissionGate permission="parts.read"><PartsPage /></PermissionGate> },
           { path: "/producao", element: <PermissionGate permission="organization.read"><ProductionPage /></PermissionGate> },
           { path: "/producao/fabrica", element: <PermissionGate permission="organization.read"><FactoryBoardPage /></PermissionGate> },
           { path: "/modelos", element: <PermissionGate permission="documents.read"><TemplatesPage /></PermissionGate> },
@@ -105,6 +125,8 @@ export const router = createBrowserRouter([
           { path: "/usuarios", element: <PermissionGate permission="users.read"><UsersPage /></PermissionGate> },
           { path: "/auditoria", element: <PermissionGate permission="audit.read"><AuditPage /></PermissionGate> },
           { path: "/configuracoes", element: <SettingsPage /> },
+            ],
+          },
         ],
       },
     ],
@@ -112,11 +134,13 @@ export const router = createBrowserRouter([
   {
     path: "/portal",
     element: <LazyBoundary><PortalRoot /></LazyBoundary>,
+    errorElement: <RouteError />,
     children: [
       {
         element: <LazyBoundary><PortalGuestRoute /></LazyBoundary>,
         children: [
           { path: "login", element: <LazyBoundary><PortalLoginPage /></LazyBoundary> },
+          { path: "cadastro", element: <LazyBoundary><PortalSignupPage /></LazyBoundary> },
           { path: "esqueci-senha", element: <LazyBoundary><PortalForgotPage /></LazyBoundary> },
           { path: "definir-senha", element: <LazyBoundary><PortalSetPasswordPage mode="invite" /></LazyBoundary> },
           { path: "redefinir-senha", element: <LazyBoundary><PortalSetPasswordPage mode="reset" /></LazyBoundary> },
@@ -129,6 +153,7 @@ export const router = createBrowserRouter([
             element: <LazyBoundary><PortalLayout /></LazyBoundary>,
             children: [
               { index: true, element: <LazyBoundary><PortalHomePage /></LazyBoundary> },
+              { path: "briefing", element: <LazyBoundary><PortalBriefingPage /></LazyBoundary> },
               { path: "projeto/:id", element: <LazyBoundary><PortalProjectPage /></LazyBoundary> },
             ],
           },

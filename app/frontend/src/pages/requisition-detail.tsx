@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPatch, apiPost } from "@/services/api";
 import type { Requisition, RequisitionItemStatus, RequisitionStatus } from "@/types";
+import { AppError } from "@/lib/errors";
 
 const priority: Record<string, string> = { LOW: "Baixa", NORMAL: "Normal", HIGH: "Alta", URGENT: "Urgente" };
 const itemStatus: Record<RequisitionItemStatus, string> = { PENDING: "Pendente", CUTTING: "Em corte", CUT: "Cortado", INSPECTED: "Conferido" };
@@ -24,7 +25,7 @@ export function RequisitionDetailPage() {
   const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["requisition", id] }); void queryClient.invalidateQueries({ queryKey: ["requisitions"] }); void queryClient.invalidateQueries({ queryKey: ["requisition-indicators"] }); void queryClient.invalidateQueries({ queryKey: ["cutting-board"] }); };
   const action = useMutation({ mutationFn: async () => { if (!confirm) return; return confirm.kind === "status" ? apiPatch(`/requisitions/${id}/status`, { status: confirm.value, note: note || null }) : apiPost(`/requisitions/${id}/inspection`, { result: confirm.value, note: note || null }); }, onSuccess: () => { toast.success("Requisição atualizada"); setConfirm(null); setNote(""); refresh(); }, onError: (error) => toast.error((error as Error).message) });
   const itemMutation = useMutation({ mutationFn: ({ itemId, status }: { itemId: string; status: RequisitionItemStatus }) => apiPatch(`/requisitions/${id}/items/${itemId}/status`, { status }), onSuccess: refresh, onError: (error) => toast.error((error as Error).message) });
-  const reserve = useMutation({ mutationFn: (req: Requisition) => { const items = req.items.filter((item) => item.product && item.reservedQuantity < item.quantity).map((item) => ({ requisitionItemId: item.id, quantity: item.quantity - item.reservedQuantity })); if (!items.length) throw new Error("Todos os materiais vinculados já estão reservados"); return apiPost(`/requisitions/${id}/reservations`, { items }); }, onSuccess: () => { toast.success("Materiais reservados"); refresh(); }, onError: (error) => toast.error((error as Error).message) });
+  const reserve = useMutation({ mutationFn: (req: Requisition) => { const items = req.items.filter((item) => item.product && item.reservedQuantity < item.quantity).map((item) => ({ requisitionItemId: item.id, quantity: item.quantity - item.reservedQuantity })); if (!items.length) throw new AppError("Todos os materiais vinculados já estão reservados"); return apiPost(`/requisitions/${id}/reservations`, { items }); }, onSuccess: () => { toast.success("Materiais reservados"); refresh(); }, onError: (error) => toast.error((error as Error).message) });
   const req = query.data?.data;
   if (query.isLoading) return <div className="p-8 text-sm text-muted-foreground">Carregando requisição...</div>;
   if (!req) return <div className="p-8">Requisição não encontrada.</div>;

@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "MANAGER" | "WAREHOUSE" | "PRODUCTION" | "REQUESTER" | "VIEWER" | "RH" | "FINANCEIRO";
+export type Role = "ADMIN" | "MANAGER" | "WAREHOUSE" | "PRODUCTION" | "REQUESTER" | "VIEWER" | "RH" | "FINANCEIRO" | "MONTADOR";
 
 export type FinanceType = "RECEITA" | "DESPESA";
 export type FinanceStatus = "PENDENTE" | "PAGO";
@@ -149,6 +149,8 @@ export type Contractor = {
   notes: string | null;
   createdAt: string;
   onSite: boolean;
+  /** Tem login no sistema (área do montador). */
+  hasAccess: boolean;
 };
 
 export type ContractorShift = {
@@ -179,8 +181,10 @@ export type ContractorSummary = {
     days: number;
     openShifts: number;
     total: number;
+    bonus: number;
+    totalWithBonus: number;
   }[];
-  totals: { contractors: number; hours: number; days: number; total: number; openShifts: number };
+  totals: { contractors: number; hours: number; days: number; total: number; openShifts: number; bonus: number; totalWithBonus: number };
 };
 
 export type DocSignature = { id: string; role: string; signerName: string; signedAt: string };
@@ -668,6 +672,7 @@ export type CommercialLead = {
   interest: string | null;
   status: "NEW" | "CONTACTED" | "QUALIFIED" | "CONVERTED" | "LOST";
   notes: string | null;
+  document: string | null;
   enteredAt: string;
   nextContactAt: string | null;
   seller: { id: string; name: string } | null;

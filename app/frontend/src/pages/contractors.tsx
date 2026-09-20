@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, HardHat, LogIn, LogOut, Loader2, Pencil, Plus, Trash2, Wallet } from "lucide-react";
+import { Clock, HardHat, KeyRound, LogIn, LogOut, Loader2, Pencil, Plus, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,20 +17,21 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { KpiCard } from "@/components/kpi-card";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
-import { errorMessage } from "@/lib/utils";
+import { errorMessage, localIsoDate } from "@/lib/utils";
 import type { Contractor, ContractorShift, ContractorSummary } from "@/types";
+import { AccessDialog, BonusTab, InstallationsTab, ProductivityTab } from "@/components/contractors-management";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDateTime = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const hhmm = (min: number) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const isoDay = (d: Date) => localIsoDate(d);
 
 type ProjectRow = { id: string; name: string };
 
 const EMPTY_FORM = { name: "", document: "", phone: "", address: "", specialty: "", dailyRate: "", notes: "" };
 
 /**
- * Montadores terceirizados: cadastro, check-in/check-out na obra e o
+ * Montadores externos: cadastro, check-in/check-out na obra e o
  * fechamento por horas e diárias.
  */
 export function ContractorsPage() {
@@ -44,6 +45,7 @@ export function ContractorsPage() {
   const [editing, setEditing] = useState<Contractor | null>(null);
   const [checkinFor, setCheckinFor] = useState<Contractor | null>(null);
   const [checkinProject, setCheckinProject] = useState("");
+  const [accessFor, setAccessFor] = useState<Contractor | null>(null);
 
   const today = new Date();
   const [range, setRange] = useState({ from: isoDay(new Date(today.getTime() - 29 * 86400000)), to: isoDay(today) });
@@ -149,7 +151,7 @@ export function ContractorsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Montadores terceirizados"
+        title="Montadores externos"
         description="Check-in e check-out na obra, contagem de horas e fechamento por diária."
       >
         {canManage && (
@@ -189,12 +191,15 @@ export function ContractorsPage() {
         <TabsList>
           <TabsTrigger value="equipe">Equipe ({list.length})</TabsTrigger>
           <TabsTrigger value="turnos">Turnos ({shiftList.length})</TabsTrigger>
+          <TabsTrigger value="comodos">Cômodos</TabsTrigger>
+          <TabsTrigger value="produtividade">Produtividade</TabsTrigger>
+          <TabsTrigger value="bonificacao">Bonificação</TabsTrigger>
           <TabsTrigger value="fechamento">Fechamento</TabsTrigger>
         </TabsList>
 
         <TabsContent value="equipe" className="space-y-4 pt-4">
           {list.length === 0 ? (
-            <EmptyState title="Nenhum montador" description="Cadastre os terceirizados para controlar horas e diárias." />
+            <EmptyState title="Nenhum montador" description="Cadastre os montadores externos para controlar horas e diárias." />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {list.map((c) => (
@@ -202,7 +207,7 @@ export function ContractorsPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-start justify-between gap-2 text-base">
                       <span className="flex-1">{c.name}</span>
-                      {c.onSite ? <Badge variant="success">Na obra</Badge> : !c.active ? <Badge variant="muted">Inativo</Badge> : null}
+                      {c.onSite ? <Badge variant="success">Na obra</Badge> : !c.active ? <Badge variant="muted">Inativo</Badge> : c.hasAccess ? <Badge variant="secondary">Com acesso</Badge> : null}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
@@ -222,6 +227,9 @@ export function ContractorsPage() {
                         <>
                           <Button size="sm" variant="outline" onClick={() => openEdit(c)}>
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" title="Acesso ao sistema" disabled={!c.active} onClick={() => setAccessFor(c)}>
+                            <KeyRound className="h-4 w-4" />
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => toggleActive.mutate(c)}>
                             {c.active ? "Desativar" : "Ativar"}
@@ -297,6 +305,20 @@ export function ContractorsPage() {
           )}
         </TabsContent>
 
+        <TabsContent value="comodos" className="space-y-4 pt-4">
+          <InstallationsTab contractors={list} projects={projects.data?.data ?? []} canManage={canManage} />
+        </TabsContent>
+
+        <TabsContent value="produtividade" className="space-y-4 pt-4">
+          <PeriodPicker range={range} setRange={setRange} />
+          <ProductivityTab range={range} />
+        </TabsContent>
+
+        <TabsContent value="bonificacao" className="space-y-4 pt-4">
+          <PeriodPicker range={range} setRange={setRange} />
+          <BonusTab canManage={canManage} range={range} />
+        </TabsContent>
+
         <TabsContent value="fechamento" className="space-y-4 pt-4">
           <PeriodPicker range={range} setRange={setRange} />
           {sum && (
@@ -305,7 +327,7 @@ export function ContractorsPage() {
                 <KpiCard title="Montadores" value={String(sum.totals.contractors)} icon={HardHat} />
                 <KpiCard title="Horas no período" value={`${sum.totals.hours.toFixed(1)}h`} icon={Clock} />
                 <KpiCard title="Diárias" value={String(sum.totals.days)} icon={Clock} />
-                <KpiCard title="Total a pagar" value={brl(sum.totals.total)} icon={Wallet} />
+                <KpiCard title="Total a pagar" value={brl(sum.totals.totalWithBonus)} icon={Wallet} />
               </div>
               {sum.totals.openShifts > 0 && (
                 <p className="rounded-md bg-warning/10 p-2 text-xs text-warning-foreground">
@@ -322,7 +344,9 @@ export function ContractorsPage() {
                         <TableHead>Montador</TableHead>
                         <TableHead className="text-right">Horas</TableHead>
                         <TableHead className="text-right">Dias</TableHead>
-                        <TableHead className="text-right">A pagar</TableHead>
+                        <TableHead className="text-right">Diárias</TableHead>
+                        <TableHead className="text-right">Bônus</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -334,7 +358,9 @@ export function ContractorsPage() {
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{i.hours.toFixed(1)}h</TableCell>
                           <TableCell className="text-right tabular-nums">{i.days}</TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">{brl(i.total)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{brl(i.total)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{i.bonus > 0 ? brl(i.bonus) : "—"}</TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">{brl(i.totalWithBonus)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -342,7 +368,7 @@ export function ContractorsPage() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                O valor a pagar é <strong>dias trabalhados × diária</strong>. Dois turnos no mesmo dia contam como uma diária só.
+                O total soma <strong>dias trabalhados × diária</strong> e os bônus de produtividade aprovados no período. Dois turnos no mesmo dia contam como uma diária só.
                 A diária usada é a que estava valendo no dia do check-in.
               </p>
             </>
@@ -354,7 +380,7 @@ export function ContractorsPage() {
       <Dialog open={dialog === "new" || dialog === "edit"} onOpenChange={(v) => !v && setDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? `Editar ${editing.name}` : "Novo montador terceirizado"}</DialogTitle>
+            <DialogTitle>{editing ? `Editar ${editing.name}` : "Novo montador externo"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
@@ -394,6 +420,8 @@ export function ContractorsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AccessDialog contractor={accessFor} open={Boolean(accessFor)} onOpenChange={(v) => !v && setAccessFor(null)} />
 
       {/* Check-in */}
       <Dialog open={dialog === "checkin"} onOpenChange={(v) => !v && setDialog(null)}>

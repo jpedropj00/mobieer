@@ -18,6 +18,7 @@ import { DispatchChecklistCard } from "@/components/dispatch-checklist";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
 import { ProductionItemsPanel } from "./production-items";
+import { LeadTimesCard } from "@/components/lead-times";
 
 export const PRODUCTION_STAGES = ["RELEASED", "IN_PRODUCTION", "PRE_ASSEMBLY", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
@@ -470,6 +471,7 @@ export function ProductionPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Produção" description="Esteira dos pedidos: liberado → produção → pré-montagem → entrega." />
+      <LeadTimesCard />
       {total === 0 ? (
         <EmptyState title="Nenhum pedido em produção" description="Quando o cliente aprovar o projeto técnico, o pedido entra aqui." />
       ) : (

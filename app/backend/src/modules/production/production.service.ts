@@ -192,3 +192,14 @@ export async function runProductionDeliveryAlerts() {
   }
   return { alerted: created };
 }
+
+/** Checklist de saída fechado: tudo conferido e nenhuma pendência em aberto. */
+export function isDispatchReady(c: {
+  producaoCompleta: boolean;
+  materialCompleto: boolean;
+  ferragens: boolean;
+  insumos: boolean;
+  pendencia: boolean;
+}) {
+  return c.producaoCompleta && c.materialCompleto && c.ferragens && c.insumos && !c.pendencia;
+}

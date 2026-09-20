@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProductPicker } from "@/features/stock/product-picker";
 import { ProductFormDialog } from "@/features/products/product-form-dialog";
+import { AppError } from "@/lib/errors";
 
 export function ProductInputMethod({ onSelect, excludeIds = [] }: { onSelect: (product: Product) => void; excludeIds?: string[] }) {
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -73,7 +74,7 @@ export function ProductInputMethod({ onSelect, excludeIds = [] }: { onSelect: (p
     setCameraStarting(true);
     try {
       const video = videoRef.current;
-      if (!video) throw new Error("Visualização da câmera indisponível");
+      if (!video) throw new AppError("Visualização da câmera indisponível");
       resultHandledRef.current = false;
       const reader = new BrowserMultiFormatReader(undefined, { delayBetweenScanAttempts: 100 });
       const controls = await reader.decodeFromConstraints(

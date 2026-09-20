@@ -4,6 +4,7 @@ import { Area, ComposedChart, Bar, BarChart, CartesianGrid, Legend, Line, Respon
 import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIcon, Layers, Loader2, Plus, Target, Trash2, Upload, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { FinanceDocuments } from "@/components/finance-documents";
 import { KpiCard } from "@/components/kpi-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
-import { errorMessage, formatCurrency } from "@/lib/utils";
+import { errorMessage, formatCurrency, localIsoDate } from "@/lib/utils";
 import type { BreakEven, CardAnalysis, CardStatementDetail, CashflowPoint, CreditCard, Dre, FinanceSummary, FinanceTransaction, InstallmentGroup, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
 
 const REGIME_LABEL: Record<RegimeTributario, string> = {
@@ -64,7 +65,7 @@ export function FinancePage() {
   const clients = useQuery({ queryKey: ["business-clients", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/business/clients") });
   const suppliers = useQuery({ queryKey: ["suppliers", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/suppliers") });
   const cashflow = useQuery({ queryKey: ["finance", "cashflow"], queryFn: () => apiGet<{ data: CashflowPoint[] }>("/finance/cashflow", { back: 3, forward: 6 }) });
-  const [dreRange, setDreRange] = useState({ from: `${new Date().getFullYear()}-01-01`, to: new Date().toISOString().slice(0, 10), basis: "accrual" });
+  const [dreRange, setDreRange] = useState({ from: `${new Date().getFullYear()}-01-01`, to: localIsoDate(), basis: "accrual" });
   const dre = useQuery({
     queryKey: ["finance", "dre", dreRange],
     queryFn: () => apiGet<{ data: Dre }>("/finance/dre", { from: dreRange.from, to: dreRange.to, basis: dreRange.basis }),
@@ -126,7 +127,7 @@ export function FinancePage() {
   });
 
   const [dialog, setDialog] = useState(false);
-  const blank = { type: "DESPESA", category: "", amount: "", date: new Date().toISOString().slice(0, 10), dueDate: "", description: "", status: "PENDENTE", projectId: "", clientId: "", supplierId: "" };
+  const blank = { type: "DESPESA", category: "", amount: "", date: localIsoDate(), dueDate: "", description: "", status: "PENDENTE", projectId: "", clientId: "", supplierId: "" };
   const [form, setForm] = useState(blank);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["finance"] });
@@ -180,7 +181,7 @@ export function FinancePage() {
 
   // ---- Compra parcelada ----
   const [instDialog, setInstDialog] = useState(false);
-  const instBlank = { category: "", description: "", supplierId: "", firstDueDate: new Date().toISOString().slice(0, 10), installments: "12", totalAmount: "", method: "Cartão de crédito" };
+  const instBlank = { category: "", description: "", supplierId: "", firstDueDate: localIsoDate(), installments: "12", totalAmount: "", method: "Cartão de crédito" };
   const [instForm, setInstForm] = useState(instBlank);
   const createInstallments = useMutation({
     mutationFn: () => apiPost("/finance/installments", {
@@ -201,7 +202,7 @@ export function FinancePage() {
   const [cardForm, setCardForm] = useState({ name: "", lastDigits: "", closingDay: "", dueDay: "" });
   const [stmtForm, setStmtForm] = useState<{ cardId: string; referenceMonth: string; file: File | null }>({ cardId: "", referenceMonth: new Date().toISOString().slice(0, 7), file: null });
   const [openStatementId, setOpenStatementId] = useState<string | null>(null);
-  const [expForm, setExpForm] = useState({ description: "", category: "", amount: "", date: new Date().toISOString().slice(0, 10), installment: "" });
+  const [expForm, setExpForm] = useState({ description: "", category: "", amount: "", date: localIsoDate(), installment: "" });
 
   const statementDetail = useQuery({
     queryKey: ["finance", "cards", "statement", openStatementId],
@@ -247,7 +248,7 @@ export function FinancePage() {
     }),
     onSuccess: () => {
       toast.success("Despesa adicionada");
-      setExpForm({ description: "", category: "", amount: "", date: new Date().toISOString().slice(0, 10), installment: "" });
+      setExpForm({ description: "", category: "", amount: "", date: localIsoDate(), installment: "" });
       statementDetail.refetch();
       qc.invalidateQueries({ queryKey: ["finance", "cards"] });
     },
@@ -277,6 +278,7 @@ export function FinancePage() {
       <Tabs defaultValue="resumo">
         <TabsList className="flex-wrap">
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
+          <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="lancamentos">Lançamentos ({rows.length})</TabsTrigger>
           <TabsTrigger value="cartoes">Cartões ({cards.data?.data.length ?? 0})</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
@@ -384,6 +386,10 @@ export function FinancePage() {
         </TabsContent>
 
         {/* ---- Lançamentos ---- */}
+        <TabsContent value="documentos">
+          <FinanceDocuments />
+        </TabsContent>
+
         <TabsContent value="lancamentos" className="space-y-4">
           <div className="flex flex-wrap gap-3">
             <Select value={filters.type || "ALL"} onValueChange={(v) => setFilters({ ...filters, type: v === "ALL" ? "" : v })}>

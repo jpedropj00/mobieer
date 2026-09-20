@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
-import { errorMessage } from "@/lib/utils";
+import { errorMessage, localIsoDate } from "@/lib/utils";
 import type { Employee, EmployeeDocument, EmployeeDocumentType, HourBank, HrAlert, TimeMirror, User, VacationRequest } from "@/types";
 
 const EMP_DOC_TYPE_LABEL: Record<EmployeeDocumentType, string> = {
@@ -115,8 +115,8 @@ export function HrPage() {
   const pontoFileRef = useRef<HTMLInputElement>(null);
 
   // Banco de horas
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
+  const monthStart = localIsoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const today = localIsoDate();
   const [bancoEmp, setBancoEmp] = useState("");
   const [bancoFrom, setBancoFrom] = useState(monthStart);
   const [bancoTo, setBancoTo] = useState(today);
@@ -604,7 +604,7 @@ export function HrPage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Contrato assinado (colaborador ou terceirizado), rescisão, comprovantes de férias, termo de responsabilidade de ferramentas e documentos gerais do RH (regulamento interno, avisos).
+            Contrato assinado (colaborador ou montador externo), rescisão, comprovantes de férias, termo de responsabilidade de ferramentas e documentos gerais do RH (regulamento interno, avisos).
           </p>
 
           {employeeDocs.isLoading ? (

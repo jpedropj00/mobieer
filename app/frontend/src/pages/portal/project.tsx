@@ -18,6 +18,7 @@ import { PortalApplianceSheet } from "./appliance-sheet";
 import { PortalMeasurement } from "./measurement";
 import { PortalTechApproval } from "./tech-approval";
 import { PortalProduction } from "./production";
+import { PortalAssistanceTab, type PortalAssistance } from "./assistance";
 
 type Doc = {
   id: string;
@@ -34,18 +35,6 @@ type Doc = {
   clientSigned: boolean;
   canClientSign: boolean;
 };
-type AssistanceAttachment = { id: string; fileName: string; mimeType: string; createdAt: string; downloadUrl: string };
-type Assistance = {
-  id: string;
-  number: string;
-  title: string;
-  status: string;
-  priority: string;
-  origin: string;
-  createdAt: string;
-  resolvedAt: string | null;
-  attachments: AssistanceAttachment[];
-};
 type ProjectDetail = {
   id: string;
   code: string;
@@ -60,7 +49,7 @@ type ProjectDetail = {
   technicalApproval: { status: string; approvedAt: string | null } | null;
   production: { stage: string; estimatedDeliveryAt: string | null; deliveredAt: string | null } | null;
   documents: Doc[];
-  assistances: Assistance[];
+  assistances: PortalAssistance[];
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -79,16 +68,6 @@ const DOC_LABEL: Record<string, string> = {
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
 const fmtSize = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
-
-function PortalThumb({ path }: { path: string }) {
-  const { data } = useQuery({ queryKey: ["portal-img", path], queryFn: () => portalObjectUrl(path), staleTime: 5 * 60_000 });
-  if (!data) return <div className="h-14 w-14 shrink-0 animate-pulse rounded-md bg-muted" />;
-  return (
-    <a href={data} target="_blank" rel="noreferrer" className="shrink-0">
-      <img src={data} alt="Foto do chamado" className="h-14 w-14 rounded-md border border-border object-cover" />
-    </a>
-  );
-}
 
 function DocRow({ doc, projectId }: { doc: Doc; projectId: string }) {
   const qc = useQueryClient();
@@ -191,36 +170,6 @@ export function PortalProjectPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["portal", "project", id],
     queryFn: () => portalGet<{ data: ProjectDetail }>(`/projects/${id}`),
-  });
-
-  const [form, setForm] = useState({ title: "", description: "" });
-  const [photos, setPhotos] = useState<File[]>([]);
-  const openTicket = useMutation({
-    mutationFn: async () => {
-      const created = await portalPost<{ data: { id: string } }>("/assistances", { ...form, projectId: id });
-      for (const file of photos) {
-        const fd = new FormData();
-        fd.append("photo", file);
-        await portalApi(`/assistances/${created.data.id}/attachments`, { method: "POST", body: fd });
-      }
-      return created;
-    },
-    onSuccess: () => {
-      toast.success("Chamado aberto. Nossa equipe entrará em contato.");
-      setForm({ title: "", description: "" });
-      setPhotos([]);
-      qc.invalidateQueries({ queryKey: ["portal", "project", id] });
-    },
-    onError: (err) => toast.error(errorMessage(err, "Não foi possível abrir o chamado")),
-  });
-  const addPhoto = useMutation({
-    mutationFn: async ({ ticketId, file }: { ticketId: string; file: File }) => {
-      const fd = new FormData();
-      fd.append("photo", file);
-      return portalApi(`/assistances/${ticketId}/attachments`, { method: "POST", body: fd });
-    },
-    onSuccess: () => { toast.success("Foto anexada"); qc.invalidateQueries({ queryKey: ["portal", "project", id] }); },
-    onError: (err) => toast.error(errorMessage(err, "Falha ao anexar a foto")),
   });
 
   if (isLoading) {
@@ -352,74 +301,7 @@ export function PortalProjectPage() {
         </TabsContent>
 
         <TabsContent value="assistencia" className="space-y-5">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Abrir um chamado</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="t-title">Assunto</Label>
-                <Input id="t-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ex.: Ajuste em porta do armário" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="t-desc">Descrição</Label>
-                <Textarea id="t-desc" rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Descreva o que precisa de atenção" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="t-photos">Fotos (opcional)</Label>
-                <Input
-                  id="t-photos"
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => setPhotos(Array.from(e.target.files ?? []).slice(0, 6))}
-                />
-                {photos.length > 0 && <p className="text-xs text-muted-foreground">{photos.length} foto(s) selecionada(s)</p>}
-              </div>
-              <Button
-                disabled={openTicket.isPending || form.title.trim().length < 3 || form.description.trim().length < 5}
-                onClick={() => openTicket.mutate()}
-              >
-                {openTicket.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Enviar chamado
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold">Seus chamados</h3>
-            {p.assistances.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">Nenhum chamado neste projeto.</p>
-            ) : (
-              p.assistances.map((a) => (
-                <div key={a.id} className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{a.number} — {a.title}</p>
-                      <p className="text-xs text-muted-foreground">Aberto em {fmtDate(a.createdAt)}</p>
-                    </div>
-                    <Badge variant="secondary">{STATUS_LABEL[a.status] ?? a.status}</Badge>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {a.attachments.map((att) => (
-                      <PortalThumb key={att.id} path={att.downloadUrl.replace("/api/portal", "")} />
-                    ))}
-                    <label className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground hover:bg-muted/50">
-                      + foto
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) addPhoto.mutate({ ticketId: a.id, file: f });
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+          <PortalAssistanceTab projectId={p.id} assistances={p.assistances} />
         </TabsContent>
       </Tabs>
     </div>

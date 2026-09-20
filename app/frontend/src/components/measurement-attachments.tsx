@@ -14,6 +14,7 @@ import { SketchPad } from "@/components/sketch-pad";
 import { apiDelete, apiDownload, apiGet, apiObjectUrl, apiPost, apiPostForm, apiPut } from "@/services/api";
 import type { MeasurementAttachment } from "@/types";
 import { errorMessage } from "@/lib/utils";
+import { AppError } from "@/lib/errors";
 
 const fmtSize = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 const fmtDate = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -79,7 +80,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
 
   const upload = useMutation({
     mutationFn: () => {
-      if (!upForm.file) throw new Error("Escolha um arquivo");
+      if (!upForm.file) throw new AppError("Escolha um arquivo");
       const fd = new FormData();
       fd.append("file", upForm.file);
       if (upForm.title.trim()) fd.append("title", upForm.title.trim());
@@ -144,7 +145,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
   const saveSketch = useMutation({
     mutationFn: () => {
       const dataUrl = getPng.current?.();
-      if (!dataUrl) throw new Error("Nada desenhado");
+      if (!dataUrl) throw new AppError("Nada desenhado");
       const body = { dataUrl, title: sketchTitle.trim() || undefined };
       return editing
         ? apiPut(`/measurements/drawings/${editing.id}`, body)

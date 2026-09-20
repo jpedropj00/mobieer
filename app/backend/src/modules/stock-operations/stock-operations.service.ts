@@ -1,7 +1,8 @@
-import { MovementType, Prisma } from "@prisma/client";
+import { MovementType, Prisma, ReservationStatus } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import type { OccurrenceInput, ReservationInput, TransferInput } from "./stock-operations.schema";
+import { enumQuery } from "../../utils/query";
 
 type Tx = Prisma.TransactionClient;
 
@@ -88,7 +89,7 @@ export async function createReservation(input: ReservationInput, actorId: string
 
 export async function listReservations(status?: string) {
   return prisma.stockReservation.findMany({
-    where: status ? { status: status as never } : undefined,
+    where: status ? { status: enumQuery(status, ReservationStatus, "status") } : undefined,
     include: { product: { select: { id: true, name: true, code: true, unit: true } }, warehouse: { select: { id: true, name: true } }, requester: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
   });

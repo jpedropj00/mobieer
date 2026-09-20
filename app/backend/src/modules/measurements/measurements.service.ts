@@ -1,4 +1,5 @@
 import { prisma } from "../../prisma";
+import { PayloadTooLargeError, UnsupportedFileTypeError, ValidationError } from "../../utils/ApiError";
 
 const DAY = 86400000;
 
@@ -8,6 +9,28 @@ export const TECH_PROJECT_DAYS = 12;
 export const MEASUREMENT_PERIODS = ["MANHA", "TARDE", "QUALQUER"] as const;
 export type MeasurementPeriod = (typeof MEASUREMENT_PERIODS)[number];
 export const PERIOD_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde", QUALQUER: "Qualquer horário" };
+
+/** Tamanho máximo do desenho (PNG do canvas). */
+export const MAX_DRAWING_BYTES = 12 * 1024 * 1024;
+
+/**
+ * PNG/JPEG/WebP em dataURL vindo do canvas do tablet -> Buffer.
+ * Qualquer outro tipo (ex.: HTML/SVG disfarçado) é recusado.
+ */
+export function decodeDrawingDataUrl(dataUrl: string): { buffer: Buffer; mimeType: "image/png" | "image/jpeg" | "image/webp" } {
+  const m = /^data:([\w/+.-]+);base64,([A-Za-z0-9+/=\s]*)$/.exec(dataUrl.trim());
+  if (!m) throw new ValidationError("Desenho inválido: esperado uma imagem em base64 (data URL)");
+  const mimeType = m[1].toLowerCase();
+  if (mimeType !== "image/png" && mimeType !== "image/jpeg" && mimeType !== "image/webp") {
+    throw new UnsupportedFileTypeError("Desenho deve ser PNG, JPEG ou WebP", { received: mimeType });
+  }
+  // tamanho estimado antes de decodificar, para não alocar um buffer gigante
+  const b64 = m[2].replace(/\s/g, "");
+  if (Math.floor((b64.length * 3) / 4) > MAX_DRAWING_BYTES) throw new PayloadTooLargeError("Desenho muito grande (máx. 12 MB)");
+  const buffer = Buffer.from(b64, "base64");
+  if (!buffer.length) throw new ValidationError("Desenho vazio");
+  return { buffer, mimeType };
+}
 
 export function techProjectDueDate(from: Date) {
   return new Date(from.getTime() + TECH_PROJECT_DAYS * DAY);

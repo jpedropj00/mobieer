@@ -35,6 +35,14 @@ export const DRE_LINE_LABEL: Record<DreLineKey, string> = {
 
 const has = (s: string, ...words: string[]) => words.some((w) => s.includes(w));
 
+/**
+ * Siglas curtas (DAS, ISS, PIS, IOF...) precisam casar como PALAVRA inteira:
+ * como substring, "vendas" casaria "das", "comissao" casaria "iss" e "pisos"
+ * casaria "pis" — e uma comissão de venda viraria dedução de imposto.
+ */
+const hasWord = (s: string, ...words: string[]) =>
+  words.some((w) => new RegExp(`(^|[^a-z0-9])${w}([^a-z0-9]|$)`).test(s));
+
 /** Classificador por palavra-chave (fallback quando não há mapeamento). */
 export function classifyDreLine(type: "RECEITA" | "DESPESA" | string, category: string): DreLineKey {
   const c = category
@@ -49,9 +57,13 @@ export function classifyDreLine(type: "RECEITA" | "DESPESA" | string, category: 
   }
 
   // DESPESA
-  if (has(c, "irpj", "csll")) return "IMPOSTOS_RENDA";
-  if (has(c, "das", "simples nacional", "iss", "icms", "pis", "cofins", "imposto", "tributo")) return "DEDUCOES";
-  if (has(c, "juro", "tarifa banc", "iof", "multa", "financiament", "emprestim", "antecipac")) return "DESPESA_FINANCEIRA";
+  if (hasWord(c, "irpj", "csll")) return "IMPOSTOS_RENDA";
+  if (hasWord(c, "das", "iss", "issqn", "icms", "pis", "cofins") || has(c, "simples nacional", "imposto", "tributo")) return "DEDUCOES";
+  if (
+    hasWord(c, "iof") ||
+    has(c, "juro", "tarifa banc", "multa", "financiament", "emprestim", "antecipac", "taxa de cartao", "maquininha", "taxa da maquina")
+  )
+    return "DESPESA_FINANCEIRA";
   if (has(c, "depreciac", "amortizac")) return "DEPRECIACAO";
   if (
     has(
@@ -74,7 +86,7 @@ export function classifyDreLine(type: "RECEITA" | "DESPESA" | string, category: 
     )
   )
     return "CUSTO";
-  if (has(c, "marketing", "publicidade", "propaganda", "comiss", "anuncio", "brinde", "evento", "feira", "frete de entrega", "entrega", "montagem"))
+  if (has(c, "marketing", "publicidade", "propaganda", "comiss", "anuncio", "brinde", "evento", "feira", "frete de entrega", "frete de venda", "entrega", "montagem"))
     return "DESPESA_VENDAS";
   if (
     has(

@@ -21,6 +21,8 @@ type Order = {
   estimatedDeliveryAt: string | null;
   daysToEstimatedDelivery: number | null;
   timeline: TimelineStep[];
+  /** Faixa calculada dos pedidos reais já entregues pela loja. */
+  deliveryEstimate: { from: string; to: string; basedOnOrders: number; late: boolean } | null;
 };
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
@@ -79,7 +81,17 @@ export function PortalProduction({ projectId }: { projectId: string }) {
           ))}
         </ol>
 
-        {!delivered && o.estimatedDeliveryAt && (
+        {!delivered && o.deliveryEstimate && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+            Entrega estimada entre <strong>{fmtDate(o.deliveryEstimate.from)}</strong> e <strong>{fmtDate(o.deliveryEstimate.to)}</strong>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Calculado a partir do tempo real dos últimos {o.deliveryEstimate.basedOnOrders} projetos entregues pela MOBIEER.
+              {o.deliveryEstimate.late ? " Seu projeto está levando um pouco mais que o normal — a equipe está acompanhando." : ""}
+            </p>
+          </div>
+        )}
+
+        {!delivered && !o.deliveryEstimate && o.estimatedDeliveryAt && (
           <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
             Previsão de entrega: <strong>{fmtDate(o.estimatedDeliveryAt)}</strong>
             {o.daysToEstimatedDelivery != null && o.daysToEstimatedDelivery >= 0 && (

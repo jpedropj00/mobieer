@@ -96,6 +96,20 @@ const PERMISSIONS = [
   { code: "hr.timeclock.manage", label: "Importar e ajustar ponto eletrônico", module: "RH" },
   { code: "finance.read", label: "Ver financeiro (lançamentos e resumo)", module: "Financeiro" },
   { code: "finance.manage", label: "Lançar e gerenciar movimentos financeiros", module: "Financeiro" },
+  { code: "chat.use", label: "Usar o chat interno", module: "Chat" },
+  { code: "chat.manage", label: "Criar grupos e gerenciar membros do chat", module: "Chat" },
+  { code: "contractors.self", label: "Área do montador externo (ponto, cômodos e produtividade próprios)", module: "Montadores externos" },
+  { code: "contractors.manage", label: "Cadastrar e gerenciar montadores externos", module: "Montadores externos" },
+  { code: "finance.documents.read", label: "Ver documentos financeiros", module: "Financeiro" },
+  { code: "finance.documents.manage", label: "Cadastrar e editar documentos financeiros", module: "Financeiro" },
+  { code: "finance.documents.pay", label: "Registrar pagamentos e baixas", module: "Financeiro" },
+  { code: "parts.read", label: "Ver solicitações de peças", module: "Solicitação de peças" },
+  { code: "parts.read.all", label: "Ver solicitações de toda a equipe", module: "Solicitação de peças" },
+  { code: "parts.create", label: "Criar solicitações de peças", module: "Solicitação de peças" },
+  { code: "parts.analyze", label: "Analisar, aprovar e recusar solicitações", module: "Solicitação de peças" },
+  { code: "parts.produce", label: "Movimentar produção das peças", module: "Solicitação de peças" },
+  { code: "parts.deliver", label: "Registrar entrega e conclusão", module: "Solicitação de peças" },
+  { code: "parts.cancel", label: "Cancelar solicitações", module: "Solicitação de peças" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -157,7 +171,9 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "commercial.read", "commercial.read.all", "commercial.manage", "commercial.leads.manage", "commercial.quotes.manage", "commercial.orders.manage", "commercial.commissions.manage",
       "documents.read", "documents.manage",
       "hr.read", "hr.vacations.approve", "hr.timeclock.manage",
-      "finance.read", "finance.manage",
+      "finance.read", "finance.manage", "finance.documents.read",
+      "parts.read", "parts.read.all", "parts.create", "parts.analyze", "parts.cancel",
+      "contractors.manage",
     ],
   },
   {
@@ -167,6 +183,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     perms: [
       "dashboard.read",
       "finance.read", "finance.manage",
+      "finance.documents.read", "finance.documents.manage", "finance.documents.pay",
       "reports.read",
       "notifications.read",
       "organization.read",
@@ -214,6 +231,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "requisitions.read",
       "requisitions.read.all",
       "requisitions.reserve",
+      "parts.read", "parts.read.all", "parts.produce", "parts.deliver",
       "activities.read", "activities.read.all", "activities.create", "activities.edit", "activities.complete", "activities.cancel", "activities.export", "activities.sign",
       "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel",
       "reports.read",
@@ -234,6 +252,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "requisitions.read.all",
       "requisitions.cut",
       "requisitions.inspect",
+      "parts.read", "parts.read.all", "parts.produce", "parts.deliver",
       "activities.read", "activities.read.all", "activities.create", "activities.edit", "activities.complete", "activities.cancel", "activities.export", "activities.sign",
       "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel",
       "notifications.read",
@@ -265,7 +284,19 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     description: "Apenas consulta dados",
     perms: ["dashboard.read", "products.read", "stock.read", "activities.read", "agenda.read", "reports.read", "notifications.read", "organization.read", "documents.read"],
   },
+  {
+    name: "MONTADOR",
+    label: "Montador externo",
+    description: "Acesso do montador: registra ponto e cômodos, vê a própria produtividade e usa o chat",
+    perms: ["contractors.self", "chat.use", "notifications.read", "parts.read", "parts.create"],
+  },
 ];
+
+// Chat para todos os perfis; gestão/RH também gerenciam grupos (ADMIN já tem tudo).
+for (const def of ROLE_DEFS) {
+  if (def.name !== "ADMIN" && !def.perms.includes("chat.use")) def.perms.push("chat.use");
+  if ((def.name === "MANAGER" || def.name === "RH") && !def.perms.includes("chat.manage")) def.perms.push("chat.manage");
+}
 
 const USERS = [
   { name: "Admin Principal", email: "admin@mobieer.com.br", password: "admin123", position: "Administrador", sector: "TI", role: "ADMIN" },
