@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
+import { CommercialGoals } from "@/components/commercial-goals";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -146,6 +147,7 @@ export function CommercialPage() {
           <TabsTrigger value="leads">Leads ({leadList.filter((l) => l.status !== "CONVERTED").length})</TabsTrigger>
           <TabsTrigger value="conversao">Conversão</TabsTrigger>
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
+          <TabsTrigger value="metas">Metas</TabsTrigger>
         </TabsList>
 
         {/* ---- Funil (kanban) ---- */}
@@ -312,6 +314,10 @@ export function CommercialPage() {
               </Card>
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="metas">
+          <CommercialGoals />
         </TabsContent>
 
         <TabsContent value="resumo" className="space-y-4">
