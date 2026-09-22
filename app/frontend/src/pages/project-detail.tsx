@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { ProjectTimeline } from "@/components/project-timeline";
 import { ProjectOverview } from "@/components/project-overview";
+import { ContractorRatings, InstallationDiary, MeasurementRooms } from "@/components/project-fieldwork";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -231,6 +232,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
+          <TabsTrigger value="campo">Campo</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="promob">Promob</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
@@ -357,6 +359,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="projeto">
           <TechApprovalInternal projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="campo" className="space-y-4">
+          <ProjectFieldwork projectId={p.id} canWrite={canManage} />
         </TabsContent>
 
         <TabsContent value="producao">
@@ -519,6 +525,33 @@ export function ProjectDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Campo: medidas por ambiente (da última medição), diário da montagem e
+ * avaliação dos montadores.
+ */
+function ProjectFieldwork({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const visits = useQuery({
+    queryKey: ["measurements", projectId],
+    queryFn: () => apiGet<{ data: { id: string; status: string; createdAt: string }[] }>("/measurements", { projectId }),
+  });
+  const last = visits.data?.data?.[0];
+  return (
+    <div className="space-y-4">
+      {last ? (
+        <MeasurementRooms measurementId={last.id} />
+      ) : (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            Nenhuma medição registrada ainda. As medidas por ambiente aparecem aqui depois que a medição for criada.
+          </CardContent>
+        </Card>
+      )}
+      <InstallationDiary projectId={projectId} podeEscrever={canWrite} />
+      <ContractorRatings projectId={projectId} />
     </div>
   );
 }

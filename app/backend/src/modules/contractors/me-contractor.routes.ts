@@ -14,6 +14,9 @@ import { storage } from "../../lib/storage";
 import { dateQuery } from "../../utils/query";
 import { pipeToResponse } from "../../utils/stream";
 import { STATUS_LABEL as PART_STATUS_LABEL } from "../parts/parts.service";
+import { uploadMedia } from "../../middlewares/upload";
+import { acceptLocation, hourBank, performanceSummary, ratingAverage } from "../fieldwork/fieldwork.service";
+import { createDiaryEntry, diaryInclude, diaryInput } from "../fieldwork/fieldwork.routes";
 import { ok } from "../../utils/response";
 import { localDay, localPeriod, shiftMinutes } from "./contractors.service";
 import { currentTarget, finishTask, pauseTask, serializeTask, startTask, taskInclude } from "./installation.service";
@@ -23,6 +26,17 @@ const router = Router();
 router.use(authenticate, requirePermission("contractors.self"));
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
+
+/** Localização enviada pelo aparelho no ponto (opcional, com consentimento). */
+const geoInput = z.object({
+  locationConsent: z.boolean().optional(),
+  lat: z.coerce.number().nullable().optional(),
+  lng: z.coerce.number().nullable().optional(),
+  accuracy: z.coerce.number().nullable().optional(),
+});
+const geoOf = (g: z.infer<typeof geoInput>) => ({ consent: g.locationConsent, lat: g.lat, lng: g.lng, accuracy: g.accuracy });
+const deviceOf = (req: Request) => (req.header("user-agent") ?? "").slice(0, 200) || null;
+
 
 async function me(req: Request) {
   const c = await prisma.contractor.findFirst({
@@ -84,7 +98,8 @@ router.post(
   "/check-in",
   asyncHandler(async (req, res) => {
     const c = await me(req);
-    const { projectId } = z.object({ projectId: z.string().min(1).optional().nullable() }).parse(req.body ?? {});
+    const { projectId, ...geo } = z.object({ projectId: z.string().min(1).optional().nullable() }).merge(geoInput).parse(req.body ?? {});
+    const { consent, fix } = acceptLocation(geoOf(geo));
     const open = await prisma.contractorShift.findFirst({ where: { contractorId: c.id, checkOutAt: null }, select: { id: true } });
     if (open) throw new InvalidStateError("Você já está com o ponto aberto");
     if (projectId) {
@@ -99,9 +114,14 @@ router.post(
         checkInAt: new Date(),
         dailyRate: c.dailyRate,
         createdById: req.user!.id,
+        locationConsent: consent,
+        checkInLat: fix?.lat ?? null,
+        checkInLng: fix?.lng ?? null,
+        checkInAccuracy: fix?.accuracy ?? null,
+        device: deviceOf(req),
       },
     });
-    return ok(res, { id: shift.id, checkInAt: shift.checkInAt }, "Entrada registrada");
+    return ok(res, { id: shift.id, checkInAt: shift.checkInAt, located: Boolean(fix) }, fix ? "Entrada registrada com localização" : "Entrada registrada");
   })
 );
 
@@ -114,9 +134,20 @@ router.post(
     if (!open) throw new InvalidStateError("Você não está com o ponto aberto");
     const running = await prisma.installationTask.findFirst({ where: { contractorId: c.id, status: "IN_PROGRESS" }, select: { id: true } });
     if (running) throw new InvalidStateError("Pause ou conclua o cômodo em andamento antes de sair");
+    const { consent, fix } = acceptLocation(geoOf(geoInput.parse(req.body ?? {})));
     const now = new Date();
     const minutes = shiftMinutes(open.checkInAt, now);
-    await prisma.contractorShift.update({ where: { id: open.id }, data: { checkOutAt: now, minutes } });
+    await prisma.contractorShift.update({
+      where: { id: open.id },
+      data: {
+        checkOutAt: now,
+        minutes,
+        // o consentimento vale por registro: dado na entrada não autoriza a saída
+        checkOutLat: consent ? fix?.lat ?? null : null,
+        checkOutLng: consent ? fix?.lng ?? null : null,
+        checkOutAccuracy: consent ? fix?.accuracy ?? null : null,
+      },
+    });
     return ok(res, { minutes }, `Saída registrada — ${(minutes / 60).toFixed(1).replace(".", ",")}h`);
   })
 );
@@ -371,6 +402,80 @@ router.patch(
     });
     if (!updated.count) throw new NotFoundError("Notificação não encontrada");
     return ok(res, { id: req.params.id, read: true });
+  })
+);
+
+// ===========================================================================
+// Fase 8.3: banco de horas, diário da obra e desempenho do próprio montador
+// ===========================================================================
+
+// GET /api/me/contractor/hour-bank?from&to
+router.get(
+  "/hour-bank",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const { from, to } = localPeriod(req.query.from, req.query.to, 30);
+    const shifts = await prisma.contractorShift.findMany({ where: { contractorId: c.id, checkInAt: { gte: from, lt: to } }, select: { checkInAt: true, checkOutAt: true } });
+    return ok(res, { period: { from, to }, expectedDailyMinutes: c.expectedDailyMinutes, ...hourBank(shifts, c.expectedDailyMinutes) });
+  })
+);
+
+/** Obra em que o montador pode registrar diário: tem cômodo atribuído ou ponto nela. */
+async function assertAssigned(contractorId: string, projectId: string) {
+  const ok = await prisma.project.findFirst({
+    where: { id: projectId, OR: [{ installationTasks: { some: { contractorId } } }, { contractorShifts: { some: { contractorId } } }] },
+    select: { id: true, organizationId: true },
+  });
+  if (!ok) throw new ForbiddenError("Esta obra não está atribuída a você");
+  return ok;
+}
+
+// GET /api/me/contractor/projects/:projectId/diary
+router.get(
+  "/projects/:projectId/diary",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    await assertAssigned(c.id, req.params.projectId);
+    const rows = await prisma.installationDiaryEntry.findMany({ where: { projectId: req.params.projectId }, include: diaryInclude, orderBy: { createdAt: "desc" }, take: 100 });
+    return ok(res, rows);
+  })
+);
+
+// POST /api/me/contractor/projects/:projectId/diary (multipart)
+router.post(
+  "/projects/:projectId/diary",
+  uploadMedia.array("files", 10),
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const project = await assertAssigned(c.id, req.params.projectId);
+    // o montador registra em nome dele: contractorId vem do login, nunca do corpo
+    const input = diaryInput.omit({ contractorId: true }).parse(req.body);
+    const entry = await createDiaryEntry({
+      organizationId: project.organizationId,
+      projectId: project.id,
+      authorId: req.user!.id,
+      contractorId: c.id,
+      input,
+      files: (req.files as Express.Multer.File[]) ?? [],
+    });
+    return ok(res, entry, "Registro adicionado ao diário da obra");
+  })
+);
+
+// GET /api/me/contractor/performance -> as próprias avaliações
+router.get(
+  "/performance",
+  asyncHandler(async (req, res) => {
+    const c = await me(req);
+    const rows = await prisma.contractorRating.findMany({
+      where: { contractorId: c.id },
+      include: { project: { select: { id: true, code: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, {
+      summary: performanceSummary(rows),
+      history: rows.map((r) => ({ id: r.id, project: r.project, average: ratingAverage(r), rework: r.rework, notes: r.notes, createdAt: r.createdAt })),
+    });
   })
 );
 

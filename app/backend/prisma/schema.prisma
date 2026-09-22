@@ -124,6 +124,9 @@ model User {
   salesGoals                SalesGoal[]                @relation("SalesGoalOwner")
   templateVersions          DocumentTemplateVersion[]  @relation("TemplateVersionAuthor")
   publishedApprovalRounds   TechApprovalRound[]        @relation("ApprovalRoundPublisher")
+  measurementRooms          MeasurementRoom[]          @relation("MeasurementRoomAuthor")
+  diaryEntries              InstallationDiaryEntry[]   @relation("DiaryAuthor")
+  ratingsGiven              ContractorRating[]         @relation("ContractorRater")
 
   @@index([roleId])
   @@index([organizationId])
@@ -233,6 +236,8 @@ model Organization {
   partRequests           PartRequest[]
   projectStages          ProjectStage[]
   salesGoals             SalesGoal[]
+  diaryEntries           InstallationDiaryEntry[]
+  contractorRatings      ContractorRating[]
 
   @@index([enterpriseId])
 }
@@ -1079,6 +1084,8 @@ model Project {
   rooms               ProjectRoom[]
   stages              ProjectStage[]
   agendaEvents        AgendaEvent[]             @relation("AgendaProject")
+  diaryEntries        InstallationDiaryEntry[]
+  contractorRatings   ContractorRating[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -2519,6 +2526,7 @@ model MeasurementVisit {
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   attachments      MeasurementAttachment[]
+  rooms            MeasurementRoom[]
 
   @@index([organizationId, status])
   @@index([projectId])
@@ -3031,54 +3039,68 @@ model DispatchChecklist {
 
 // 5.4 — Montadores terceirizados (check-in/checkout, horas e diárias)
 model Contractor {
-  id                String               @id @default(cuid())
-  organizationId    String
-  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name              String
-  document          String? // CPF/CNPJ
-  phone             String?
-  address           String?
-  specialty         String? // montagem, marcenaria, elétrica...
-  dailyRate         Decimal              @default(0) @db.Decimal(12, 2) // valor da diária
-  active            Boolean              @default(true)
-  notes             String?              @db.Text
-  userId            String?              @unique // acesso do montador ao sistema
-  user              User?                @relation("ContractorUser", fields: [userId], references: [id], onDelete: SetNull)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  email             String?
-  secondaryPhone    String?
-  city              String?
-  state             String? // UF
-  zipCode           String?
-  pixKey            String?
-  hiredAt           DateTime?
-  shifts            ContractorShift[]
-  installationTasks InstallationTask[]
-  bonuses           ContractorBonus[]
-  documents         ContractorDocument[]
-  partRequests      PartRequest[]
+  id                   String                   @id @default(cuid())
+  organizationId       String
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                 String
+  document             String? // CPF/CNPJ
+  phone                String?
+  address              String?
+  specialty            String? // montagem, marcenaria, elétrica...
+  dailyRate            Decimal                  @default(0) @db.Decimal(12, 2) // valor da diária
+  active               Boolean                  @default(true)
+  notes                String?                  @db.Text
+  userId               String?                  @unique // acesso do montador ao sistema
+  user                 User?                    @relation("ContractorUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  email                String?
+  secondaryPhone       String?
+  city                 String?
+  state                String? // UF
+  zipCode              String?
+  pixKey               String?
+  hiredAt              DateTime?
+  shifts               ContractorShift[]
+  installationTasks    InstallationTask[]
+  bonuses              ContractorBonus[]
+  documents            ContractorDocument[]
+  partRequests         PartRequest[]
+  // jornada prevista, base do banco de horas do montador
+  expectedDailyMinutes Int                      @default(480)
+  diaryEntries         InstallationDiaryEntry[]
+  ratings              ContractorRating[]
 
   @@index([organizationId, active])
 }
 
 model ContractorShift {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contractorId   String
-  contractor     Contractor   @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  projectId      String?
-  project        Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  checkInAt      DateTime
-  checkOutAt     DateTime?
-  minutes        Int? // preenchido no checkout
-  dailyRate      Decimal      @db.Decimal(12, 2) // congela a diária vigente na data
-  notes          String?      @db.Text
-  createdById    String?
-  createdBy      User?        @relation("ContractorShiftAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contractorId     String
+  contractor       Contractor   @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  projectId        String?
+  project          Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  checkInAt        DateTime
+  checkOutAt       DateTime?
+  // Localização (LGPD): só gravada com consentimento explícito na hora do registro.
+  // Sem consentimento o ponto funciona igual, sem coordenada nenhuma.
+  locationConsent  Boolean      @default(false)
+  checkInLat       Float?
+  checkInLng       Float?
+  checkInAccuracy  Float? // metros
+  checkOutLat      Float?
+  checkOutLng      Float?
+  checkOutAccuracy Float?
+  device           String? // navegador/aparelho, para auditoria
+  minutes          Int? // preenchido no checkout
+  dailyRate        Decimal      @db.Decimal(12, 2) // congela a diária vigente na data
+  notes            String?      @db.Text
+  createdById      String?
+  createdBy        User?        @relation("ContractorShiftAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@index([organizationId, checkInAt])
   @@index([contractorId, checkInAt])
@@ -3664,15 +3686,17 @@ model ProjectStageEvent {
 
 /// Ambiente do projeto (cozinha, dormitório...). Medição, vistoria e Promob apontam para cá.
 model ProjectRoom {
-  id        String    @id @default(cuid())
-  projectId String
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name      String
-  roomType  RoomType?
-  notes     String?   @db.Text
-  position  Int       @default(0)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           String                   @id @default(cuid())
+  projectId    String
+  project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  roomType     RoomType?
+  notes        String?                  @db.Text
+  position     Int                      @default(0)
+  measurements MeasurementRoom[]
+  diaryEntries InstallationDiaryEntry[]
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
 
   @@index([projectId, position])
 }
@@ -3738,4 +3762,107 @@ enum AgendaResponse {
   ACEITO
   RECUSADO
   REMARCAR // pediu outro horário
+}
+
+// ===== Fase 8.3: medição por ambiente, diário de montagem, avaliação =====
+
+/// Medidas de um ambiente na medição. Editar cria uma versão nova: a anterior
+/// ganha supersededById e continua guardada — medida é o que a fábrica corta.
+model MeasurementRoom {
+  id               String           @id @default(cuid())
+  measurementId    String
+  measurement      MeasurementVisit @relation(fields: [measurementId], references: [id], onDelete: Cascade)
+  roomId           String?
+  room             ProjectRoom?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  name             String
+  version          Int              @default(1)
+  widthMm          Decimal?         @db.Decimal(10, 1)
+  heightMm         Decimal?         @db.Decimal(10, 1)
+  depthMm          Decimal?         @db.Decimal(10, 1)
+  ceilingHeightMm  Decimal?         @db.Decimal(10, 1)
+  plumbingPoints   String?          @db.Text // pontos hidráulicos
+  electricalPoints String?          @db.Text // pontos elétricos
+  interferences    String?          @db.Text // vigas, pilares, janelas, gás...
+  notes            String?          @db.Text
+  supersededById   String?          @unique
+  supersededBy     MeasurementRoom? @relation("MeasurementRoomVersions", fields: [supersededById], references: [id], onDelete: SetNull)
+  previous         MeasurementRoom? @relation("MeasurementRoomVersions")
+  supersededAt     DateTime?
+  createdById      String?
+  createdBy        User?            @relation("MeasurementRoomAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+
+  @@index([measurementId, supersededById])
+  @@index([roomId])
+}
+
+enum DiaryAttachmentKind {
+  FOTO
+  VIDEO
+  DOCUMENTO
+}
+
+/// Diário da montagem: o que foi feito, o percentual, os problemas e o que faltou.
+model InstallationDiaryEntry {
+  id             String                        @id @default(cuid())
+  organizationId String
+  organization   Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId   String?
+  contractor     Contractor?                   @relation(fields: [contractorId], references: [id], onDelete: SetNull)
+  roomId         String?
+  room           ProjectRoom?                  @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  authorId       String?
+  author         User?                         @relation("DiaryAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  progressPct    Int? // 0..100, andamento da montagem no momento do registro
+  description    String                        @db.Text
+  problems       String?                       @db.Text
+  materialsUsed  String?                       @db.Text
+  missingParts   String?                       @db.Text
+  createdAt      DateTime                      @default(now())
+  attachments    InstallationDiaryAttachment[]
+
+  @@index([projectId, createdAt])
+  @@index([contractorId, createdAt])
+}
+
+model InstallationDiaryAttachment {
+  id         String                 @id @default(cuid())
+  entryId    String
+  entry      InstallationDiaryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  kind       DiaryAttachmentKind    @default(FOTO)
+  storageKey String
+  fileName   String
+  mimeType   String?
+  size       Int?
+  createdAt  DateTime               @default(now())
+
+  @@index([entryId])
+}
+
+/// Avaliação do montador ao fim da montagem. Uma por montador por projeto.
+model ContractorRating {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId         String
+  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId      String
+  contractor        Contractor   @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quality           Int // 1..5
+  deadline          Int
+  organizationScore Int // organização da obra (o nome "organization" é a relação)
+  finish            Int
+  service           Int // atendimento ao cliente
+  rework            Boolean      @default(false)
+  reworkNotes       String?      @db.Text
+  notes             String?      @db.Text
+  ratedById         String?
+  ratedBy           User?        @relation("ContractorRater", fields: [ratedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([projectId, contractorId])
+  @@index([contractorId, createdAt])
 }

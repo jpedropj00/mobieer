@@ -48,6 +48,7 @@ import timelineRoutes from "./modules/timeline/timeline.routes";
 import goalsRoutes from "./modules/commercial/goals.routes";
 import portalFinanceRoutes from "./modules/portal/portal-finance.routes";
 import agendaResponseRoutes from "./modules/agenda/response.routes";
+import fieldworkRoutes from "./modules/fieldwork/fieldwork.routes";
 import chatRoutes from "./modules/chat/chat.routes";
 import installationRoutes from "./modules/contractors/installation.routes";
 import meContractorRoutes from "./modules/contractors/me-contractor.routes";
@@ -114,6 +115,7 @@ export function createApp() {
   app.use("/api/store", storeRoutes);
   app.use("/api/chat", chatRoutes);
   app.use("/api/parts", partsRoutes);
+  app.use("/api/fieldwork", fieldworkRoutes);
   app.use("/api/projects/:projectId", timelineRoutes);
   app.use("/api/installations", installationRoutes);
   app.use("/api/me/contractor", meContractorRoutes);
