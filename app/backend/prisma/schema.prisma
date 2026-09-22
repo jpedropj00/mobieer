@@ -118,6 +118,12 @@ model User {
   partRequestHistory        PartRequestHistory[]       @relation("PartRequestHistoryAuthor")
   partRequestPhotos         PartRequestPhoto[]         @relation("PartRequestPhotoAuthor")
   confirmedPartPhotos       PartRequestPhoto[]         @relation("PartRequestPhotoOcrConfirmer")
+  attendedClients           Client[]                   @relation("ClientAttendant")
+  responsibleStages         ProjectStage[]             @relation("StageResponsible")
+  stageEvents               ProjectStageEvent[]        @relation("StageEventAuthor")
+  salesGoals                SalesGoal[]                @relation("SalesGoalOwner")
+  templateVersions          DocumentTemplateVersion[]  @relation("TemplateVersionAuthor")
+  publishedApprovalRounds   TechApprovalRound[]        @relation("ApprovalRoundPublisher")
 
   @@index([roleId])
   @@index([organizationId])
@@ -225,6 +231,8 @@ model Organization {
   bonusPolicy            BonusPolicy?
   integrationTokens      IntegrationToken[]
   partRequests           PartRequest[]
+  projectStages          ProjectStage[]
+  salesGoals             SalesGoal[]
 
   @@index([enterpriseId])
 }
@@ -985,6 +993,19 @@ model Client {
   organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   sellerId            String?
   seller              User?                   @relation("ClientSeller", fields: [sellerId], references: [id], onDelete: SetNull)
+  // quem atende o cliente no dia a dia (pode ser diferente do consultor que vendeu)
+  attendantId         String?
+  attendant           User?                   @relation("ClientAttendant", fields: [attendantId], references: [id], onDelete: SetNull)
+  leadSource          String? // Instagram | Indicação | Google | Site | Arquiteto | Parceiros | Outro
+  secondaryPhone      String?
+  // endereço estruturado; a coluna "address" segue valendo para quem já tem só o texto
+  street              String?
+  addressNumber       String?
+  complement          String?
+  district            String?
+  city                String?
+  state               String?
+  zipCode             String?
   projects            Project[]
   assistances         AssistanceTicket[]
   kanbanTasks         KanbanTask[]
@@ -1005,6 +1026,7 @@ model Client {
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
   @@index([sellerId])
+  @@index([attendantId])
 }
 
 model Project {
@@ -1041,6 +1063,12 @@ model Project {
   installationTasks   InstallationTask[]
   partRequests        PartRequest[]
   chatChannel         ChatChannel?
+  architectName       String?
+  architectPhone      String?
+  architectEmail      String?
+  link3dUrl           String? // link do 3D do Promob para o cliente e o montador
+  rooms               ProjectRoom[]
+  stages              ProjectStage[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1930,6 +1958,13 @@ model Setting {
 // ============================================================
 
 enum ProjectDocumentType {
+  ORCAMENTO
+  DESCRITIVA
+  PROJETO_TECNICO
+  TERMO_MEDICAO
+  TERMO_PRODUCAO
+  RECIBO
+  CERTIFICADO_GARANTIA
   MANUAL_GARANTIA
   VISTORIA_CHECKLIST
   CRONOGRAMA
@@ -1946,27 +1981,29 @@ enum DocumentSignatureStatus {
 }
 
 model DocumentTemplate {
-  id                String              @id @default(cuid())
+  id                String                    @id @default(cuid())
   organizationId    String
-  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name              String
-  type              ProjectDocumentType @default(OUTRO)
-  description       String?             @db.Text
+  type              ProjectDocumentType       @default(OUTRO)
+  description       String?                   @db.Text
   // Modelo pode ser um ARQUIVO enviado (storageKey) e/ou um CORPO de texto com
   // marcadores {{cliente.nome}} etc., usado para gerar contrato em PDF.
   storageKey        String?
   fileName          String?
   mimeType          String?
   sizeBytes         Int?
-  bodyHtml          String?             @db.Text
-  requiresSignature Boolean             @default(false)
+  bodyHtml          String?                   @db.Text
+  requiresSignature Boolean                   @default(false)
   signerRoles       String[] // ex.: ["MOBIEER", "CLIENTE"]
-  visibleToClient   Boolean             @default(true)
-  active            Boolean             @default(true)
+  visibleToClient   Boolean                   @default(true)
+  active            Boolean                   @default(true)
   createdById       String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
   documents         ProjectDocument[]
+  versions          DocumentTemplateVersion[]
+  currentVersion    Int                       @default(1)
 
   @@index([organizationId, active])
 }
@@ -2004,6 +2041,7 @@ model ProjectDocument {
   uploadedBy              User?                      @relation("ProjectDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   signatures              DocumentSignature[]
   technicalApprovals      TechnicalProjectApproval[]
+  approvalRounds          TechApprovalRound[]
   createdAt               DateTime                   @default(now())
 
   @@index([organizationId, projectId, type])
@@ -2483,26 +2521,27 @@ enum TechApprovalStatus {
 }
 
 model TechnicalProjectApproval {
-  id                      String             @id @default(cuid())
+  id                      String              @id @default(cuid())
   organizationId          String
-  organization            Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId               String             @unique
-  project                 Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  status                  TechApprovalStatus @default(DRAFT)
+  organization            Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId               String              @unique
+  project                 Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status                  TechApprovalStatus  @default(DRAFT)
   documentId              String? // ProjectDocument do projeto técnico (3D/PDF) que o cliente revisa
-  document                ProjectDocument?   @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  termText                String?            @db.Text // termo de aprovação exibido ao cliente
+  document                ProjectDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  termText                String?             @db.Text // termo de aprovação exibido ao cliente
   publishedAt             DateTime?
   publishedById           String?
-  publishedBy             User?              @relation("TechApprovalPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedBy             User?               @relation("TechApprovalPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
   approvedAt              DateTime?
   approvedByName          String?
-  signatureDataUrl        String?            @db.Text // assinatura desenhada pelo cliente (data URL PNG)
+  signatureDataUrl        String?             @db.Text // assinatura desenhada pelo cliente (data URL PNG)
   signedByClientAccountId String?
-  clientComment           String?            @db.Text // quando o cliente pede mudanças
-  reviewRound             Int                @default(1)
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
+  clientComment           String?             @db.Text // quando o cliente pede mudanças
+  reviewRound             Int                 @default(1)
+  rounds                  TechApprovalRound[]
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
 
   @@index([organizationId, status])
 }
@@ -3512,4 +3551,154 @@ model PartRequestHistory {
   createdAt     DateTime           @default(now())
 
   @@index([partRequestId, createdAt])
+}
+
+// ===== Fase 8.1: timeline central, ambientes, metas e versões =====
+
+/// As 17 etapas do ciclo de um projeto, do lead à assistência.
+enum TimelineStageKey {
+  LEAD
+  BRIEFING
+  ORCAMENTO
+  NEGOCIACAO
+  CONTRATO
+  PAGAMENTO_ENTRADA
+  MEDICAO
+  PROJETO_TECNICO
+  APROVACAO
+  TERMO_PRODUCAO
+  PRODUCAO
+  PRE_MONTAGEM
+  ENTREGA
+  MONTAGEM
+  VISTORIA
+  GARANTIA
+  ASSISTENCIA
+}
+
+/// "Atrasada" não é gravado: sai de plannedAt + status na leitura.
+enum StageStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  BLOQUEADA
+  NAO_APLICAVEL
+}
+
+enum ApprovalRoundStatus {
+  PUBLICADA
+  APROVADA
+  MUDANCAS_SOLICITADAS
+  SUBSTITUIDA // republicada antes de o cliente responder
+}
+
+/// Uma etapa da timeline do projeto. Uma linha por etapa por projeto.
+model ProjectStage {
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key            TimelineStageKey
+  position       Int
+  status         StageStatus         @default(PENDENTE)
+  responsibleId  String?
+  responsible    User?               @relation("StageResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  plannedAt      DateTime? // data prevista
+  startedAt      DateTime?
+  completedAt    DateTime? // data real
+  notes          String?             @db.Text
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  events         ProjectStageEvent[]
+
+  @@unique([projectId, key])
+  @@index([organizationId, key, status])
+  @@index([responsibleId, status])
+  @@index([plannedAt])
+}
+
+/// Histórico imutável de cada etapa: o que mudou, de quanto para quanto, quem e quando.
+model ProjectStageEvent {
+  id        String       @id @default(cuid())
+  stageId   String
+  stage     ProjectStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?        @relation("StageEventAuthor", fields: [userId], references: [id], onDelete: SetNull)
+  field     String // status | responsibleId | plannedAt | completedAt | notes
+  fromValue String?      @db.Text
+  toValue   String?      @db.Text
+  note      String?      @db.Text
+  createdAt DateTime     @default(now())
+
+  @@index([stageId, createdAt])
+}
+
+/// Ambiente do projeto (cozinha, dormitório...). Medição, vistoria e Promob apontam para cá.
+model ProjectRoom {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  roomType  RoomType?
+  notes     String?   @db.Text
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([projectId, position])
+}
+
+/// Meta comercial do mês. userId nulo = meta da loja inteira.
+model SalesGoal {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation("SalesGoalOwner", fields: [userId], references: [id], onDelete: Cascade)
+  month          String // aaaa-mm
+  amount         Decimal      @db.Decimal(14, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId, month])
+  @@index([organizationId, month])
+}
+
+/// Versão de um modelo de documento. A versão publicada nunca é editada: mudar
+/// o texto cria outra versão, e o documento gerado guarda qual versão usou.
+model DocumentTemplateVersion {
+  id          String           @id @default(cuid())
+  templateId  String
+  template    DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  version     Int
+  bodyHtml    String?          @db.Text
+  notes       String?          @db.Text // o que mudou nesta versão
+  createdById String?
+  createdBy   User?            @relation("TemplateVersionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@unique([templateId, version])
+}
+
+/// Cada rodada da aprovação técnica, imutável depois de decidida. Antes, a
+/// nova rodada apagava o comentário da anterior; agora cada uma fica guardada.
+model TechApprovalRound {
+  id               String                   @id @default(cuid())
+  approvalId       String
+  approval         TechnicalProjectApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  round            Int
+  documentId       String?
+  document         ProjectDocument?         @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  status           ApprovalRoundStatus      @default(PUBLICADA)
+  publishedAt      DateTime                 @default(now())
+  publishedById    String?
+  publishedBy      User?                    @relation("ApprovalRoundPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  decidedAt        DateTime?
+  decidedByName    String? // o cliente decide pelo portal
+  clientComment    String?                  @db.Text
+  documentChecksum String? // prova de qual arquivo exatamente foi aprovado
+
+  @@unique([approvalId, round])
 }
