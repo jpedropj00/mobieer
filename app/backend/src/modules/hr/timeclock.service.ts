@@ -200,12 +200,14 @@ export function looksLikeSamePerson(fileName: string | null | undefined, employe
 
 /** Alterna IN/OUT pela ordem cronológica das marcações do dia. */
 export function inferKinds(sorted: Date[]): TimeEntryKind[] {
+  // Marcações de um dia, em ordem: par entra, ímpar sai. A última saída do dia
+  // é o fim do expediente (OUT); as saídas do meio são intervalo (BREAK_OUT).
+  // Com número ímpar de marcações falta uma saída, então nada vira OUT e o dia
+  // fecha como INCOMPLETO em vez de inventar um horário.
+  const ultimaEhSaida = sorted.length % 2 === 0;
   return sorted.map((_, i) => {
-    const inCycle = i % 4;
-    if (inCycle === 0) return "IN";
-    if (inCycle === 1) return "BREAK_OUT";
-    if (inCycle === 2) return "BREAK_IN";
-    return "OUT";
+    if (i % 2 === 0) return i === 0 ? "IN" : "BREAK_IN";
+    return ultimaEhSaida && i === sorted.length - 1 ? "OUT" : "BREAK_OUT";
   });
 }
 
