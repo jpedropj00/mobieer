@@ -504,6 +504,18 @@ async function main() {
     create: { id: "default-org", name: "MOBIEER", enterpriseId: "default-enterprise" },
   });
 
+  // Tipo é obrigatório no compromisso: sem estes a agenda não agenda nada.
+  console.log("[SEED] Criando tipos de compromisso...");
+  await prisma.agendaEventType.createMany({
+    data: [
+      ["Reunião", "blue", "users"], ["Visita", "cyan", "map-pin"], ["Medição", "violet", "ruler"],
+      ["Apresentação", "purple", "presentation"], ["Pagamento", "green", "wallet"], ["Produção", "orange", "factory"],
+      ["Entrega", "amber", "truck"], ["Montagem", "red", "hammer"], ["Vistoria", "slate", "clipboard-check"],
+      ["Assistência", "gray", "wrench"], ["Compromisso interno", "amber", "calendar"],
+    ].map(([name, color, icon]) => ({ organizationId: "default-org", name, color, icon })),
+    skipDuplicates: true,
+  });
+
   console.log("[SEED] Criando permissões...");
   await prisma.permission.createMany({ data: [...PERMISSIONS] });
 

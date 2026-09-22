@@ -32,6 +32,10 @@ const EXAMPLES: Record<string, string> = {
   "assistencia.datas": "• 18/09 (quinta) pela manhã\n• 19/09 (sexta) à tarde",
   "assistencia.data": "18/09 (quinta) pela manhã",
   "assistencia.linkConfirmacao": "https://mobieer.vercel.app/confirmar-visita/abc123",
+  "parcela.valor": "R$ 4.500,00",
+  "parcela.vencimento": "25/09 (quinta)",
+  "recibo.numero": "REC-8F2A91C0",
+  "recibo.valor": "R$ 4.500,00",
 };
 
 // GET /api/automations -> todas, com o texto efetivo e um exemplo renderizado

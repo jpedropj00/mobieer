@@ -46,6 +46,8 @@ import storeRoutes from "./modules/store/store.routes";
 import partsRoutes from "./modules/parts/parts.routes";
 import timelineRoutes from "./modules/timeline/timeline.routes";
 import goalsRoutes from "./modules/commercial/goals.routes";
+import portalFinanceRoutes from "./modules/portal/portal-finance.routes";
+import agendaResponseRoutes from "./modules/agenda/response.routes";
 import chatRoutes from "./modules/chat/chat.routes";
 import installationRoutes from "./modules/contractors/installation.routes";
 import meContractorRoutes from "./modules/contractors/me-contractor.routes";
@@ -90,6 +92,7 @@ export function createApp() {
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/requisitions", requisitionsRoutes);
   app.use("/api/activities", activitiesRoutes);
+  app.use("/api/agenda", agendaResponseRoutes);
   app.use("/api/agenda", agendaRoutes);
   app.use("/api/reports", reportsRoutes);
   app.use("/api/dashboard", dashboardRoutes);
@@ -100,6 +103,7 @@ export function createApp() {
   app.use("/api/organization", organizationRoutes);
   app.use("/api/business", businessRoutes);
   app.use("/api/documents", documentsRoutes);
+  app.use("/api/portal/finance", portalFinanceRoutes);
   app.use("/api/portal", portalRoutes);
   app.use("/api/hr", hrRoutes);
   app.use("/api/contractors", contractorsRoutes);

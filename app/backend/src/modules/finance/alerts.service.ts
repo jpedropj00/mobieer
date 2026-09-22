@@ -10,7 +10,17 @@
  */
 import { FinanceStatus, NotificationType } from "@prisma/client";
 import { prisma } from "../../prisma";
-import { DEFAULT_ALERT_DAYS, daysUntilDue, localDay, normalizeAlertDays, remainingBalance } from "./documents.service";
+import { sendAutomation } from "../../lib/automations";
+import {
+  DEFAULT_ALERT_DAYS,
+  type ReceivableMilestone,
+  daysUntilDue,
+  localDay,
+  milestoneNotifiesClient,
+  normalizeAlertDays,
+  receivableMilestone,
+  remainingBalance,
+} from "./documents.service";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -92,4 +102,95 @@ export async function runFinanceDueAlerts(now = new Date()) {
   }
 
   return { inspecionados: docs.length, vencidos, aVencer, notificados };
+}
+
+// ---------------------------------------------------------------------------
+// Contas a receber: lembretes ao cliente e ao financeiro
+// ---------------------------------------------------------------------------
+
+const MILESTONE_EVENT = {
+  LEMBRETE_3: "PAYMENT_REMINDER",
+  VENCE_HOJE: "PAYMENT_DUE_TODAY",
+  VENCIDO: "PAYMENT_OVERDUE",
+} as const;
+
+const MILESTONE_TITLE: Record<ReceivableMilestone, string> = {
+  LEMBRETE_7: "Recebimento em 7 dias",
+  LEMBRETE_3: "Recebimento em 3 dias — cliente avisado",
+  VENCE_HOJE: "Recebimento vence hoje",
+  VENCIDO: "Recebimento em atraso",
+};
+
+/**
+ * Parcelas a receber de cliente: segue a cadência de receivableMilestone.
+ * Nada é cobrado automaticamente e nenhuma baixa é feita — o job só avisa.
+ */
+export async function runReceivableReminders(now = new Date()) {
+  const docs = await prisma.financeTransaction.findMany({
+    where: {
+      type: "RECEITA",
+      status: { in: [FinanceStatus.PENDENTE, FinanceStatus.PARCIAL] },
+      clientId: { not: null },
+      dueDate: { not: null, gte: new Date(now.getTime() - 6 * 86400000), lte: new Date(now.getTime() + 8 * 86400000) },
+    },
+    select: {
+      id: true, organizationId: true, clientId: true, category: true, amount: true, paidAmount: true,
+      dueDate: true, responsibleId: true, project: { select: { code: true } },
+    },
+  });
+
+  let clientes = 0;
+  let internos = 0;
+  for (const d of docs) {
+    const milestone = receivableMilestone(daysUntilDue(d.dueDate!, now));
+    if (!milestone) continue;
+    const saldo = remainingBalance(Number(d.amount), Number(d.paidAmount));
+    if (saldo <= 0) continue;
+
+    // cliente: a deduplicação do sendAutomation garante um envio por marco
+    if (milestoneNotifiesClient(milestone)) {
+      const r = await sendAutomation(MILESTONE_EVENT[milestone as keyof typeof MILESTONE_EVENT], {
+        organizationId: d.organizationId,
+        clientId: d.clientId,
+        vars: {
+          "parcela.valor": brl(saldo),
+          "parcela.vencimento": d.dueDate!.toLocaleDateString("pt-BR", { timeZone: "UTC", day: "2-digit", month: "2-digit" }),
+          "projeto.codigo": d.project?.code ?? "",
+        },
+        dedupeKey: `receivable:${d.id}:${milestone}`,
+      });
+      if (r.status === "SENT" || r.status === "LOGGED") clientes++;
+    }
+
+    // interno: uma notificação por marco por documento
+    const tag = `#${milestone}`;
+    const ja = await prisma.notification.findFirst({
+      where: { entity: "FinanceTransaction", entityId: d.id, message: { contains: tag } },
+      select: { id: true },
+    });
+    if (ja) continue;
+    const financeiro = await prisma.user.findMany({
+      where: {
+        organizationId: d.organizationId,
+        status: "ACTIVE",
+        role: { permissions: { some: { permission: { code: { in: ["finance.documents.read", "finance.read"] } } } } },
+      },
+      select: { id: true },
+    });
+    const para = new Set([...financeiro.map((u) => u.id), ...(d.responsibleId ? [d.responsibleId] : [])]);
+    if (!para.size) continue;
+    await prisma.notification.createMany({
+      data: [...para].map((userId) => ({
+        userId,
+        type: milestone === "VENCIDO" ? NotificationType.FINANCE_OVERDUE : NotificationType.FINANCE_DUE,
+        title: MILESTONE_TITLE[milestone],
+        message: `${d.category}${d.project ? ` · ${d.project.code}` : ""} · ${brl(saldo)} ${tag}`,
+        entity: "FinanceTransaction",
+        entityId: d.id,
+        link: `/financeiro/documentos/${d.id}`,
+      })),
+    });
+    internos++;
+  }
+  return { inspecionados: docs.length, clientesAvisados: clientes, avisosInternos: internos };
 }

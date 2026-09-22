@@ -882,6 +882,12 @@ model AgendaEvent {
   team                   String?
   clientName             String?
   projectReference       String?
+  // vínculo real com o cadastro central; os campos de texto acima continuam
+  // para compromisso com quem ainda não é cliente cadastrado
+  clientId               String?
+  client                 Client?                 @relation("AgendaClient", fields: [clientId], references: [id], onDelete: SetNull)
+  projectId              String?
+  project                Project?                @relation("AgendaProject", fields: [projectId], references: [id], onDelete: SetNull)
   location               String?
   status                 AgendaEventStatus       @default(SCHEDULED)
   visibility             AgendaVisibility        @default(TEAM)
@@ -917,6 +923,8 @@ model AgendaEvent {
   @@index([typeId])
   @@index([createdById])
   @@index([requisitionId])
+  @@index([clientId])
+  @@index([projectId])
   @@index([clientName])
   @@index([projectReference])
 }
@@ -1022,6 +1030,7 @@ model Client {
   documents           ProjectDocument[]
   financeTransactions FinanceTransaction[]
   fiscalInvoices      FiscalInvoice[]
+  agendaEvents        AgendaEvent[]           @relation("AgendaClient")
 
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
@@ -1069,6 +1078,7 @@ model Project {
   link3dUrl           String? // link do 3D do Promob para o cliente e o montador
   rooms               ProjectRoom[]
   stages              ProjectStage[]
+  agendaEvents        AgendaEvent[]             @relation("AgendaProject")
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1359,11 +1369,15 @@ model KanbanHistory {
 }
 
 model AgendaParticipant {
-  eventId   String
-  userId    String
-  event     AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime    @default(now())
+  eventId       String
+  userId        String
+  event         AgendaEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  response      AgendaResponse @default(PENDENTE)
+  respondedAt   DateTime?
+  responseNote  String?        @db.Text
+  proposedStart DateTime? // quando pede para remarcar, sugere outro horário
 
   @@id([eventId, userId])
   @@index([userId])
@@ -2042,6 +2056,10 @@ model ProjectDocument {
   signatures              DocumentSignature[]
   technicalApprovals      TechnicalProjectApproval[]
   approvalRounds          TechApprovalRound[]
+  paymentReceipt          FinancePayment?            @relation("PaymentReceipt")
+  // documento gerado pelo sistema: de qual versão de modelo e de quais dados
+  generatedFrom           String? // RECIBO | VISTORIA | CERTIFICADO_GARANTIA | TERMO_PRODUCAO | PASTA_TECNICA ...
+  templateVersion         Int?
   createdAt               DateTime                   @default(now())
 
   @@index([organizationId, projectId, type])
@@ -3089,6 +3107,10 @@ model AssistanceVisitOption {
 
 // 6.2 — Automações de mensagem (WhatsApp)
 enum MessageEvent {
+  PAYMENT_REMINDER // parcela vence em breve
+  PAYMENT_DUE_TODAY
+  PAYMENT_OVERDUE
+  RECEIPT_AVAILABLE // recibo disponível no portal
   CLIENT_WELCOME
   LEAD_RECEIVED
   PORTAL_ACCESS
@@ -3389,37 +3411,43 @@ enum ContractorDocumentType {
 /// Pagamento (total ou parcial) de um documento financeiro.
 /// O saldo do documento e amount - soma(payments.amount).
 model FinancePayment {
-  id            String             @id @default(cuid())
-  transactionId String
-  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  amount        Decimal            @db.Decimal(12, 2)
-  paidAt        DateTime
-  method        String?
-  note          String?            @db.Text
-  receiptKey    String? // comprovante no storage
-  receiptName   String?
-  receiptMime   String?
-  receiptSize   Int?
-  createdById   String?
-  createdBy     User?              @relation("FinancePaymentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt     DateTime           @default(now())
+  id                String             @id @default(cuid())
+  transactionId     String
+  transaction       FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  amount            Decimal            @db.Decimal(12, 2)
+  paidAt            DateTime
+  method            String?
+  note              String?            @db.Text
+  receiptKey        String? // comprovante no storage
+  receiptName       String?
+  receiptMime       String?
+  receiptSize       Int?
+  createdById       String?
+  createdBy         User?              @relation("FinancePaymentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  receiptDocumentId String?            @unique // recibo em PDF gerado depois da confirmação
+  receiptDocument   ProjectDocument?   @relation("PaymentReceipt", fields: [receiptDocumentId], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
 
   @@index([transactionId, paidAt])
 }
 
 /// Arquivos do documento financeiro (o boleto/NF e os comprovantes).
 model FinanceAttachment {
-  id            String                @id @default(cuid())
-  transactionId String
-  transaction   FinanceTransaction    @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  kind          FinanceAttachmentKind @default(DOCUMENTO)
-  storageKey    String
-  fileName      String
-  mimeType      String?
-  size          Int?
-  uploadedById  String?
-  uploadedBy    User?                 @relation("FinanceAttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  createdAt     DateTime              @default(now())
+  id                        String                @id @default(cuid())
+  transactionId             String
+  transaction               FinanceTransaction    @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  kind                      FinanceAttachmentKind @default(DOCUMENTO)
+  storageKey                String
+  fileName                  String
+  mimeType                  String?
+  size                      Int?
+  uploadedById              String?
+  uploadedBy                User?                 @relation("FinanceAttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  // comprovante enviado pelo próprio cliente no portal, aguardando conferência
+  uploadedByClientAccountId String?
+  reviewedAt                DateTime?
+  reviewNote                String?               @db.Text
+  createdAt                 DateTime              @default(now())
 
   @@index([transactionId])
 }
@@ -3701,4 +3729,13 @@ model TechApprovalRound {
   documentChecksum String? // prova de qual arquivo exatamente foi aprovado
 
   @@unique([approvalId, round])
+}
+
+// ===== Fase 8.2: agenda com resposta =====
+
+enum AgendaResponse {
+  PENDENTE
+  ACEITO
+  RECUSADO
+  REMARCAR // pediu outro horário
 }
