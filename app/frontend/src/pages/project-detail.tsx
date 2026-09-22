@@ -4,6 +4,9 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Download, FileSignature, Loader2, Send, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { ProjectTimeline } from "@/components/project-timeline";
+import { ProjectOverview } from "@/components/project-overview";
+import { ContractorRatings, InstallationDiary, MeasurementRooms } from "@/components/project-fieldwork";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +33,10 @@ type Project = {
   name: string;
   status: string;
   feedbackFormUrl: string | null;
+  architectName: string | null;
+  architectPhone: string | null;
+  architectEmail: string | null;
+  link3dUrl: string | null;
   client: { id: string; name: string };
   manager: { id: string; name: string } | null;
   _count: { assistances: number; kanbanTasks: number; documents: number };
@@ -70,6 +77,13 @@ const DOC_TYPES = [
   ["VISTORIA_FOTOGRAFICA", "Vistoria Fotográfica"],
   ["CONTRATO", "Contrato"],
   ["PROJETO_3D", "Projeto 3D"],
+  ["ORCAMENTO", "Orçamento"],
+  ["DESCRITIVA", "Descritiva"],
+  ["PROJETO_TECNICO", "Projeto técnico"],
+  ["TERMO_MEDICAO", "Termo de medição"],
+  ["TERMO_PRODUCAO", "Termo de produção"],
+  ["RECIBO", "Recibo"],
+  ["CERTIFICADO_GARANTIA", "Certificado de garantia"],
   ["OUTRO", "Outro"],
 ] as const;
 const DOC_LABEL = Object.fromEntries(DOC_TYPES) as Record<string, string>;
@@ -209,16 +223,24 @@ export function ProjectDetailPage() {
       </Link>
       <PageHeader title={`${p.code} — ${p.name}`} description={`Cliente: ${p.client.name}`} />
 
-      <Tabs defaultValue="documents">
-        <TabsList>
+      <ProjectTimeline projectId={p.id} />
+
+      <Tabs defaultValue="visao">
+        <TabsList className="h-auto flex-wrap">
+          <TabsTrigger value="visao">Visão geral</TabsTrigger>
           <TabsTrigger value="documents">Documentos ({p._count.documents})</TabsTrigger>
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
+          <TabsTrigger value="campo">Campo</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="promob">Promob</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="visao">
+          <ProjectOverview project={p} />
+        </TabsContent>
 
         <TabsContent value="documents" className="space-y-4">
           {canManage && (
@@ -337,6 +359,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="projeto">
           <TechApprovalInternal projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="campo" className="space-y-4">
+          <ProjectFieldwork projectId={p.id} canWrite={canManage} />
         </TabsContent>
 
         <TabsContent value="producao">
@@ -499,6 +525,33 @@ export function ProjectDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Campo: medidas por ambiente (da última medição), diário da montagem e
+ * avaliação dos montadores.
+ */
+function ProjectFieldwork({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const visits = useQuery({
+    queryKey: ["measurements", projectId],
+    queryFn: () => apiGet<{ data: { id: string; status: string; createdAt: string }[] }>("/measurements", { projectId }),
+  });
+  const last = visits.data?.data?.[0];
+  return (
+    <div className="space-y-4">
+      {last ? (
+        <MeasurementRooms measurementId={last.id} />
+      ) : (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            Nenhuma medição registrada ainda. As medidas por ambiente aparecem aqui depois que a medição for criada.
+          </CardContent>
+        </Card>
+      )}
+      <InstallationDiary projectId={projectId} podeEscrever={canWrite} />
+      <ContractorRatings projectId={projectId} />
     </div>
   );
 }

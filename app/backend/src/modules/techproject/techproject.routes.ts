@@ -10,6 +10,7 @@ import { ok } from "../../utils/response";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "./techproject.service";
 import { sendAutomation } from "../../lib/automations";
 import { enumQuery } from "../../utils/query";
+import { openRound } from "./rounds.service";
 
 const router = Router();
 router.use(authenticate);
@@ -97,20 +98,31 @@ router.patch(
       data.status = "IN_REVIEW";
       data.publishedAt = new Date();
       data.publishedBy = { connect: { id: req.user!.id } };
-      if (cur.status === "CHANGES_REQUESTED") {
-        data.reviewRound = { increment: 1 };
-        data.clientComment = null;
-      }
+      // o comentário da rodada anterior não se perde: ele já está guardado na
+      // rodada (TechApprovalRound). Aqui só limpa o campo "atual" da aprovação.
+      if (cur.status === "CHANGES_REQUESTED") data.clientComment = null;
     }
     if (input.action === "reopen") {
       if (cur.status === "APPROVED") throw new BadRequestError("Não é possível reabrir um projeto já aprovado");
       data.status = "DRAFT";
     }
 
-    const approval = await prisma.technicalProjectApproval.update({
-      where: { id: cur.id },
-      data,
-      include: approvalInclude,
+    const approval = await prisma.$transaction(async (tx) => {
+      const updated = await tx.technicalProjectApproval.update({ where: { id: cur.id }, data, include: approvalInclude });
+      if (input.action !== "publish") return updated;
+      // cada publicação é uma rodada: a anterior fica no histórico, não é sobrescrita
+      const round = await openRound(tx, { id: updated.id, reviewRound: cur.reviewRound, documentId: updated.documentId }, req.user!.id);
+      if (round === updated.reviewRound) return updated;
+      return tx.technicalProjectApproval.update({ where: { id: cur.id }, data: { reviewRound: round }, include: approvalInclude });
+    });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: input.action === "publish" ? "TECH_APPROVAL_PUBLISHED" : input.action === "reopen" ? "TECH_APPROVAL_REOPENED" : "TECH_APPROVAL_UPDATED",
+        entity: "Project",
+        entityId: project.id,
+        details: { round: approval.reviewRound, documentId: approval.documentId },
+      },
     });
     if (input.action === "publish") {
       void sendAutomation("TECH_APPROVAL_READY", {
@@ -121,6 +133,26 @@ router.patch(
       });
     }
     return ok(res, serializeApproval(approval, { includeSignature: true }), input.action === "publish" ? "Projeto técnico enviado ao cliente" : "Atualizado");
+  })
+);
+
+// GET /api/tech-approval/projects/:projectId/rounds -> histórico imutável de cada rodada
+router.get(
+  "/projects/:projectId/rounds",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const project = await ensureProject(req.params.projectId, req.user!.organizationId);
+    const approval = await prisma.technicalProjectApproval.findUnique({ where: { projectId: project.id }, select: { id: true } });
+    if (!approval) return ok(res, []);
+    const rounds = await prisma.techApprovalRound.findMany({
+      where: { approvalId: approval.id },
+      orderBy: { round: "desc" },
+      include: {
+        document: { select: { id: true, title: true, fileName: true, version: true } },
+        publishedBy: { select: { id: true, name: true } },
+      },
+    });
+    return ok(res, rounds);
   })
 );
 

@@ -110,6 +110,11 @@ const PERMISSIONS = [
   { code: "parts.produce", label: "Movimentar produção das peças", module: "Solicitação de peças" },
   { code: "parts.deliver", label: "Registrar entrega e conclusão", module: "Solicitação de peças" },
   { code: "parts.cancel", label: "Cancelar solicitações", module: "Solicitação de peças" },
+  { code: "timeline.read", label: "Ver a timeline dos projetos", module: "Projetos" },
+  { code: "timeline.edit", label: "Atualizar etapas, responsáveis e prazos", module: "Projetos" },
+  { code: "clients.read.all", label: "Ver clientes de toda a equipe (sem isto, só a carteira própria)", module: "Clientes" },
+  { code: "commercial.goals.manage", label: "Definir metas comerciais", module: "Comercial" },
+  { code: "templates.versions", label: "Criar e publicar versões de modelos", module: "Documentos" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -290,9 +295,73 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     description: "Acesso do montador: registra ponto e cômodos, vê a própria produtividade e usa o chat",
     perms: ["contractors.self", "chat.use", "notifications.read", "parts.read", "parts.create"],
   },
+  {
+    name: "COMERCIAL",
+    label: "Comercial",
+    description: "Gestão comercial: funil de toda a equipe, metas, contratos",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "clients.read.all", "timeline.read", "timeline.edit",
+      "commercial.read", "commercial.read.all", "commercial.manage", "commercial.leads.manage",
+      "commercial.quotes.manage", "commercial.orders.manage", "commercial.commissions.manage", "commercial.goals.manage",
+      "documents.read", "documents.manage", "finance.read",
+      "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel", "reports.read",
+    ],
+  },
+  {
+    name: "CONSULTOR",
+    label: "Consultor de vendas",
+    // sem commercial.read.all e sem clients.read.all: vê só a própria carteira
+    description: "Atende a própria carteira: leads, clientes, orçamentos e agenda",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "timeline.read", "timeline.edit",
+      "commercial.read", "commercial.leads.manage", "commercial.quotes.manage", "commercial.orders.manage",
+      "documents.read",
+      "agenda.read", "agenda.create", "agenda.edit", "agenda.cancel",
+    ],
+  },
+  {
+    name: "PROJETISTA",
+    label: "Projetista",
+    description: "Medição, projeto técnico, descritiva e aprovação",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.manage", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "clients.read.all", "timeline.read", "timeline.edit",
+      "documents.read", "documents.manage", "templates.versions",
+      "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel",
+      "parts.read", "parts.read.all",
+    ],
+  },
+  {
+    name: "ASSISTENCIA",
+    label: "Assistência técnica",
+    description: "Vistoria, garantia, assistência e manutenção preventiva",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "clients.read.all", "timeline.read", "timeline.edit",
+      "documents.read", "documents.manage",
+      "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel",
+      "parts.read", "parts.read.all", "parts.create", "parts.analyze",
+    ],
+  },
 ];
 
 // Chat para todos os perfis; gestão/RH também gerenciam grupos (ADMIN já tem tudo).
+const NEW_ROLES = ["COMERCIAL", "CONSULTOR", "PROJETISTA", "ASSISTENCIA"];
+for (const def of ROLE_DEFS) {
+  if (def.name === "ADMIN" || NEW_ROLES.includes(def.name)) continue;
+  const extra: PermissionCode[] = [];
+  if (def.perms.includes("organization.read")) extra.push("clients.read.all", "timeline.read");
+  if (def.perms.includes("organization.manage")) extra.push("timeline.edit");
+  if (def.perms.includes("commercial.manage")) extra.push("commercial.goals.manage");
+  if (def.perms.includes("documents.manage")) extra.push("templates.versions");
+  for (const code of extra) if (!def.perms.includes(code)) def.perms.push(code);
+}
 for (const def of ROLE_DEFS) {
   if (def.name !== "ADMIN" && !def.perms.includes("chat.use")) def.perms.push("chat.use");
   if ((def.name === "MANAGER" || def.name === "RH") && !def.perms.includes("chat.manage")) def.perms.push("chat.manage");
@@ -433,6 +502,18 @@ async function main() {
     where: { id: "default-org" },
     update: {},
     create: { id: "default-org", name: "MOBIEER", enterpriseId: "default-enterprise" },
+  });
+
+  // Tipo é obrigatório no compromisso: sem estes a agenda não agenda nada.
+  console.log("[SEED] Criando tipos de compromisso...");
+  await prisma.agendaEventType.createMany({
+    data: [
+      ["Reunião", "blue", "users"], ["Visita", "cyan", "map-pin"], ["Medição", "violet", "ruler"],
+      ["Apresentação", "purple", "presentation"], ["Pagamento", "green", "wallet"], ["Produção", "orange", "factory"],
+      ["Entrega", "amber", "truck"], ["Montagem", "red", "hammer"], ["Vistoria", "slate", "clipboard-check"],
+      ["Assistência", "gray", "wrench"], ["Compromisso interno", "amber", "calendar"],
+    ].map(([name, color, icon]) => ({ organizationId: "default-org", name, color, icon })),
+    skipDuplicates: true,
   });
 
   console.log("[SEED] Criando permissões...");

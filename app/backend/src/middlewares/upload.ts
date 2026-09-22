@@ -89,3 +89,16 @@ export const uploadDataFile = multer({
     else cb(new UnsupportedFileTypeError("Envie um arquivo .csv, .txt ou .afd exportado do aparelho"));
   },
 });
+
+// Mídia da obra (diário de montagem): foto, vídeo curto e PDF.
+// Atenção: na Vercel o corpo da requisição tem limite de ~4,5MB, então vídeo
+// longo não passa por aqui — a tela avisa e comprime as fotos antes de enviar.
+const MEDIA_MIME = /^(image\/(jpeg|png|webp|heic|heif|gif)|video\/(mp4|quicktime|webm|3gpp)|application\/pdf)$/;
+export const uploadMedia = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (MEDIA_MIME.test(file.mimetype)) cb(null, true);
+    else cb(new UnsupportedFileTypeError("Envie foto, vídeo (mp4/mov/webm) ou PDF"));
+  },
+});

@@ -118,6 +118,15 @@ model User {
   partRequestHistory        PartRequestHistory[]       @relation("PartRequestHistoryAuthor")
   partRequestPhotos         PartRequestPhoto[]         @relation("PartRequestPhotoAuthor")
   confirmedPartPhotos       PartRequestPhoto[]         @relation("PartRequestPhotoOcrConfirmer")
+  attendedClients           Client[]                   @relation("ClientAttendant")
+  responsibleStages         ProjectStage[]             @relation("StageResponsible")
+  stageEvents               ProjectStageEvent[]        @relation("StageEventAuthor")
+  salesGoals                SalesGoal[]                @relation("SalesGoalOwner")
+  templateVersions          DocumentTemplateVersion[]  @relation("TemplateVersionAuthor")
+  publishedApprovalRounds   TechApprovalRound[]        @relation("ApprovalRoundPublisher")
+  measurementRooms          MeasurementRoom[]          @relation("MeasurementRoomAuthor")
+  diaryEntries              InstallationDiaryEntry[]   @relation("DiaryAuthor")
+  ratingsGiven              ContractorRating[]         @relation("ContractorRater")
 
   @@index([roleId])
   @@index([organizationId])
@@ -225,6 +234,10 @@ model Organization {
   bonusPolicy            BonusPolicy?
   integrationTokens      IntegrationToken[]
   partRequests           PartRequest[]
+  projectStages          ProjectStage[]
+  salesGoals             SalesGoal[]
+  diaryEntries           InstallationDiaryEntry[]
+  contractorRatings      ContractorRating[]
 
   @@index([enterpriseId])
 }
@@ -874,6 +887,12 @@ model AgendaEvent {
   team                   String?
   clientName             String?
   projectReference       String?
+  // vínculo real com o cadastro central; os campos de texto acima continuam
+  // para compromisso com quem ainda não é cliente cadastrado
+  clientId               String?
+  client                 Client?                 @relation("AgendaClient", fields: [clientId], references: [id], onDelete: SetNull)
+  projectId              String?
+  project                Project?                @relation("AgendaProject", fields: [projectId], references: [id], onDelete: SetNull)
   location               String?
   status                 AgendaEventStatus       @default(SCHEDULED)
   visibility             AgendaVisibility        @default(TEAM)
@@ -909,6 +928,8 @@ model AgendaEvent {
   @@index([typeId])
   @@index([createdById])
   @@index([requisitionId])
+  @@index([clientId])
+  @@index([projectId])
   @@index([clientName])
   @@index([projectReference])
 }
@@ -985,6 +1006,19 @@ model Client {
   organization        Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   sellerId            String?
   seller              User?                   @relation("ClientSeller", fields: [sellerId], references: [id], onDelete: SetNull)
+  // quem atende o cliente no dia a dia (pode ser diferente do consultor que vendeu)
+  attendantId         String?
+  attendant           User?                   @relation("ClientAttendant", fields: [attendantId], references: [id], onDelete: SetNull)
+  leadSource          String? // Instagram | Indicação | Google | Site | Arquiteto | Parceiros | Outro
+  secondaryPhone      String?
+  // endereço estruturado; a coluna "address" segue valendo para quem já tem só o texto
+  street              String?
+  addressNumber       String?
+  complement          String?
+  district            String?
+  city                String?
+  state               String?
+  zipCode             String?
   projects            Project[]
   assistances         AssistanceTicket[]
   kanbanTasks         KanbanTask[]
@@ -1001,10 +1035,12 @@ model Client {
   documents           ProjectDocument[]
   financeTransactions FinanceTransaction[]
   fiscalInvoices      FiscalInvoice[]
+  agendaEvents        AgendaEvent[]           @relation("AgendaClient")
 
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
   @@index([sellerId])
+  @@index([attendantId])
 }
 
 model Project {
@@ -1041,6 +1077,15 @@ model Project {
   installationTasks   InstallationTask[]
   partRequests        PartRequest[]
   chatChannel         ChatChannel?
+  architectName       String?
+  architectPhone      String?
+  architectEmail      String?
+  link3dUrl           String? // link do 3D do Promob para o cliente e o montador
+  rooms               ProjectRoom[]
+  stages              ProjectStage[]
+  agendaEvents        AgendaEvent[]             @relation("AgendaProject")
+  diaryEntries        InstallationDiaryEntry[]
+  contractorRatings   ContractorRating[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1331,11 +1376,15 @@ model KanbanHistory {
 }
 
 model AgendaParticipant {
-  eventId   String
-  userId    String
-  event     AgendaEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime    @default(now())
+  eventId       String
+  userId        String
+  event         AgendaEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  response      AgendaResponse @default(PENDENTE)
+  respondedAt   DateTime?
+  responseNote  String?        @db.Text
+  proposedStart DateTime? // quando pede para remarcar, sugere outro horário
 
   @@id([eventId, userId])
   @@index([userId])
@@ -1930,6 +1979,13 @@ model Setting {
 // ============================================================
 
 enum ProjectDocumentType {
+  ORCAMENTO
+  DESCRITIVA
+  PROJETO_TECNICO
+  TERMO_MEDICAO
+  TERMO_PRODUCAO
+  RECIBO
+  CERTIFICADO_GARANTIA
   MANUAL_GARANTIA
   VISTORIA_CHECKLIST
   CRONOGRAMA
@@ -1946,27 +2002,29 @@ enum DocumentSignatureStatus {
 }
 
 model DocumentTemplate {
-  id                String              @id @default(cuid())
+  id                String                    @id @default(cuid())
   organizationId    String
-  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name              String
-  type              ProjectDocumentType @default(OUTRO)
-  description       String?             @db.Text
+  type              ProjectDocumentType       @default(OUTRO)
+  description       String?                   @db.Text
   // Modelo pode ser um ARQUIVO enviado (storageKey) e/ou um CORPO de texto com
   // marcadores {{cliente.nome}} etc., usado para gerar contrato em PDF.
   storageKey        String?
   fileName          String?
   mimeType          String?
   sizeBytes         Int?
-  bodyHtml          String?             @db.Text
-  requiresSignature Boolean             @default(false)
+  bodyHtml          String?                   @db.Text
+  requiresSignature Boolean                   @default(false)
   signerRoles       String[] // ex.: ["MOBIEER", "CLIENTE"]
-  visibleToClient   Boolean             @default(true)
-  active            Boolean             @default(true)
+  visibleToClient   Boolean                   @default(true)
+  active            Boolean                   @default(true)
   createdById       String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
   documents         ProjectDocument[]
+  versions          DocumentTemplateVersion[]
+  currentVersion    Int                       @default(1)
 
   @@index([organizationId, active])
 }
@@ -2004,6 +2062,11 @@ model ProjectDocument {
   uploadedBy              User?                      @relation("ProjectDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   signatures              DocumentSignature[]
   technicalApprovals      TechnicalProjectApproval[]
+  approvalRounds          TechApprovalRound[]
+  paymentReceipt          FinancePayment?            @relation("PaymentReceipt")
+  // documento gerado pelo sistema: de qual versão de modelo e de quais dados
+  generatedFrom           String? // RECIBO | VISTORIA | CERTIFICADO_GARANTIA | TERMO_PRODUCAO | PASTA_TECNICA ...
+  templateVersion         Int?
   createdAt               DateTime                   @default(now())
 
   @@index([organizationId, projectId, type])
@@ -2463,6 +2526,7 @@ model MeasurementVisit {
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   attachments      MeasurementAttachment[]
+  rooms            MeasurementRoom[]
 
   @@index([organizationId, status])
   @@index([projectId])
@@ -2483,26 +2547,27 @@ enum TechApprovalStatus {
 }
 
 model TechnicalProjectApproval {
-  id                      String             @id @default(cuid())
+  id                      String              @id @default(cuid())
   organizationId          String
-  organization            Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  projectId               String             @unique
-  project                 Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  status                  TechApprovalStatus @default(DRAFT)
+  organization            Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId               String              @unique
+  project                 Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status                  TechApprovalStatus  @default(DRAFT)
   documentId              String? // ProjectDocument do projeto técnico (3D/PDF) que o cliente revisa
-  document                ProjectDocument?   @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  termText                String?            @db.Text // termo de aprovação exibido ao cliente
+  document                ProjectDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  termText                String?             @db.Text // termo de aprovação exibido ao cliente
   publishedAt             DateTime?
   publishedById           String?
-  publishedBy             User?              @relation("TechApprovalPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  publishedBy             User?               @relation("TechApprovalPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
   approvedAt              DateTime?
   approvedByName          String?
-  signatureDataUrl        String?            @db.Text // assinatura desenhada pelo cliente (data URL PNG)
+  signatureDataUrl        String?             @db.Text // assinatura desenhada pelo cliente (data URL PNG)
   signedByClientAccountId String?
-  clientComment           String?            @db.Text // quando o cliente pede mudanças
-  reviewRound             Int                @default(1)
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
+  clientComment           String?             @db.Text // quando o cliente pede mudanças
+  reviewRound             Int                 @default(1)
+  rounds                  TechApprovalRound[]
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
 
   @@index([organizationId, status])
 }
@@ -2974,54 +3039,68 @@ model DispatchChecklist {
 
 // 5.4 — Montadores terceirizados (check-in/checkout, horas e diárias)
 model Contractor {
-  id                String               @id @default(cuid())
-  organizationId    String
-  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name              String
-  document          String? // CPF/CNPJ
-  phone             String?
-  address           String?
-  specialty         String? // montagem, marcenaria, elétrica...
-  dailyRate         Decimal              @default(0) @db.Decimal(12, 2) // valor da diária
-  active            Boolean              @default(true)
-  notes             String?              @db.Text
-  userId            String?              @unique // acesso do montador ao sistema
-  user              User?                @relation("ContractorUser", fields: [userId], references: [id], onDelete: SetNull)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  email             String?
-  secondaryPhone    String?
-  city              String?
-  state             String? // UF
-  zipCode           String?
-  pixKey            String?
-  hiredAt           DateTime?
-  shifts            ContractorShift[]
-  installationTasks InstallationTask[]
-  bonuses           ContractorBonus[]
-  documents         ContractorDocument[]
-  partRequests      PartRequest[]
+  id                   String                   @id @default(cuid())
+  organizationId       String
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                 String
+  document             String? // CPF/CNPJ
+  phone                String?
+  address              String?
+  specialty            String? // montagem, marcenaria, elétrica...
+  dailyRate            Decimal                  @default(0) @db.Decimal(12, 2) // valor da diária
+  active               Boolean                  @default(true)
+  notes                String?                  @db.Text
+  userId               String?                  @unique // acesso do montador ao sistema
+  user                 User?                    @relation("ContractorUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  email                String?
+  secondaryPhone       String?
+  city                 String?
+  state                String? // UF
+  zipCode              String?
+  pixKey               String?
+  hiredAt              DateTime?
+  shifts               ContractorShift[]
+  installationTasks    InstallationTask[]
+  bonuses              ContractorBonus[]
+  documents            ContractorDocument[]
+  partRequests         PartRequest[]
+  // jornada prevista, base do banco de horas do montador
+  expectedDailyMinutes Int                      @default(480)
+  diaryEntries         InstallationDiaryEntry[]
+  ratings              ContractorRating[]
 
   @@index([organizationId, active])
 }
 
 model ContractorShift {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contractorId   String
-  contractor     Contractor   @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  projectId      String?
-  project        Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  checkInAt      DateTime
-  checkOutAt     DateTime?
-  minutes        Int? // preenchido no checkout
-  dailyRate      Decimal      @db.Decimal(12, 2) // congela a diária vigente na data
-  notes          String?      @db.Text
-  createdById    String?
-  createdBy      User?        @relation("ContractorShiftAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contractorId     String
+  contractor       Contractor   @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  projectId        String?
+  project          Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  checkInAt        DateTime
+  checkOutAt       DateTime?
+  // Localização (LGPD): só gravada com consentimento explícito na hora do registro.
+  // Sem consentimento o ponto funciona igual, sem coordenada nenhuma.
+  locationConsent  Boolean      @default(false)
+  checkInLat       Float?
+  checkInLng       Float?
+  checkInAccuracy  Float? // metros
+  checkOutLat      Float?
+  checkOutLng      Float?
+  checkOutAccuracy Float?
+  device           String? // navegador/aparelho, para auditoria
+  minutes          Int? // preenchido no checkout
+  dailyRate        Decimal      @db.Decimal(12, 2) // congela a diária vigente na data
+  notes            String?      @db.Text
+  createdById      String?
+  createdBy        User?        @relation("ContractorShiftAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@index([organizationId, checkInAt])
   @@index([contractorId, checkInAt])
@@ -3050,6 +3129,10 @@ model AssistanceVisitOption {
 
 // 6.2 — Automações de mensagem (WhatsApp)
 enum MessageEvent {
+  PAYMENT_REMINDER // parcela vence em breve
+  PAYMENT_DUE_TODAY
+  PAYMENT_OVERDUE
+  RECEIPT_AVAILABLE // recibo disponível no portal
   CLIENT_WELCOME
   LEAD_RECEIVED
   PORTAL_ACCESS
@@ -3350,37 +3433,43 @@ enum ContractorDocumentType {
 /// Pagamento (total ou parcial) de um documento financeiro.
 /// O saldo do documento e amount - soma(payments.amount).
 model FinancePayment {
-  id            String             @id @default(cuid())
-  transactionId String
-  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  amount        Decimal            @db.Decimal(12, 2)
-  paidAt        DateTime
-  method        String?
-  note          String?            @db.Text
-  receiptKey    String? // comprovante no storage
-  receiptName   String?
-  receiptMime   String?
-  receiptSize   Int?
-  createdById   String?
-  createdBy     User?              @relation("FinancePaymentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt     DateTime           @default(now())
+  id                String             @id @default(cuid())
+  transactionId     String
+  transaction       FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  amount            Decimal            @db.Decimal(12, 2)
+  paidAt            DateTime
+  method            String?
+  note              String?            @db.Text
+  receiptKey        String? // comprovante no storage
+  receiptName       String?
+  receiptMime       String?
+  receiptSize       Int?
+  createdById       String?
+  createdBy         User?              @relation("FinancePaymentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  receiptDocumentId String?            @unique // recibo em PDF gerado depois da confirmação
+  receiptDocument   ProjectDocument?   @relation("PaymentReceipt", fields: [receiptDocumentId], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
 
   @@index([transactionId, paidAt])
 }
 
 /// Arquivos do documento financeiro (o boleto/NF e os comprovantes).
 model FinanceAttachment {
-  id            String                @id @default(cuid())
-  transactionId String
-  transaction   FinanceTransaction    @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  kind          FinanceAttachmentKind @default(DOCUMENTO)
-  storageKey    String
-  fileName      String
-  mimeType      String?
-  size          Int?
-  uploadedById  String?
-  uploadedBy    User?                 @relation("FinanceAttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  createdAt     DateTime              @default(now())
+  id                        String                @id @default(cuid())
+  transactionId             String
+  transaction               FinanceTransaction    @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  kind                      FinanceAttachmentKind @default(DOCUMENTO)
+  storageKey                String
+  fileName                  String
+  mimeType                  String?
+  size                      Int?
+  uploadedById              String?
+  uploadedBy                User?                 @relation("FinanceAttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  // comprovante enviado pelo próprio cliente no portal, aguardando conferência
+  uploadedByClientAccountId String?
+  reviewedAt                DateTime?
+  reviewNote                String?               @db.Text
+  createdAt                 DateTime              @default(now())
 
   @@index([transactionId])
 }
@@ -3512,4 +3601,268 @@ model PartRequestHistory {
   createdAt     DateTime           @default(now())
 
   @@index([partRequestId, createdAt])
+}
+
+// ===== Fase 8.1: timeline central, ambientes, metas e versões =====
+
+/// As 17 etapas do ciclo de um projeto, do lead à assistência.
+enum TimelineStageKey {
+  LEAD
+  BRIEFING
+  ORCAMENTO
+  NEGOCIACAO
+  CONTRATO
+  PAGAMENTO_ENTRADA
+  MEDICAO
+  PROJETO_TECNICO
+  APROVACAO
+  TERMO_PRODUCAO
+  PRODUCAO
+  PRE_MONTAGEM
+  ENTREGA
+  MONTAGEM
+  VISTORIA
+  GARANTIA
+  ASSISTENCIA
+}
+
+/// "Atrasada" não é gravado: sai de plannedAt + status na leitura.
+enum StageStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  BLOQUEADA
+  NAO_APLICAVEL
+}
+
+enum ApprovalRoundStatus {
+  PUBLICADA
+  APROVADA
+  MUDANCAS_SOLICITADAS
+  SUBSTITUIDA // republicada antes de o cliente responder
+}
+
+/// Uma etapa da timeline do projeto. Uma linha por etapa por projeto.
+model ProjectStage {
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key            TimelineStageKey
+  position       Int
+  status         StageStatus         @default(PENDENTE)
+  responsibleId  String?
+  responsible    User?               @relation("StageResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  plannedAt      DateTime? // data prevista
+  startedAt      DateTime?
+  completedAt    DateTime? // data real
+  notes          String?             @db.Text
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  events         ProjectStageEvent[]
+
+  @@unique([projectId, key])
+  @@index([organizationId, key, status])
+  @@index([responsibleId, status])
+  @@index([plannedAt])
+}
+
+/// Histórico imutável de cada etapa: o que mudou, de quanto para quanto, quem e quando.
+model ProjectStageEvent {
+  id        String       @id @default(cuid())
+  stageId   String
+  stage     ProjectStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?        @relation("StageEventAuthor", fields: [userId], references: [id], onDelete: SetNull)
+  field     String // status | responsibleId | plannedAt | completedAt | notes
+  fromValue String?      @db.Text
+  toValue   String?      @db.Text
+  note      String?      @db.Text
+  createdAt DateTime     @default(now())
+
+  @@index([stageId, createdAt])
+}
+
+/// Ambiente do projeto (cozinha, dormitório...). Medição, vistoria e Promob apontam para cá.
+model ProjectRoom {
+  id           String                   @id @default(cuid())
+  projectId    String
+  project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  roomType     RoomType?
+  notes        String?                  @db.Text
+  position     Int                      @default(0)
+  measurements MeasurementRoom[]
+  diaryEntries InstallationDiaryEntry[]
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  @@index([projectId, position])
+}
+
+/// Meta comercial do mês. userId nulo = meta da loja inteira.
+model SalesGoal {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation("SalesGoalOwner", fields: [userId], references: [id], onDelete: Cascade)
+  month          String // aaaa-mm
+  amount         Decimal      @db.Decimal(14, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId, month])
+  @@index([organizationId, month])
+}
+
+/// Versão de um modelo de documento. A versão publicada nunca é editada: mudar
+/// o texto cria outra versão, e o documento gerado guarda qual versão usou.
+model DocumentTemplateVersion {
+  id          String           @id @default(cuid())
+  templateId  String
+  template    DocumentTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  version     Int
+  bodyHtml    String?          @db.Text
+  notes       String?          @db.Text // o que mudou nesta versão
+  createdById String?
+  createdBy   User?            @relation("TemplateVersionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@unique([templateId, version])
+}
+
+/// Cada rodada da aprovação técnica, imutável depois de decidida. Antes, a
+/// nova rodada apagava o comentário da anterior; agora cada uma fica guardada.
+model TechApprovalRound {
+  id               String                   @id @default(cuid())
+  approvalId       String
+  approval         TechnicalProjectApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  round            Int
+  documentId       String?
+  document         ProjectDocument?         @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  status           ApprovalRoundStatus      @default(PUBLICADA)
+  publishedAt      DateTime                 @default(now())
+  publishedById    String?
+  publishedBy      User?                    @relation("ApprovalRoundPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  decidedAt        DateTime?
+  decidedByName    String? // o cliente decide pelo portal
+  clientComment    String?                  @db.Text
+  documentChecksum String? // prova de qual arquivo exatamente foi aprovado
+
+  @@unique([approvalId, round])
+}
+
+// ===== Fase 8.2: agenda com resposta =====
+
+enum AgendaResponse {
+  PENDENTE
+  ACEITO
+  RECUSADO
+  REMARCAR // pediu outro horário
+}
+
+// ===== Fase 8.3: medição por ambiente, diário de montagem, avaliação =====
+
+/// Medidas de um ambiente na medição. Editar cria uma versão nova: a anterior
+/// ganha supersededById e continua guardada — medida é o que a fábrica corta.
+model MeasurementRoom {
+  id               String           @id @default(cuid())
+  measurementId    String
+  measurement      MeasurementVisit @relation(fields: [measurementId], references: [id], onDelete: Cascade)
+  roomId           String?
+  room             ProjectRoom?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  name             String
+  version          Int              @default(1)
+  widthMm          Decimal?         @db.Decimal(10, 1)
+  heightMm         Decimal?         @db.Decimal(10, 1)
+  depthMm          Decimal?         @db.Decimal(10, 1)
+  ceilingHeightMm  Decimal?         @db.Decimal(10, 1)
+  plumbingPoints   String?          @db.Text // pontos hidráulicos
+  electricalPoints String?          @db.Text // pontos elétricos
+  interferences    String?          @db.Text // vigas, pilares, janelas, gás...
+  notes            String?          @db.Text
+  supersededById   String?          @unique
+  supersededBy     MeasurementRoom? @relation("MeasurementRoomVersions", fields: [supersededById], references: [id], onDelete: SetNull)
+  previous         MeasurementRoom? @relation("MeasurementRoomVersions")
+  supersededAt     DateTime?
+  createdById      String?
+  createdBy        User?            @relation("MeasurementRoomAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+
+  @@index([measurementId, supersededById])
+  @@index([roomId])
+}
+
+enum DiaryAttachmentKind {
+  FOTO
+  VIDEO
+  DOCUMENTO
+}
+
+/// Diário da montagem: o que foi feito, o percentual, os problemas e o que faltou.
+model InstallationDiaryEntry {
+  id             String                        @id @default(cuid())
+  organizationId String
+  organization   Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project                       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId   String?
+  contractor     Contractor?                   @relation(fields: [contractorId], references: [id], onDelete: SetNull)
+  roomId         String?
+  room           ProjectRoom?                  @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  authorId       String?
+  author         User?                         @relation("DiaryAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  progressPct    Int? // 0..100, andamento da montagem no momento do registro
+  description    String                        @db.Text
+  problems       String?                       @db.Text
+  materialsUsed  String?                       @db.Text
+  missingParts   String?                       @db.Text
+  createdAt      DateTime                      @default(now())
+  attachments    InstallationDiaryAttachment[]
+
+  @@index([projectId, createdAt])
+  @@index([contractorId, createdAt])
+}
+
+model InstallationDiaryAttachment {
+  id         String                 @id @default(cuid())
+  entryId    String
+  entry      InstallationDiaryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  kind       DiaryAttachmentKind    @default(FOTO)
+  storageKey String
+  fileName   String
+  mimeType   String?
+  size       Int?
+  createdAt  DateTime               @default(now())
+
+  @@index([entryId])
+}
+
+/// Avaliação do montador ao fim da montagem. Uma por montador por projeto.
+model ContractorRating {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId         String
+  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId      String
+  contractor        Contractor   @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quality           Int // 1..5
+  deadline          Int
+  organizationScore Int // organização da obra (o nome "organization" é a relação)
+  finish            Int
+  service           Int // atendimento ao cliente
+  rework            Boolean      @default(false)
+  reworkNotes       String?      @db.Text
+  notes             String?      @db.Text
+  ratedById         String?
+  ratedBy           User?        @relation("ContractorRater", fields: [ratedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([projectId, contractorId])
+  @@index([contractorId, createdAt])
 }

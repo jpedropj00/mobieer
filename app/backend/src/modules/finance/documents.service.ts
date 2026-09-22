@@ -117,6 +117,29 @@ export function assertPayable(status: FinanceStatus) {
   if (status === FinanceStatus.PAGO) throw new ValidationError("Este documento já está quitado");
 }
 
+/**
+ * Cadência dos lembretes de contas a receber (§9):
+ * 7 dias antes → aviso interno; 3 dias antes → lembrete ao cliente;
+ * no dia → aviso ao cliente; depois → alerta ao financeiro e ao cliente.
+ *
+ * Cada marco tem uma janela, não um dia exato: se o cron falhar num dia, o
+ * lembrete sai no seguinte. A deduplicação (um envio por marco por
+ * documento) fica com quem chama.
+ */
+export type ReceivableMilestone = "LEMBRETE_7" | "LEMBRETE_3" | "VENCE_HOJE" | "VENCIDO";
+
+export function receivableMilestone(daysUntil: number): ReceivableMilestone | null {
+  if (daysUntil <= 7 && daysUntil >= 4) return "LEMBRETE_7";
+  if (daysUntil <= 3 && daysUntil >= 1) return "LEMBRETE_3";
+  if (daysUntil === 0) return "VENCE_HOJE";
+  // uma vez, logo depois do vencimento; o job diário de vencidos cuida do resto
+  if (daysUntil <= -1 && daysUntil >= -5) return "VENCIDO";
+  return null;
+}
+
+/** O marco manda mensagem ao cliente? O de 7 dias é só interno. */
+export const milestoneNotifiesClient = (m: ReceivableMilestone) => m !== "LEMBRETE_7";
+
 export type DueGrouping = "day" | "week" | "month";
 
 /** Início da semana (segunda-feira) no calendário de Fortaleza, como aaaa-mm-dd. */

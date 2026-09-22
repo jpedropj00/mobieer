@@ -83,8 +83,11 @@ export function ContractorAreaPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [room, setRoom] = useState({ projectId: "", roomType: "", roomLabel: "" });
 
+  const [compartilharLocal, setCompartilharLocal] = useState(false);
+
   const checkIn = useMutation({
-    mutationFn: () => apiPost<{ message?: string }>("/me/contractor/check-in", { projectId: checkinProject || null }),
+    mutationFn: async () =>
+      apiPost<{ message?: string }>("/me/contractor/check-in", { projectId: checkinProject || null, ...(await posicaoAtual(compartilharLocal)) }),
     onSuccess: (r) => {
       toast.success(r.message ?? "Entrada registrada");
       refresh();
@@ -92,7 +95,7 @@ export function ContractorAreaPage() {
     onError: (e) => toast.error(errorMessage(e, "Falha no check-in")),
   });
   const checkOut = useMutation({
-    mutationFn: () => apiPost<{ message?: string }>("/me/contractor/check-out"),
+    mutationFn: async () => apiPost<{ message?: string }>("/me/contractor/check-out", await posicaoAtual(compartilharLocal)),
     onSuccess: (r) => {
       toast.success(r.message ?? "Saída registrada");
       refresh();
@@ -140,7 +143,8 @@ export function ContractorAreaPage() {
       <Tabs defaultValue="hoje">
         <TabsList className="w-full">
           <TabsTrigger value="hoje" className="flex-1">Hoje</TabsTrigger>
-          <TabsTrigger value="produtividade" className="flex-1">Minha produtividade</TabsTrigger>
+          <TabsTrigger value="produtividade" className="flex-1">Produtividade</TabsTrigger>
+          <TabsTrigger value="horas" className="flex-1">Horas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hoje" className="space-y-4 pt-4">
@@ -155,6 +159,10 @@ export function ContractorAreaPage() {
                       <p className="text-sm text-muted-foreground">{shift.project ? `${shift.project.code} — ${shift.project.name}` : "Sem obra informada"}</p>
                     </div>
                   </div>
+                  <label className="flex items-start gap-2 rounded-md border border-border p-2 text-xs">
+                    <input type="checkbox" className="mt-0.5" checked={compartilharLocal} onChange={(e) => setCompartilharLocal(e.target.checked)} />
+                    <span>Compartilhar minha localização neste registro. Fica guardada junto do ponto, só para conferir a presença na obra. Você pode registrar o ponto sem isso.</span>
+                  </label>
                   <Button className="w-full" size="lg" variant="outline" disabled={checkOut.isPending || Boolean(running)} onClick={() => checkOut.mutate()}>
                     <LogOut className="mr-2 h-5 w-5" /> Registrar saída
                   </Button>
@@ -182,6 +190,10 @@ export function ContractorAreaPage() {
                       {h.projects.find((p) => p.id === checkinProject)?.address ?? "Endereço não cadastrado"}
                     </p>
                   )}
+                  <label className="flex items-start gap-2 rounded-md border border-border p-2 text-xs">
+                    <input type="checkbox" className="mt-0.5" checked={compartilharLocal} onChange={(e) => setCompartilharLocal(e.target.checked)} />
+                    <span>Compartilhar minha localização neste registro. Fica guardada junto do ponto, só para conferir a presença na obra. Você pode registrar o ponto sem isso.</span>
+                  </label>
                   <Button className="w-full" size="lg" disabled={checkIn.isPending} onClick={() => checkIn.mutate()}>
                     <LogIn className="mr-2 h-5 w-5" /> Registrar entrada
                   </Button>
@@ -201,6 +213,11 @@ export function ContractorAreaPage() {
           ) : (
             h.tasks.map((t) => <TaskCard key={t.id} task={t} busy={act.isPending} canStart={Boolean(shift)} onAction={(action) => act.mutate({ id: t.id, action })} />)
           )}
+        </TabsContent>
+
+        <TabsContent value="horas" className="space-y-4 pt-4">
+          <BancoDeHoras />
+          <MeuDesempenho />
         </TabsContent>
 
         <TabsContent value="produtividade" className="space-y-4 pt-4">
@@ -407,5 +424,105 @@ function Stat({ label, value, highlight }: { label: string; value: string; highl
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-xl font-semibold tabular-nums">{value}</p>
     </div>
+  );
+}
+
+/**
+ * Posição do aparelho, só quando a pessoa marcou que quer compartilhar.
+ * Falha ou recusa do navegador não impede o ponto: volta sem coordenada.
+ */
+async function posicaoAtual(compartilhar: boolean): Promise<{ locationConsent: boolean; lat?: number; lng?: number; accuracy?: number }> {
+  if (!compartilhar || typeof navigator === "undefined" || !navigator.geolocation) return { locationConsent: false };
+  try {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 })
+    );
+    return { locationConsent: true, lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+  } catch {
+    // negou no navegador ou o GPS não respondeu: o ponto vale assim mesmo
+    return { locationConsent: true };
+  }
+}
+
+type HourBank = {
+  expectedDailyMinutes: number;
+  days: { day: string; shifts: number; workedMinutes: number; expectedMinutes: number; extraMinutes: number; balanceMinutes: number }[];
+  totals: { daysWorked: number; workedMinutes: number; expectedMinutes: number; extraMinutes: number; balanceMinutes: number };
+  openShifts: number;
+};
+
+const hhmm = (min: number) => {
+  const sinal = min < 0 ? "-" : "";
+  const abs = Math.abs(Math.round(min));
+  return `${sinal}${Math.floor(abs / 60)}h${abs % 60 ? String(abs % 60).padStart(2, "0") : ""}`;
+};
+
+/** Banco de horas do montador: previstas, trabalhadas, extras e saldo. */
+function BancoDeHoras() {
+  const q = useQuery({ queryKey: ["me-hour-bank"], queryFn: () => apiGet<{ data: HourBank }>("/me/contractor/hour-bank") });
+  const d = q.data?.data;
+  if (q.isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+  if (!d) return <p className="text-sm text-destructive">{errorMessage(q.error, "Não foi possível carregar suas horas")}</p>;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Banco de horas (últimos 30 dias)</CardTitle>
+        <p className="text-xs text-muted-foreground">Jornada prevista: {hhmm(d.expectedDailyMinutes)} por dia trabalhado.</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Dias" value={String(d.totals.daysWorked)} />
+          <Stat label="Trabalhadas" value={hhmm(d.totals.workedMinutes)} />
+          <Stat label="Extras" value={hhmm(d.totals.extraMinutes)} />
+          <Stat label="Saldo" value={hhmm(d.totals.balanceMinutes)} highlight={d.totals.balanceMinutes >= 0} />
+        </div>
+        {d.openShifts > 0 && <p className="text-xs text-warning">Você tem {d.openShifts} ponto(s) em aberto — eles entram na conta depois da saída.</p>}
+        {d.days.length > 0 && (
+          <ul className="divide-y divide-border rounded-md border border-border text-sm">
+            {d.days.slice().reverse().map((x) => (
+              <li key={x.day} className="flex items-center justify-between px-3 py-1.5">
+                <span>{new Date(`${x.day}T12:00:00Z`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+                <span className="tabular-nums">
+                  {hhmm(x.workedMinutes)} <span className={x.balanceMinutes >= 0 ? "text-success" : "text-destructive"}>({hhmm(x.balanceMinutes)})</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+type Desempenho = {
+  summary: { count: number; average: number | null; reworkRate: number | null; byCriterion: Record<string, number> | null };
+  history: { id: string; project: { code: string; name: string } | null; average: number; rework: boolean; notes: string | null; createdAt: string }[];
+};
+
+/** As avaliações que a gestão registrou sobre as montagens deste montador. */
+function MeuDesempenho() {
+  const q = useQuery({ queryKey: ["me-performance"], queryFn: () => apiGet<{ data: Desempenho }>("/me/contractor/performance") });
+  const d = q.data?.data;
+  if (!d || d.summary.count === 0) return null;
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Minhas avaliações</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Stat label="Nota média" value={String(d.summary.average ?? "—")} highlight={(d.summary.average ?? 0) >= 4} />
+          <Stat label="Com retrabalho" value={`${d.summary.reworkRate ?? 0}%`} />
+        </div>
+        <ul className="space-y-1 text-sm">
+          {d.history.map((h) => (
+            <li key={h.id} className="flex items-center justify-between rounded-md border border-border px-3 py-1.5">
+              <span className="truncate">{h.project?.code ?? "—"} · {new Date(h.createdAt).toLocaleDateString("pt-BR")}</span>
+              <span className="tabular-nums">{h.average.toLocaleString("pt-BR")}</span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

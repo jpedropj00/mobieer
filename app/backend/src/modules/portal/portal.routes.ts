@@ -15,6 +15,7 @@ import { recomputeSignatureStatus } from "../documents/documents.routes";
 import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
 import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "../techproject/techproject.service";
+import { closeRound } from "../techproject/rounds.service";
 import {
   getOrCreateOrder as getOrCreateProductionOrder,
   orderInclude as productionInclude,
@@ -807,17 +808,22 @@ router.post(
       })
       .parse(req.body);
 
-    const updated = await prisma.technicalProjectApproval.update({
-      where: { id: approval.id },
-      data: {
-        status: "APPROVED",
-        approvedAt: new Date(),
-        approvedByName: input.approvedByName,
-        signatureDataUrl: input.signatureDataUrl,
-        signedByClientAccountId: req.portal!.accountId,
-        clientComment: null,
-      },
-      include: approvalInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.technicalProjectApproval.update({
+        where: { id: approval.id },
+        data: {
+          status: "APPROVED",
+          approvedAt: new Date(),
+          approvedByName: input.approvedByName,
+          signatureDataUrl: input.signatureDataUrl,
+          signedByClientAccountId: req.portal!.accountId,
+          clientComment: null,
+        },
+        include: approvalInclude,
+      });
+      // a rodada aprovada fica registrada com quem aprovou e qual arquivo
+      await closeRound(tx, approval.id, approval.reviewRound, "APPROVED", { decidedByName: input.approvedByName });
+      return u;
     });
     // Aprovado -> entra na esteira de produção (etapa "liberado").
     await getOrCreateProductionOrder(project.id, project.organizationId);
@@ -842,10 +848,15 @@ router.post(
     const approval = await getOrCreateApproval(project.id, project.organizationId);
     if (approval.status !== "IN_REVIEW") throw new BadRequestError("Não há projeto técnico aguardando sua avaliação");
     const input = z.object({ comment: z.string().trim().min(3).max(3000) }).parse(req.body);
-    const updated = await prisma.technicalProjectApproval.update({
-      where: { id: approval.id },
-      data: { status: "CHANGES_REQUESTED", clientComment: input.comment },
-      include: approvalInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.technicalProjectApproval.update({
+        where: { id: approval.id },
+        data: { status: "CHANGES_REQUESTED", clientComment: input.comment },
+        include: approvalInclude,
+      });
+      // o pedido de ajuste fica na rodada: a próxima publicação não o apaga mais
+      await closeRound(tx, approval.id, approval.reviewRound, "CHANGES_REQUESTED", { comment: input.comment });
+      return u;
     });
     if (project.managerId) {
       await prisma.notification.create({

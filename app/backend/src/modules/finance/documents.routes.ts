@@ -43,6 +43,7 @@ import {
   remainingBalance,
   statusAfterPayments,
 } from "./documents.service";
+import { issueReceipt } from "./receipt.service";
 
 const router = Router();
 router.use(authenticate);
@@ -493,6 +494,59 @@ router.delete(
   })
 );
 
+
+// POST /api/finance/documents/payments/:paymentId/receipt -> emite ou reemite o recibo
+router.post(
+  "/payments/:paymentId/receipt",
+  canPay,
+  asyncHandler(async (req, res) => {
+    const r = await issueReceipt(req.params.paymentId, req.user!.organizationId, req.user!.id);
+    return ok(res, r, r.version > 1 ? `Recibo ${r.number} reemitido (versão ${r.version})` : `Recibo ${r.number} emitido`);
+  })
+);
+
+// GET /api/finance/documents/client-proofs -> comprovantes enviados pelos clientes, a conferir
+router.get(
+  "/client-proofs",
+  canRead,
+  asyncHandler(async (req, res) => {
+    const rows = await prisma.financeAttachment.findMany({
+      where: { uploadedByClientAccountId: { not: null }, reviewedAt: null, transaction: { organizationId: req.user!.organizationId } },
+      orderBy: { createdAt: "asc" },
+      include: {
+        transaction: {
+          select: { id: true, category: true, amount: true, paidAmount: true, dueDate: true, client: { select: { id: true, name: true } }, project: { select: { code: true } } },
+        },
+      },
+    });
+    return ok(res, rows.map((a) => ({
+      id: a.id,
+      fileName: a.fileName,
+      createdAt: a.createdAt,
+      transaction: { ...a.transaction, amount: money(a.transaction.amount), paidAmount: money(a.transaction.paidAmount) },
+    })));
+  })
+);
+
+// POST /api/finance/documents/client-proofs/:attachmentId/review -> marca como conferido
+router.post(
+  "/client-proofs/:attachmentId/review",
+  canPay,
+  asyncHandler(async (req, res) => {
+    const { note } = z.object({ note: clean(1000).optional().nullable() }).parse(req.body ?? {});
+    const a = await prisma.financeAttachment.findFirst({
+      where: { id: req.params.attachmentId, uploadedByClientAccountId: { not: null }, transaction: { organizationId: req.user!.organizationId } },
+      select: { id: true, transactionId: true, reviewedAt: true },
+    });
+    if (!a) throw new NotFoundError("Comprovante não encontrado");
+    if (a.reviewedAt) throw new ValidationError("Este comprovante já foi conferido");
+    await prisma.financeAttachment.update({ where: { id: a.id }, data: { reviewedAt: new Date(), reviewNote: txt(note) } });
+    await audit(req.user!.id, "CLIENT_PROOF_REVIEWED", a.transactionId, { attachmentId: a.id });
+    // conferir não é dar baixa: o pagamento continua sendo registrado à parte
+    return ok(res, { id: a.id }, "Comprovante conferido. Registre o pagamento para emitir o recibo.");
+  })
+);
+
 // ===========================================================================
 // CRUD do documento
 // ===========================================================================
@@ -576,6 +630,8 @@ router.get(
         createdBy: p.createdBy,
         createdAt: p.createdAt,
         receipt: p.receiptKey ? { name: p.receiptName, mimeType: p.receiptMime, size: p.receiptSize } : null,
+        // recibo emitido pelo sistema (diferente do comprovante enviado)
+        issuedReceiptId: p.receiptDocumentId,
       })),
       attachments: attachments.map((a) => ({
         id: a.id,
@@ -774,9 +830,20 @@ router.post(
           `${doc.category} · pago ${input.amount.toFixed(2)}${view.remaining > 0 ? ` · restam ${view.remaining.toFixed(2)}` : ""}`
         );
       }
+      // Recibo automático para recebimento de cliente. O pagamento já está
+      // gravado: falha no PDF não pode subir para o catch abaixo (que apaga o
+      // comprovante) nem desfazer nada — o recibo pode ser reemitido depois.
+      let receiptInfo: { documentId: string; number: string } | null = null;
+      if (doc.type === "RECEITA" && doc.client) {
+        try {
+          receiptInfo = await issueReceipt(payment.id, req.user!.organizationId, req.user!.id);
+        } catch (err) {
+          console.error("[recibo] falha ao emitir:", err instanceof Error ? err.message : err);
+        }
+      }
       return ok(
         res,
-        { payment: { id: payment.id, amount: money(payment.amount), paidAt: payment.paidAt }, document: view },
+        { payment: { id: payment.id, amount: money(payment.amount), paidAt: payment.paidAt }, document: view, receipt: receiptInfo },
         view.remaining > 0 ? `Pagamento registrado. Saldo em aberto: ${view.remaining.toFixed(2)}` : "Documento quitado"
       );
     } catch (e) {

@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -62,6 +62,7 @@ type DocDetail = FinanceDoc & {
     note: string | null;
     createdBy: { id: string; name: string } | null;
     receipt: { name: string | null } | null;
+    issuedReceiptId: string | null;
   }[];
   attachments: { id: string; kind: string; fileName: string; size: number | null; uploadedBy: { name: string } | null; createdAt: string }[];
 };
@@ -152,6 +153,8 @@ export function FinanceDocuments() {
 
   return (
     <div className="space-y-4">
+      <ComprovantesAConferir onAbrir={setAberto} />
+
       {/* Painel */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric titulo="A pagar" valor={totais?.aPagar} icone={Wallet} />
@@ -690,6 +693,9 @@ function DocumentoDetalhe({
                           </p>
                         </div>
                         <div className="flex shrink-0 gap-1">
+                          {d.type === "RECEITA" && (
+                            <ReciboBotao paymentId={p.id} issuedReceiptId={p.issuedReceiptId} podeEmitir={podePagar} onDone={atualizar} />
+                          )}
                           {p.receipt && (
                             <Button size="sm" variant="ghost" asChild>
                               <a href={`/api/finance/documents/payments/${p.id}/receipt`} target="_blank" rel="noreferrer">
@@ -829,5 +835,87 @@ function Info({ rotulo, valor, destaque }: { rotulo: string; valor: string; dest
       <p className="text-xs text-muted-foreground">{rotulo}</p>
       <p className={`text-sm tabular-nums ${destaque ? "font-semibold" : ""}`}>{valor}</p>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Comprovantes enviados pelos clientes e recibo
+// ---------------------------------------------------------------------------
+
+type Prova = {
+  id: string;
+  fileName: string;
+  createdAt: string;
+  transaction: { id: string; category: string; amount: number; paidAmount: number; dueDate: string | null; client: { name: string } | null; project: { code: string } | null };
+};
+
+/** Comprovantes que os clientes mandaram pelo portal e ainda não foram conferidos. */
+function ComprovantesAConferir({ onAbrir }: { onAbrir: (id: string) => void }) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["finance-docs", "client-proofs"], queryFn: () => apiGet<{ data: Prova[] }>("/finance/documents/client-proofs") });
+  const conferir = useMutation({
+    mutationFn: (id: string) => apiPost<{ message?: string }>(`/finance/documents/client-proofs/${id}/review`, {}),
+    onSuccess: (r) => {
+      toast.success(r.message ?? "Comprovante conferido");
+      qc.invalidateQueries({ queryKey: ["finance-docs"] });
+    },
+    onError: (e) => toast.error(errorMessage(e, "Não foi possível conferir")),
+  });
+  const itens = q.data?.data ?? [];
+  if (!itens.length) return null;
+  return (
+    <Card className="border-warning/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Receipt className="h-4 w-4" /> Comprovantes enviados por clientes ({itens.length})
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">Confira o comprovante e registre o pagamento no documento — o recibo sai sozinho depois disso.</p>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {itens.map((a) => (
+          <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm">
+            <span className="min-w-0">
+              <span className="font-medium">{a.transaction.client?.name ?? "Cliente"}</span>
+              <span className="text-muted-foreground"> · {a.transaction.category}{a.transaction.project ? ` · ${a.transaction.project.code}` : ""} · {brl(a.transaction.amount - a.transaction.paidAmount)} em aberto</span>
+            </span>
+            <span className="flex gap-1">
+              <Button size="sm" variant="ghost" asChild>
+                <a href={`/api/finance/documents/attachments/${a.id}`} target="_blank" rel="noreferrer">
+                  <Paperclip className="h-4 w-4" /> Ver
+                </a>
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => onAbrir(a.transaction.id)}>Abrir documento</Button>
+              <Button size="sm" onClick={() => conferir.mutate(a.id)} disabled={conferir.isPending}>
+                <CheckCircle2 className="h-4 w-4" /> Conferido
+              </Button>
+            </span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReciboBotao({ paymentId, issuedReceiptId, podeEmitir, onDone }: { paymentId: string; issuedReceiptId: string | null; podeEmitir: boolean; onDone: () => void }) {
+  const emitir = useMutation({
+    mutationFn: () => apiPost<{ message?: string }>(`/finance/documents/payments/${paymentId}/receipt`, {}),
+    onSuccess: (r) => {
+      toast.success(r.message ?? "Recibo emitido");
+      onDone();
+    },
+    onError: (e) => toast.error(errorMessage(e, "Não foi possível emitir o recibo")),
+  });
+  if (issuedReceiptId) {
+    return (
+      <Button size="sm" variant="ghost" onClick={() => apiDownload(`/documents/${issuedReceiptId}/download`, "recibo.pdf").catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))} title="Baixar recibo">
+        <FileText className="h-4 w-4" />
+      </Button>
+    );
+  }
+  if (!podeEmitir) return null;
+  return (
+    <Button size="sm" variant="ghost" onClick={() => emitir.mutate()} disabled={emitir.isPending} title="Emitir recibo">
+      {emitir.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+    </Button>
   );
 }

@@ -94,6 +94,31 @@ export const AUTOMATION_DEFAULTS: Record<MessageEvent, AutomationDef> = {
     vars: [...COMMON, "projeto.codigo", "projeto.nome"],
     delayDays: 7,
   },
+  PAYMENT_REMINDER: {
+    label: "Parcela vence em breve",
+    description: "3 dias antes do vencimento de uma parcela.",
+    body: "Olá, {{cliente.primeiroNome}}! Passando para lembrar que a parcela de {{parcela.valor}} do projeto {{projeto.codigo}} vence em {{parcela.vencimento}}. Se já pagou, pode desconsiderar — e, se quiser, envie o comprovante pelo portal: {{portal.link}} — {{empresa.nome}}",
+    vars: [...COMMON, "projeto.codigo", "parcela.valor", "parcela.vencimento"],
+  },
+  PAYMENT_DUE_TODAY: {
+    label: "Parcela vence hoje",
+    description: "No dia do vencimento.",
+    body: "Olá, {{cliente.primeiroNome}}! A parcela de {{parcela.valor}} do projeto {{projeto.codigo}} vence hoje. O comprovante pode ser enviado pelo portal: {{portal.link}} — {{empresa.nome}}",
+    vars: [...COMMON, "projeto.codigo", "parcela.valor", "parcela.vencimento"],
+  },
+  PAYMENT_OVERDUE: {
+    label: "Parcela em atraso",
+    description: "Um dia depois do vencimento, sem pagamento registrado.",
+    // tom de lembrete, não de cobrança: pode ser só atraso na baixa
+    body: "Olá, {{cliente.primeiroNome}}. Não localizamos ainda o pagamento da parcela de {{parcela.valor}} do projeto {{projeto.codigo}}, com vencimento em {{parcela.vencimento}}. Se já pagou, é só enviar o comprovante pelo portal que a gente confere: {{portal.link}}. Qualquer dúvida, estamos à disposição. — {{empresa.nome}}",
+    vars: [...COMMON, "projeto.codigo", "parcela.valor", "parcela.vencimento"],
+  },
+  RECEIPT_AVAILABLE: {
+    label: "Recibo disponível",
+    description: "Quando o financeiro confirma um pagamento e o recibo é emitido.",
+    body: "Recebemos seu pagamento de {{recibo.valor}}, {{cliente.primeiroNome}}. Obrigado! O recibo {{recibo.numero}} já está no portal: {{portal.link}} — {{empresa.nome}}",
+    vars: [...COMMON, "recibo.numero", "recibo.valor"],
+  },
 };
 
 export const MESSAGE_EVENTS = Object.keys(AUTOMATION_DEFAULTS) as MessageEvent[];
