@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, FileText, LifeBuoy, Loader2 } from "lucide-react";
+import { ArrowRight, FileText, LifeBuoy, Loader2, Wallet } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { portalGet } from "@/services/portal-api";
@@ -47,6 +47,17 @@ export function PortalHomePage() {
         <h1 className="text-xl font-semibold">Seus projetos</h1>
         <p className="text-sm text-muted-foreground">Acompanhe o cronograma, os documentos e a assistência de cada contrato.</p>
       </div>
+
+      <Link to="/portal/pagamentos" className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/50">
+        <span className="flex items-center gap-3">
+          <Wallet className="h-5 w-5 text-primary" />
+          <span>
+            <span className="block font-medium">Pagamentos</span>
+            <span className="block text-xs text-muted-foreground">Parcelas, recibos e envio de comprovante</span>
+          </span>
+        </span>
+        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+      </Link>
 
       {projects.length === 0 ? (
         <Card>

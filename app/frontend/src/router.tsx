@@ -59,6 +59,7 @@ const PortalForgotPage = lazy(() => import("@/pages/portal/forgot").then((m) => 
 const PortalSetPasswordPage = lazy(() => import("@/pages/portal/set-password").then((m) => ({ default: m.PortalSetPasswordPage })));
 const PortalHomePage = lazy(() => import("@/pages/portal/home").then((m) => ({ default: m.PortalHomePage })));
 const PortalProjectPage = lazy(() => import("@/pages/portal/project").then((m) => ({ default: m.PortalProjectPage })));
+const PortalPaymentsPage = lazy(() => import("@/pages/portal/payments").then((m) => ({ default: m.PortalPaymentsPage })));
 
 function LazyBoundary({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Carregando...</div>}>{children}</Suspense>;
@@ -155,6 +156,7 @@ export const router = createBrowserRouter([
               { index: true, element: <LazyBoundary><PortalHomePage /></LazyBoundary> },
               { path: "briefing", element: <LazyBoundary><PortalBriefingPage /></LazyBoundary> },
               { path: "projeto/:id", element: <LazyBoundary><PortalProjectPage /></LazyBoundary> },
+              { path: "pagamentos", element: <LazyBoundary><PortalPaymentsPage /></LazyBoundary> },
             ],
           },
         ],

@@ -630,6 +630,8 @@ router.get(
         createdBy: p.createdBy,
         createdAt: p.createdAt,
         receipt: p.receiptKey ? { name: p.receiptName, mimeType: p.receiptMime, size: p.receiptSize } : null,
+        // recibo emitido pelo sistema (diferente do comprovante enviado)
+        issuedReceiptId: p.receiptDocumentId,
       })),
       attachments: attachments.map((a) => ({
         id: a.id,
