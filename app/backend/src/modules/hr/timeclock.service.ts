@@ -2,17 +2,68 @@ import type { TimeEntryKind } from "@prisma/client";
 
 /**
  * Parser tolerante para arquivos de relógio de ponto.
- * Alvo: exportação do KNUP KP-1028 (por pendrive, "abre no Excel").
- * Aceita CSV/TXT com separador ; , ou TAB e colunas em qualquer ordem:
- *   matrícula/PIS, data (dd/mm/aaaa ou aaaa-mm-dd), hora (HH:MM[:SS])
- * ou uma coluna de data-hora combinada. Linhas inválidas são contadas, não quebram o import.
+ *
+ * Dois formatos:
+ *
+ * 1. Com cabeçalho nomeado (S362E e similares): arquivo UTF-16 separado por
+ *    TAB, com colunas No, TMNo, EnNo, Name, ..., DateTime, TR. Aqui a coluna
+ *    da matrícula é lida pelo NOME (EnNo) — pelo palpite, a primeira coluna
+ *    numérica seria "No" (o número da linha) e todas as marcações iriam para
+ *    o colaborador errado.
+ *
+ * 2. Sem cabeçalho (KNUP KP-1028 e afins): CSV/TXT com ; , ou TAB e colunas em
+ *    qualquer ordem — matrícula/PIS, data e hora, ou data-hora junta.
+ *
+ * As horas do aparelho são locais (Fortaleza, UTC-3 o ano todo) e viram UTC
+ * na gravação; o dia e o espelho são montados no fuso da loja.
+ *
+ * O rótulo do aparelho (Time In, Job Out, Break On...) é guardado para
+ * auditoria, mas NÃO define o tipo da marcação: na prática a equipe aperta a
+ * tecla que estiver à mão — há dias com quatro "Time In" seguidos e saídas
+ * registradas como "Break On". O que vale é a ordem cronológica.
+ *
+ * Linhas inválidas são contadas, não quebram o import.
  */
 
-export type ParsedPunch = { registration: string; timestamp: Date };
+export type ParsedPunch = { registration: string; timestamp: Date; label?: string | null; name?: string | null };
 export type ParseResult = { punches: ParsedPunch[]; errors: number; total: number };
 
 const DATE_RE = /(\d{2})[/.-](\d{2})[/.-](\d{4})|(\d{4})-(\d{2})-(\d{2})/;
 const TIME_RE = /(\d{1,2}):(\d{2})(?::(\d{2}))?/;
+
+const FORTALEZA_TZ = "America/Fortaleza";
+/** Fortaleza é UTC-3 o ano todo (sem horário de verão desde 2019). */
+const FORTALEZA_OFFSET_HOURS = 3;
+
+/** Hora local do relógio -> instante em UTC. */
+export function fortalezaToUtc(y: number, mo: number, d: number, hh: number, mi: number, ss = 0): Date {
+  return new Date(Date.UTC(y, mo - 1, d, hh + FORTALEZA_OFFSET_HOURS, mi, ss));
+}
+/** Dia no calendário da loja (aaaa-mm-dd). */
+export const fortalezaDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: FORTALEZA_TZ });
+/** Hora no relógio da loja (HH:MM). */
+export const fortalezaTime = (d: Date) =>
+  d.toLocaleTimeString("pt-BR", { timeZone: FORTALEZA_TZ, hour: "2-digit", minute: "2-digit", hour12: false });
+
+/**
+ * Texto do arquivo. O S362E exporta em UTF-16 com BOM; lido como UTF-8 vira
+ * lixo e o import inteiro falha, então o BOM decide a codificação.
+ */
+export function decodeTimeClockFile(buffer: Buffer): string {
+  if (buffer.length >= 2) {
+    const [b0, b1] = buffer;
+    if (b0 === 0xff && b1 === 0xfe) return buffer.subarray(2).toString("utf16le");
+    if (b0 === 0xfe && b1 === 0xff) {
+      // UTF-16 big-endian: inverte os pares de bytes e lê como little-endian
+      const swapped = Buffer.from(buffer.subarray(2));
+      swapped.swap16();
+      return swapped.toString("utf16le");
+    }
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) return buffer.subarray(3).toString("utf8");
+  const utf8 = buffer.toString("utf8");
+  return utf8.includes("\uFFFD") ? buffer.toString("latin1") : utf8;
+}
 
 function toDate(dateStr: string, timeStr: string): Date | null {
   const dm = dateStr.match(DATE_RE);
@@ -31,14 +82,64 @@ function toDate(dateStr: string, timeStr: string): Date | null {
   const hh = +tm[1];
   const mi = +tm[2];
   const ss = tm[3] ? +tm[3] : 0;
-  const date = new Date(y, mo - 1, d, hh, mi, ss);
+  const date = fortalezaToUtc(y, mo, d, hh, mi, ss);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/** Colunas do layout com cabeçalho nomeado, se houver. */
+function headerColumns(lines: string[]): { index: number; cols: Record<string, number> } | null {
+  for (let i = 0; i < Math.min(lines.length, 20); i++) {
+    const cols = lines[i].split("\t").map((c) => c.trim().toLowerCase());
+    const enNo = cols.indexOf("enno");
+    const dateTime = cols.indexOf("datetime");
+    if (enNo >= 0 && dateTime >= 0) {
+      return {
+        index: i,
+        cols: { enNo, dateTime, name: cols.indexOf("name"), label: cols.indexOf("tr"), inOut: cols.indexOf("in/out") },
+      };
+    }
+  }
+  return null;
+}
+
+/** Layout com cabeçalho: cada coluna é lida pelo nome. */
+function parseWithHeader(lines: string[], header: { index: number; cols: Record<string, number> }): ParseResult {
+  const { cols } = header;
+  const punches: ParsedPunch[] = [];
+  let errors = 0;
+  let total = 0;
+
+  for (const line of lines.slice(header.index + 1)) {
+    if (line.startsWith("#")) continue;
+    const c = line.split("\t");
+    if (c.length <= cols.dateTime) continue;
+    total++;
+
+    const reg = (c[cols.enNo] ?? "").trim();
+    const raw = (c[cols.dateTime] ?? "").trim();
+    // "2026-01-10  03:35:25" — o aparelho usa dois espaços entre data e hora
+    const [dateStr, timeStr] = raw.split(/\s+/);
+    if (!reg || !dateStr || !timeStr) {
+      errors++;
+      continue;
+    }
+    const ts = toDate(dateStr, timeStr);
+    if (!ts) {
+      errors++;
+      continue;
+    }
+    const label = cols.label >= 0 ? (c[cols.label] ?? "").trim() : cols.inOut >= 0 ? (c[cols.inOut] ?? "").trim() : "";
+    punches.push({ registration: reg, timestamp: ts, label: label || null, name: cols.name >= 0 ? (c[cols.name] ?? "").trim() || null : null });
+  }
+  return { punches, errors, total };
+}
+
 export function parseTimeClockFile(buffer: Buffer): ParseResult {
-  let text = buffer.toString("utf8");
-  if (text.includes("�")) text = buffer.toString("latin1");
+  const text = decodeTimeClockFile(buffer);
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  const header = headerColumns(lines);
+  if (header) return parseWithHeader(lines, header);
 
   const punches: ParsedPunch[] = [];
   let errors = 0;
@@ -71,6 +172,30 @@ export function parseTimeClockFile(buffer: Buffer): ParseResult {
   }
 
   return { punches, errors, total };
+}
+
+
+/** Texto comparável: sem acento, sem pontuação, minúsculo. */
+const normalizeName = (v: string) =>
+  v
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * O nome que veio do relógio parece ser a mesma pessoa do cadastro?
+ * Basta um nome próprio em comum (o aparelho guarda só o primeiro nome, e o
+ * cadastro tem o nome completo). Serve para avisar antes de importar em cima
+ * do colaborador errado — quem decide é uma pessoa.
+ */
+export function looksLikeSamePerson(fileName: string | null | undefined, employeeName: string): boolean {
+  if (!fileName?.trim()) return true; // sem nome no arquivo não há como duvidar
+  const a = normalizeName(fileName).split(" ").filter((w) => w.length >= 3);
+  const b = new Set(normalizeName(employeeName).split(" "));
+  return a.some((w) => b.has(w));
 }
 
 /** Alterna IN/OUT pela ordem cronológica das marcações do dia. */
@@ -106,7 +231,8 @@ export function buildMirror(
 
   const byDay = new Map<string, { timestamp: Date; kind: TimeEntryKind }[]>();
   for (const e of entries) {
-    const key = e.timestamp.toISOString().slice(0, 10);
+    // dia da loja: uma batida às 22h não pode cair no dia seguinte
+    const key = fortalezaDay(e.timestamp);
     (byDay.get(key) ?? byDay.set(key, []).get(key)!).push(e);
   }
 
@@ -116,9 +242,8 @@ export function buildMirror(
   let faltas = 0;
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const dt = new Date(y, m - 1, d);
-    const key = dt.toISOString().slice(0, 10);
-    const weekday = dt.getDay(); // 0 dom ... 6 sáb
+    const key = `${month}-${String(d).padStart(2, "0")}`;
+    const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 dom ... 6 sáb
     const isBusinessDay = weekday >= 1 && weekday <= 5;
     const expected = isBusinessDay ? dailyExpected : 0;
 
@@ -143,7 +268,7 @@ export function buildMirror(
     days.push({
       date: key,
       weekday,
-      punches: list.map((p) => ({ time: p.timestamp.toTimeString().slice(0, 5), kind: p.kind })),
+      punches: list.map((p) => ({ time: fortalezaTime(p.timestamp), kind: p.kind })),
       workedMinutes: worked,
       expectedMinutes: expected,
       balanceMinutes: worked - expected,
