@@ -29,6 +29,8 @@ export type FinanceSummary = {
   aPagar: number;
   totalLancamentos: number;
   porCategoria: { category: string; type: FinanceType; total: number }[];
+  /** Quanto cada setor consumiu (§31). O sem-centro vem como id null. */
+  porCentroDeCusto: { id: string | null; code: string; name: string; receitas: number; despesas: number }[];
   porMes: { month: string; receitas: number; despesas: number }[];
 };
 
@@ -817,4 +819,13 @@ export type ContractorDocument = {
   refusedAt: string | null;
   refusalReason: string | null;
   signerName: string | null;
+};
+
+/** Centro de custo: o setor que consumiu o valor (§31). */
+export type CostCenter = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  active: boolean;
 };

@@ -203,6 +203,7 @@ model Organization {
   postSales              PostSale[]
   employees              Employee[]
   financeTransactions    FinanceTransaction[]
+  costCenters            CostCenter[]
   taxRules               TaxRule[]
   dreCategoryMappings    DreCategoryMapping[]
   documentTemplates      DocumentTemplate[]
@@ -2302,6 +2303,10 @@ model FinanceTransaction {
   client        Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   supplierId    String?
   supplier      Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  // setor que consumiu o valor (§31); SetNull para apagar um centro não
+  // apagar o lançamento junto
+  costCenterId  String?
+  costCenter    CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
   cardExpenseId String?      @unique
   cardExpense   CardExpense? @relation(fields: [cardExpenseId], references: [id], onDelete: SetNull)
 
@@ -2892,6 +2897,28 @@ model ProductionTimeLog {
 // Mapeia categorias livres de FinanceTransaction para as linhas da DRE.
 // Quando não há mapeamento, um classificador por palavra-chave decide.
 // ============================================================
+
+/// Centro de custo (§31): o SETOR que consumiu o dinheiro.
+/// É uma dimensão diferente de `category` (a natureza do gasto) e de
+/// `projectId` (a obra). Uma compra de fita de borda é categoria "material",
+/// centro de custo "Produção" e pode ou não estar ligada a uma obra.
+model CostCenter {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String // curto, para relatório: PROD, ADM, COM...
+  name           String
+  description    String?      @db.Text
+  active         Boolean      @default(true)
+
+  transactions FinanceTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, active])
+}
 
 model DreCategoryMapping {
   id             String       @id @default(cuid())
