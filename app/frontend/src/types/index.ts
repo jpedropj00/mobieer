@@ -778,3 +778,43 @@ export type BreakEven = {
   gap: number;
   reached: boolean;
 };
+
+export type ContractorDocumentType =
+  | "CONTRATO"
+  | "DOCUMENTO_PESSOAL"
+  | "CERTIFICADO"
+  | "COMPROVANTE"
+  | "TERMO_RESPONSABILIDADE"
+  | "REGULAMENTO_INTERNO"
+  | "REGRAS_EMPRESA"
+  | "OUTRO";
+
+/** Os seis passos da entrega/assinatura do documento do montador (§7). */
+export type ContractorDocumentStatus =
+  | "AGUARDANDO_ENVIO"
+  | "ENVIADO"
+  | "VISUALIZADO"
+  | "AGUARDANDO_ASSINATURA"
+  | "ASSINADO"
+  | "RECUSADO";
+
+export type ContractorDocument = {
+  id: string;
+  contractorId?: string;
+  kind: ContractorDocumentType;
+  title: string;
+  fileName: string;
+  mimeType: string | null;
+  size: number | null;
+  expiresAt: string | null;
+  createdAt: string;
+  status: ContractorDocumentStatus;
+  statusLabel: string;
+  requiresSignature: boolean;
+  sentAt: string | null;
+  viewedAt: string | null;
+  signedAt: string | null;
+  refusedAt: string | null;
+  refusalReason: string | null;
+  signerName: string | null;
+};

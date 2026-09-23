@@ -3431,7 +3431,20 @@ enum ContractorDocumentType {
   DOCUMENTO_PESSOAL
   CERTIFICADO
   COMPROVANTE
+  TERMO_RESPONSABILIDADE // ferramentas e equipamentos sob guarda do montador
+  REGULAMENTO_INTERNO
+  REGRAS_EMPRESA
   OUTRO
+}
+
+/// Entrega e assinatura do documento do montador (§7). A ordem é a do fluxo.
+enum ContractorDocumentStatus {
+  AGUARDANDO_ENVIO
+  ENVIADO
+  VISUALIZADO
+  AGUARDANDO_ASSINATURA
+  ASSINADO
+  RECUSADO
 }
 
 /// Pagamento (total ou parcial) de um documento financeiro.
@@ -3494,7 +3507,21 @@ model ContractorDocument {
   uploadedBy   User?                  @relation("ContractorDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   createdAt    DateTime               @default(now())
 
+  // Entrega e assinatura (§7). O status é governado por documents.service.ts.
+  status            ContractorDocumentStatus @default(AGUARDANDO_ENVIO)
+  requiresSignature Boolean                  @default(false)
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  signedAt          DateTime?
+  refusedAt         DateTime?
+  refusalReason     String?                  @db.Text
+  /// PNG base64 do desenho, igual ao DocumentSignature do lado do cliente.
+  signatureDataUrl  String?                  @db.Text
+  signerName        String?
+  signerIp          String?
+
   @@index([contractorId])
+  @@index([contractorId, status])
 }
 
 /// Solicitacao de pecas feita pelo montador externo na obra.

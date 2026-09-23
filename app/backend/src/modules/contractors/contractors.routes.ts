@@ -18,6 +18,11 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { localDay, localPeriod, shiftMinutes, summarizeShifts } from "./contractors.service";
 import { setContractorActive } from "./installation.service";
+import { STATUS_LABEL, nextStatus } from "./documents.service";
+import { storage, buildStorageKey } from "../../lib/storage";
+import { uploadDocument } from "../../middlewares/upload";
+import { pipeToResponse } from "../../utils/stream";
+import { ContractorDocumentStatus, ContractorDocumentType } from "@prisma/client";
 
 const router = Router();
 router.use(authenticate);
@@ -406,6 +411,175 @@ router.get(
       items,
       totals: { ...summary.totals, contractors: items.length, bonus: bonusTotal, totalWithBonus: round2(summary.totals.total + bonusTotal) },
     });
+  })
+);
+
+
+// ============================================================
+// §7 — DOCUMENTOS DO MONTADOR (envio, acompanhamento e assinatura)
+//
+// A empresa anexa, envia e acompanha em que passo cada documento está. Quem
+// visualiza, assina ou recusa é o montador, pela própria área (me-contractor).
+// Os status e o que pode virar o quê ficam em documents.service.ts.
+// ============================================================
+
+async function auditarDoc(userId: string, action: string, entityId: string, details?: object) {
+  await prisma.auditLog.create({ data: { userId, action, entity: "ContractorDocument", entityId, details } });
+}
+
+const docSelect = {
+  id: true, contractorId: true, kind: true, title: true, fileName: true, mimeType: true, size: true,
+  expiresAt: true, createdAt: true, status: true, requiresSignature: true, sentAt: true, viewedAt: true,
+  signedAt: true, refusedAt: true, refusalReason: true, signerName: true,
+} as const;
+
+type DocRow = {
+  id: string; contractorId: string; kind: ContractorDocumentType; title: string; fileName: string;
+  mimeType: string | null; size: number | null; expiresAt: Date | null; createdAt: Date;
+  status: ContractorDocumentStatus; requiresSignature: boolean; sentAt: Date | null; viewedAt: Date | null;
+  signedAt: Date | null; refusedAt: Date | null; refusalReason: string | null; signerName: string | null;
+};
+
+/** O que a tela mostra. Nunca devolve o desenho da assinatura nem o storageKey. */
+const serializeDoc = (d: DocRow) => ({ ...d, statusLabel: STATUS_LABEL[d.status] });
+
+async function ensureDoc(id: string, organizationId: string) {
+  const doc = await prisma.contractorDocument.findFirst({
+    where: { id, contractor: { organizationId } },
+    select: { ...docSelect, storageKey: true },
+  });
+  if (!doc) throw new NotFoundError("Documento não encontrado");
+  return doc;
+}
+
+// GET /api/contractors/:id/documents
+router.get(
+  "/:id/documents",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    await ensureContractor(req.params.id, req.user!.organizationId);
+    const docs = await prisma.contractorDocument.findMany({
+      where: { contractorId: req.params.id },
+      select: docSelect,
+      orderBy: { createdAt: "desc" },
+    });
+    return ok(res, docs.map(serializeDoc));
+  })
+);
+
+// POST /api/contractors/:id/documents  (multipart: file + kind, title, requiresSignature?, expiresAt?)
+router.post(
+  "/:id/documents",
+  requirePermission("hr.employees.manage"),
+  uploadDocument.single("file"),
+  asyncHandler(async (req, res) => {
+    await ensureContractor(req.params.id, req.user!.organizationId);
+    if (!req.file) throw new BadRequestError("Arquivo é obrigatório");
+    const input = z
+      .object({
+        kind: z.nativeEnum(ContractorDocumentType).default(ContractorDocumentType.OUTRO),
+        title: z.string().trim().min(2).max(255),
+        // vem de multipart, então chega como texto
+        requiresSignature: z.enum(["true", "false"]).default("false"),
+        expiresAt: z.coerce.date().optional().nullable().or(z.literal("")),
+      })
+      .parse(req.body);
+
+    const key = buildStorageKey(`contractors/${req.params.id}`, req.file.originalname);
+    await storage.put(key, req.file.buffer, req.file.mimetype);
+
+    const doc = await prisma.contractorDocument.create({
+      data: {
+        contractorId: req.params.id,
+        kind: input.kind,
+        title: input.title,
+        storageKey: key,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        expiresAt: input.expiresAt instanceof Date ? input.expiresAt : null,
+        uploadedById: req.user!.id,
+        requiresSignature: input.requiresSignature === "true",
+        // nasce como rascunho: o montador só vê depois que a empresa enviar
+        status: ContractorDocumentStatus.AGUARDANDO_ENVIO,
+      },
+      select: docSelect,
+    });
+    await auditarDoc(req.user!.id, "CONTRACTOR_DOCUMENT_UPLOADED", doc.id, { kind: input.kind, contractorId: req.params.id });
+    return ok(res, serializeDoc(doc), "Documento anexado. Envie para o montador quando estiver pronto.");
+  })
+);
+
+// POST /api/contractors/documents/:docId/send — libera para o montador (e reenvia após recusa)
+router.post(
+  "/documents/:docId/send",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const doc = await ensureDoc(req.params.docId, req.user!.organizationId);
+    // depois de uma recusa o evento é REENVIAR; nos demais casos, ENVIAR
+    const reenvio = doc.status === ContractorDocumentStatus.RECUSADO;
+    const r = nextStatus(doc.status, reenvio ? "REENVIAR" : "ENVIAR", doc.requiresSignature);
+    if (!r.ok) throw new BadRequestError(r.motivo);
+
+    const atualizado = await prisma.contractorDocument.update({
+      where: { id: doc.id },
+      data: {
+        status: r.status,
+        sentAt: new Date(),
+        // reenvio zera a recusa e a leitura: o montador decide de novo
+        refusedAt: null,
+        refusalReason: null,
+        viewedAt: reenvio ? null : doc.viewedAt,
+      },
+      select: docSelect,
+    });
+    await auditarDoc(req.user!.id, "CONTRACTOR_DOCUMENT_SENT", doc.id, { reenvio });
+    return ok(res, serializeDoc(atualizado), reenvio ? "Documento reenviado" : "Documento enviado ao montador");
+  })
+);
+
+// GET /api/contractors/documents/:docId/file — a empresa abre o arquivo
+router.get(
+  "/documents/:docId/file",
+  requirePermission("hr.read"),
+  asyncHandler(async (req, res) => {
+    const doc = await ensureDoc(req.params.docId, req.user!.organizationId);
+    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    if (signed) return res.redirect(signed);
+    const stream = await storage.getStream(doc.storageKey);
+    res.setHeader("Content-Type", doc.mimeType ?? "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.fileName)}"`);
+    return pipeToResponse(stream, res);
+  })
+);
+
+// GET /api/contractors/documents/:docId/signature — o desenho, só para quem gerencia
+router.get(
+  "/documents/:docId/signature",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const doc = await prisma.contractorDocument.findFirst({
+      where: { id: req.params.docId, contractor: { organizationId: req.user!.organizationId } },
+      select: { signatureDataUrl: true, signerName: true, signedAt: true, signerIp: true },
+    });
+    if (!doc?.signatureDataUrl) throw new NotFoundError("Este documento ainda não foi assinado");
+    return ok(res, doc);
+  })
+);
+
+// DELETE /api/contractors/documents/:docId — só enquanto não saiu da empresa
+router.delete(
+  "/documents/:docId",
+  requirePermission("hr.employees.manage"),
+  asyncHandler(async (req, res) => {
+    const doc = await ensureDoc(req.params.docId, req.user!.organizationId);
+    if (doc.status !== ContractorDocumentStatus.AGUARDANDO_ENVIO) {
+      // apagar depois de enviado destruiria a prova de entrega e de assinatura
+      throw new BadRequestError("Documento já enviado ao montador não pode ser excluído.");
+    }
+    await prisma.contractorDocument.delete({ where: { id: doc.id } });
+    await auditarDoc(req.user!.id, "CONTRACTOR_DOCUMENT_DELETED", doc.id, { title: doc.title });
+    return ok(res, { deleted: true }, "Documento excluído");
   })
 );
 

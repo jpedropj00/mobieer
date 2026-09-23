@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, localIsoDate } from "@/lib/utils";
 import type { Contractor, ContractorShift, ContractorSummary } from "@/types";
 import { AccessDialog, BonusTab, InstallationsTab, ProductivityTab } from "@/components/contractors-management";
+import { ContractorDocumentsTab } from "@/components/contractor-documents";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDateTime = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -194,6 +195,7 @@ export function ContractorsPage() {
           <TabsTrigger value="comodos">Cômodos</TabsTrigger>
           <TabsTrigger value="produtividade">Produtividade</TabsTrigger>
           <TabsTrigger value="bonificacao">Bonificação</TabsTrigger>
+          <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="fechamento">Fechamento</TabsTrigger>
         </TabsList>
 
@@ -317,6 +319,10 @@ export function ContractorsPage() {
         <TabsContent value="bonificacao" className="space-y-4 pt-4">
           <PeriodPicker range={range} setRange={setRange} />
           <BonusTab canManage={canManage} range={range} />
+        </TabsContent>
+
+        <TabsContent value="documentos" className="space-y-4 pt-4">
+          <ContractorDocumentsTab contractors={list} canManage={canManage} />
         </TabsContent>
 
         <TabsContent value="fechamento" className="space-y-4 pt-4">
