@@ -89,7 +89,7 @@ export function HrPage() {
   const [tab, setTab] = useState("employees");
   const [dialog, setDialog] = useState<"employee" | "period" | "request" | "manualPunch" | "adjust" | "docUpload" | null>(null);
   const [periodEmployeeId, setPeriodEmployeeId] = useState<string>("");
-  const [empForm, setEmpForm] = useState({ fullName: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
+  const [empForm, setEmpForm] = useState({ fullName: "", document: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
 
   // Documentos do colaborador (contrato, rescisão, férias, ferramentas...)
   const [docsEmployeeId, setDocsEmployeeId] = useState<string>("");
@@ -213,6 +213,7 @@ export function HrPage() {
     mutationFn: () =>
       apiPost("/hr/employees", {
         fullName: empForm.fullName,
+        document: empForm.document,
         role: empForm.role || null,
         sector: empForm.sector || null,
         phone: empForm.phone || null,
@@ -224,7 +225,7 @@ export function HrPage() {
     onSuccess: () => {
       toast.success("Colaborador cadastrado");
       setDialog(null);
-      setEmpForm({ fullName: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
+      setEmpForm({ fullName: "", document: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
       refreshAll();
     },
     onError: (e) => toast.error(errorMessage(e, "Falha ao cadastrar")),
@@ -318,7 +319,7 @@ export function HrPage() {
                       {e.fullName} <span className="font-mono text-xs text-muted-foreground">· {e.registration}</span>
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {[e.role, e.sector].filter(Boolean).join(" · ") || "—"} · admissão {fmt(e.admittedAt)}
+                      {[e.documentFormatted || null, e.role, e.sector].filter(Boolean).join(" · ") || "—"} · admissão {fmt(e.admittedAt)}
                     </p>
                   </div>
                   {e.openPeriod ? (
@@ -692,6 +693,14 @@ export function HrPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Nome completo" className="sm:col-span-2">
               <Input value={empForm.fullName} onChange={(e) => setEmpForm({ ...empForm, fullName: e.target.value })} />
+            </Field>
+            <Field label="CPF">
+              <Input
+                value={empForm.document}
+                inputMode="numeric"
+                placeholder="000.000.000-00"
+                onChange={(e) => setEmpForm({ ...empForm, document: e.target.value })}
+              />
             </Field>
             <Field label="Cargo">
               <Input value={empForm.role} onChange={(e) => setEmpForm({ ...empForm, role: e.target.value })} />

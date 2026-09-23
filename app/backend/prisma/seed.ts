@@ -247,7 +247,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
   },
   {
     name: "PRODUCTION",
-    label: "Produção / Corte",
+    label: "Produção",
     description: "Executa e confere as peças liberadas para produção",
     perms: [
       "dashboard.read",
@@ -349,10 +349,80 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "parts.read", "parts.read.all", "parts.create", "parts.analyze",
     ],
   },
+
+  {
+    name: "CORTE",
+    label: "Corte",
+    description: "Setor de corte: plano de corte, peças liberadas e conferência",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "timeline.read", "documents.read",
+      "products.read", "stock.read", "agenda.read",
+      "requisitions.read", "requisitions.read.all", "requisitions.cut", "requisitions.release",
+      "parts.read", "parts.read.all", "parts.produce",
+    ],
+  },
+  {
+    name: "COMPRAS",
+    label: "Compras",
+    description: "Fornecedores, cotações, pedidos de compra e entrada de material",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "documents.read", "agenda.read",
+      "suppliers.read", "suppliers.create", "suppliers.update",
+      "products.read", "products.create", "products.update", "categories.read", "warehouses.read",
+      "stock.read", "stock.entry", "stock.movements",
+      "requisitions.read", "requisitions.read.all",
+      "finance.read", "finance.documents.read", "finance.documents.manage",
+      "reports.read",
+    ],
+  },
+  {
+    name: "TECNICO",
+    label: "Técnico",
+    description: "Campo: medição, vistoria e atendimento de assistência",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "clients.read.all", "timeline.read", "timeline.edit",
+      "activities.read", "activities.create", "activities.edit", "activities.complete", "activities.sign",
+      "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel",
+      "parts.read", "parts.create",
+      "documents.read", "documents.manage",
+    ],
+  },
+  {
+    name: "FUNCIONARIO",
+    label: "Funcionário",
+    // sem clients.read.all: acesso básico não enxerga a carteira de clientes
+    description: "Acesso básico: próprias atividades, agenda, tarefas e chat",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "activities.read", "activities.create", "activities.edit", "activities.complete",
+      "agenda.read", "agenda.create",
+      "documents.read",
+    ],
+  },
+  {
+    name: "MONTADOR_INTERNO",
+    label: "Montador interno",
+    // sem contractors.self: essa área é do montador externo (perfil MONTADOR)
+    description: "Montagem pela equipe da casa: atividades, peças e agenda",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.comment",
+      "timeline.read", "documents.read",
+      "activities.read", "activities.create", "activities.edit", "activities.complete", "activities.sign",
+      "agenda.read",
+      "parts.read", "parts.create",
+      "requisitions.read", "requisitions.create",
+    ],
+  },
 ];
 
 // Chat para todos os perfis; gestão/RH também gerenciam grupos (ADMIN já tem tudo).
-const NEW_ROLES = ["COMERCIAL", "CONSULTOR", "PROJETISTA", "ASSISTENCIA"];
+const NEW_ROLES = ["COMERCIAL", "CONSULTOR", "PROJETISTA", "ASSISTENCIA", "CORTE", "COMPRAS", "TECNICO", "FUNCIONARIO", "MONTADOR_INTERNO"];
 for (const def of ROLE_DEFS) {
   if (def.name === "ADMIN" || NEW_ROLES.includes(def.name)) continue;
   const extra: PermissionCode[] = [];

@@ -272,6 +272,9 @@ export type Employee = {
   id: string;
   registration: string;
   fullName: string;
+  /** CPF, só dígitos. `documentFormatted` vem pronto para exibir. */
+  document: string | null;
+  documentFormatted: string;
   role: string | null;
   sector: string | null;
   status: EmployeeStatus;

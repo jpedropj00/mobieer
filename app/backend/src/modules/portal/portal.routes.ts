@@ -38,7 +38,7 @@ import {
 import { deliveryEstimateFor } from "../production/leadtime.service";
 import { briefingAnswersSchema, briefingForLead, saveBriefing } from "../briefing/briefing.service";
 import { isValidCpf, onlyDigits } from "../../utils/document";
-import { rateLimit } from "../../utils/rate-limit";
+import { LIMITS, rateLimit } from "../../utils/rate-limit";
 import { ConflictError, ForbiddenError } from "../../utils/ApiError";
 
 const router = Router();
@@ -131,6 +131,7 @@ router.post(
 
 router.post(
   "/auth/forgot",
+  rateLimit({ name: "portal-forgot", ...LIMITS.passwordReset }),
   asyncHandler(async (req, res) => {
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const account = await prisma.clientAccount.findUnique({ where: { email: email.toLowerCase() } });
@@ -154,6 +155,7 @@ router.post(
 
 router.post(
   "/auth/reset",
+  rateLimit({ name: "portal-reset", ...LIMITS.passwordReset }),
   asyncHandler(async (req, res) => {
     const { token, password } = z.object({ token: z.string().min(10), password: passwordSchema }).parse(req.body);
     const account = await prisma.clientAccount.findUnique({ where: { resetToken: token } });

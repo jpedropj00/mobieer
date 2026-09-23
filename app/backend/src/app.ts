@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { env } from "./config/env";
 import authRoutes from "./modules/auth/auth.routes";
 import usersRoutes from "./modules/users/users.routes";
@@ -59,6 +60,16 @@ import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
   const app = express();
+
+  // Atrás da Vercel o IP real vem no X-Forwarded-For. Sem isto, `req.ip` é o do
+  // proxy e o limite de tentativas contaria o mundo inteiro na mesma chave.
+  // Um salto só: confiar em toda a cadeia deixaria o cliente forjar o próprio IP.
+  app.set("trust proxy", 1);
+
+  // Cabeçalhos de segurança. A CSP fica de fora: a API serve JSON e os uploads,
+  // e o frontend é outro deploy — ligá-la aqui daria falsa sensação sem proteger
+  // a página que realmente executa script.
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
   app.use(
     cors({
