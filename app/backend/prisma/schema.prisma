@@ -132,6 +132,8 @@ model User {
   purchaseQuotes        PurchaseQuote[]       @relation("PurchaseQuoteCreator")
   purchaseOrders        PurchaseOrder[]       @relation("PurchaseOrderCreator")
   purchaseReceipts      PurchaseReceipt[]     @relation("PurchaseReceiver")
+  productionSteps       ProductionStep[]      @relation("ProductionStepResponsible")
+  fileRecords           FileRecord[]          @relation("FileRecordAuthor")
 
   @@index([roleId])
   @@index([organizationId])
@@ -246,6 +248,7 @@ model Organization {
   contractorRatings      ContractorRating[]
   purchaseRequests       PurchaseRequest[]
   purchaseOrders         PurchaseOrder[]
+  fileRecords            FileRecord[]
 
   @@index([enterpriseId])
 }
@@ -1051,6 +1054,7 @@ model Client {
   financeTransactions FinanceTransaction[]
   fiscalInvoices      FiscalInvoice[]
   agendaEvents        AgendaEvent[]           @relation("AgendaClient")
+  fileRecords FileRecord[]
 
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
@@ -1103,6 +1107,7 @@ model Project {
   contractorRatings   ContractorRating[]
   purchaseRequests PurchaseRequest[]
   purchaseOrders   PurchaseOrder[]
+  fileRecords FileRecord[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -2638,6 +2643,7 @@ model ProductionOrder {
   items               ProductionItem[]
   requisitions        Requisition[]
   dispatchChecklist   DispatchChecklist?
+  steps               ProductionStep[]
 
   @@index([organizationId, stage])
 }
@@ -4142,4 +4148,92 @@ model PurchaseReceiptItem {
   quantity        Int
   stockMovementId String?           @unique
   stockMovement   StockMovement?    @relation(fields: [stockMovementId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================
+// §23/§24 — Etapas do pedido na fábrica, com prazo
+//
+// A ProductionOrder acompanha o pedido em nível macro (liberado → produção →
+// pré-montagem → entrega) e os ProductionItem acompanham peça por peça. Faltava
+// o meio-termo que a especificação pede: cada ETAPA do pedido com responsável,
+// início, prazo, conclusão, observações e anexos — é o que gera os avisos de
+// prazo próximo, vencido e etapa bloqueada.
+// ============================================================
+
+enum ProductionStepKey {
+  PLANO_CORTE
+  CORTE
+  FITA_BORDA
+  PECAS_ESPECIAIS
+  LIMPEZA
+  EMBALAGEM
+  PRE_MONTAGEM
+  LIBERACAO
+  SAIDA
+}
+
+enum ProductionStepStatus {
+  PENDING
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  SKIPPED // etapa que não se aplica ao pedido (ex.: sem peças especiais)
+}
+
+model ProductionStep {
+  id            String               @id @default(cuid())
+  orderId       String
+  order         ProductionOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  step          ProductionStepKey
+  position      Int
+  status        ProductionStepStatus @default(PENDING)
+  responsibleId String?
+  responsible   User?                @relation("ProductionStepResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  startedAt     DateTime?
+  dueAt         DateTime?
+  completedAt   DateTime?
+  notes         String?              @db.Text
+  blockedReason String?              @db.Text
+  // dedup dos avisos: tipo e data do último (DUE_SOON | OVERDUE)
+  lastAlertKind String?
+  lastAlertAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([orderId, step])
+  @@index([status, dueAt])
+  @@index([responsibleId])
+}
+
+// ============================================================
+// §55 — Registro central de arquivos
+//
+// Arquivo genérico ligado a qualquer entidade (entity + entityId), com projeto e
+// cliente denormalizados para a busca central. Os anexos antigos (medição,
+// assistência, financeiro...) continuam nas tabelas deles; o índice central
+// os lê de lá em vez de copiar.
+// ============================================================
+
+model FileRecord {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entity         String // ProductionStep | Inspection | Warranty | Project | Client | Employee ...
+  entityId       String
+  projectId      String?
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientId       String?
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  category       String? // rótulo livre: FOTO, DOCUMENTO, RELATORIO...
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  storageKey     String
+  createdById    String?
+  createdBy      User?        @relation("FileRecordAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, entity, entityId])
+  @@index([projectId])
+  @@index([clientId])
 }

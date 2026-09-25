@@ -21,12 +21,6 @@ export type PromobParsed = {
   raw?: { attrHits: number; valorHits?: number };
 };
 
-export function detectFormat(fileName: string, mime: string): "XML" | "PDF" | "OTHER" {
-  if (/\.xml$/i.test(fileName) || mime.includes("xml")) return "XML";
-  if (/\.pdf$/i.test(fileName) || mime.includes("pdf")) return "PDF";
-  return "OTHER";
-}
-
 /**
  * Decodifica o buffer do XML respeitando a declaração `encoding=` do prólogo.
  * O Promob costuma exportar ISO-8859-1 / Windows-1252 (acentos quebram em UTF-8).

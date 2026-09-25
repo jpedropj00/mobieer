@@ -41,6 +41,8 @@ import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import promobRoutes from "./modules/promob/promob.routes";
 import workspaceRoutes from "./modules/workspace/workspace.routes";
 import purchasesRoutes from "./modules/purchases/purchases.routes";
+import productionStepsRoutes from "./modules/production/steps.routes";
+import filesRoutes from "./modules/files/files.routes";
 import assistanceRoutes from "./modules/assistance/assistance.routes";
 import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
 import cronRoutes from "./modules/cron/cron.routes";
@@ -143,10 +145,12 @@ export function createApp() {
   app.use("/api/tech-approval", techProjectRoutes);
   app.use("/api/production", productionRoutes);
   app.use("/api/production", shopFloorRoutes);
+  app.use("/api/production", productionStepsRoutes);
   app.use("/api/fiscal", fiscalRoutes);
   app.use("/api/promob", promobRoutes);
   app.use("/api/workspace", workspaceRoutes);
   app.use("/api/purchases", purchasesRoutes);
+  app.use("/api/files", filesRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

@@ -119,6 +119,7 @@ const PERMISSIONS = [
   { code: "purchases.request", label: "Abrir solicitação de compra", module: "Compras" },
   { code: "purchases.approve", label: "Aprovar ou recusar solicitações de compra", module: "Compras" },
   { code: "purchases.manage", label: "Cotar, emitir pedidos e receber material", module: "Compras" },
+  { code: "production.steps", label: "Atualizar etapas da produção (iniciar, concluir, bloquear, prazo)", module: "Produção" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -137,6 +138,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Gestor",
     description: "Gerencia produtos, estoque e aprova requisições",
     perms: [
+      "production.steps",
       "purchases.read", "purchases.request", "purchases.approve", "purchases.manage",
       "dashboard.read",
       "products.read",
@@ -257,6 +259,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Produção",
     description: "Executa e confere as peças liberadas para produção",
     perms: [
+      "production.steps",
       "purchases.read", "purchases.request",
       "dashboard.read",
       "products.read",
@@ -364,6 +367,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Corte",
     description: "Setor de corte: plano de corte, peças liberadas e conferência",
     perms: [
+      "production.steps",
       "purchases.read", "purchases.request",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "timeline.read", "documents.read",

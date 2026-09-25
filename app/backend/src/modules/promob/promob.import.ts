@@ -5,7 +5,7 @@
 import { Prisma } from "@prisma/client";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { prisma } from "../../prisma";
-import { decodeXmlBuffer, detectFormat, parsePromobXml } from "./promob.service";
+import { readPromobFile } from "./promob.adapters";
 
 export type PromobFile = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 
@@ -17,33 +17,10 @@ export async function createPromobImport(opts: {
   source: "MANUAL" | "SYNC";
 }) {
   const { file } = opts;
-  const format = detectFormat(file.originalname, file.mimetype);
+  const read = readPromobFile(file);
   const key = buildStorageKey(opts.projectId, `promob-${file.originalname}`);
   await storage.put(key, file.buffer, file.mimetype || "application/octet-stream");
-
-  let status = "UPLOADED";
-  let itemCount = 0;
-  let totalValue: number | null = null;
-  let parsed: unknown = null;
-  let notes: string | null = null;
-
-  if (format === "XML") {
-    try {
-      const p = parsePromobXml(decodeXmlBuffer(file.buffer));
-      parsed = p;
-      itemCount = p.totals.itens;
-      totalValue = p.totals.valor ?? null;
-      status = p.totals.itens > 0 || p.totals.ambientes > 0 ? "PARSED" : "PARSE_FAILED";
-      if (status === "PARSE_FAILED") notes = "XML lido, mas nenhum <ITEM>/<AMBIENTE> reconhecido nesta versão de export.";
-    } catch (e) {
-      status = "PARSE_FAILED";
-      notes = `Falha ao ler o XML: ${e instanceof Error ? e.message : e}`;
-    }
-  } else if (format === "PDF") {
-    notes = "PDF armazenado. A extração automática de itens só é feita para o XML de orçamento do Promob.";
-  } else {
-    notes = "Formato não reconhecido — arquivo armazenado para conferência manual.";
-  }
+  const { format, status, itemCount, totalValue, parsed, notes } = read;
 
   return prisma.promobImport.create({
     data: {

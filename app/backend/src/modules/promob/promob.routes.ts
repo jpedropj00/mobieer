@@ -9,6 +9,7 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storage } from "../../lib/storage";
 import { createPromobImport } from "./promob.import";
+import { readPromobFile } from "./promob.adapters";
 import { pipeToResponse } from "../../utils/stream";
 
 const router = Router();
@@ -70,6 +71,22 @@ router.get(
       orderBy: { createdAt: "desc" },
     });
     return ok(res, rows.map(serialize));
+  })
+);
+
+// POST /api/promob/projects/:projectId/imports/preview   (multipart: file)
+// §20 — lê o arquivo e devolve o que seria importado, SEM gravar nada. A tela
+// mostra peças, materiais, colunas reconhecidas e avisos; só depois de
+// confirmar o arquivo é enviado para a rota de importação abaixo.
+router.post(
+  "/projects/:projectId/imports/preview",
+  requirePermission("organization.manage"),
+  uploadPromob.single("file"),
+  asyncHandler(async (req, res) => {
+    await ensureProject(req.params.projectId, req.user!.organizationId);
+    if (!req.file) throw new BadRequestError("Envie o arquivo exportado do Promob");
+    const read = readPromobFile(req.file);
+    return ok(res, { fileName: req.file.originalname, sizeBytes: req.file.size, ...read });
   })
 );
 
