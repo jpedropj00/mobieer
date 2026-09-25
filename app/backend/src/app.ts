@@ -43,6 +43,7 @@ import workspaceRoutes from "./modules/workspace/workspace.routes";
 import purchasesRoutes from "./modules/purchases/purchases.routes";
 import productionStepsRoutes from "./modules/production/steps.routes";
 import filesRoutes from "./modules/files/files.routes";
+import aftersalesRoutes from "./modules/aftersales/aftersales.routes";
 import assistanceRoutes from "./modules/assistance/assistance.routes";
 import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
 import cronRoutes from "./modules/cron/cron.routes";
@@ -151,6 +152,7 @@ export function createApp() {
   app.use("/api/workspace", workspaceRoutes);
   app.use("/api/purchases", purchasesRoutes);
   app.use("/api/files", filesRoutes);
+  app.use("/api/aftersales", aftersalesRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

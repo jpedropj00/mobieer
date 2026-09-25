@@ -304,7 +304,12 @@ export function syncPlan(
     const p = byKey.get(d.key);
     if (!p || p.manuallyEdited) continue;
     if (p.status === StageStatus.BLOQUEADA) continue; // bloqueio é sempre decisão de alguém
-    if (RANK[d.status] <= RANK[p.status]) continue; // nunca volta nem fica igual
+    if (d.status === p.status) continue;
+    // "Não se aplica" gravado pela própria derivação quer dizer "ainda não":
+    // garantia antes da vistoria, assistência antes do primeiro chamado. Quando
+    // o fato acontece, a etapa precisa poder começar. (Marcado à mão já saiu acima.)
+    const atual = p.status === StageStatus.NAO_APLICAVEL ? -1 : RANK[p.status];
+    if (RANK[d.status] <= atual) continue; // nunca volta nem fica igual
     plan.push({
       key: d.key,
       status: d.status,

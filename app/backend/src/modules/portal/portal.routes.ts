@@ -40,6 +40,10 @@ import { briefingAnswersSchema, briefingForLead, saveBriefing } from "../briefin
 import { isValidCpf, onlyDigits } from "../../utils/document";
 import { LIMITS, rateLimit } from "../../utils/rate-limit";
 import { ConflictError, ForbiddenError } from "../../utils/ApiError";
+import { ensureTimeline } from "../timeline/timeline.routes";
+import { STAGE_LABEL as TIMELINE_LABEL } from "../timeline/timeline.service";
+import { clientTimeline } from "../timeline/timeline.portal";
+import { coverageState, type CoverageItem } from "../aftersales/aftersales.rules";
 
 const router = Router();
 
@@ -889,6 +893,69 @@ router.get(
     if (!order) return ok(res, null);
     const deliveryEstimate = await deliveryEstimateFor(order);
     return ok(res, { ...serializeProductionOrder(order), deliveryEstimate });
+  })
+);
+
+// GET /api/portal/projects/:id/timeline — §12: o fluxo do projeto visto pelo cliente
+router.get(
+  "/projects/:id/timeline",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    await ensureTimeline(project.id, project.organizationId);
+    const stages = await prisma.projectStage.findMany({
+      where: { projectId: project.id },
+      select: { key: true, status: true, plannedAt: true, startedAt: true, completedAt: true },
+    });
+    return ok(res, clientTimeline(stages, TIMELINE_LABEL));
+  })
+);
+
+// GET /api/portal/projects/:id/warranty — §35/§36/§38: garantia, certificado e revisões
+router.get(
+  "/projects/:id/warranty",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const [w, maintenances, inspection] = await Promise.all([
+      prisma.warranty.findUnique({ where: { projectId: project.id } }),
+      prisma.preventiveMaintenance.findMany({
+        where: { projectId: project.id, status: { not: "CANCELLED" } },
+        select: { id: true, label: true, dueAt: true, status: true, doneAt: true },
+        orderBy: { dueAt: "asc" },
+      }),
+      prisma.siteInspection.findFirst({
+        where: { projectId: project.id, status: "COMPLETED" },
+        orderBy: { completedAt: "desc" },
+        select: { inspectedAt: true, result: true, pendencias: true, reportDocumentId: true },
+      }),
+    ]);
+    const now = new Date();
+    // documento só aparece se estiver liberado ao cliente
+    const docs = await prisma.projectDocument.findMany({
+      where: { id: { in: [w?.certificateDocumentId, inspection?.reportDocumentId].filter((x): x is string => !!x) }, visibleToClient: true },
+      select: { id: true },
+    });
+    const visible = new Set(docs.map((d) => d.id));
+    return ok(res, {
+      inspection: inspection
+        ? {
+            inspectedAt: inspection.inspectedAt,
+            result: inspection.result,
+            pendencias: inspection.pendencias,
+            reportDocumentId: inspection.reportDocumentId && visible.has(inspection.reportDocumentId) ? inspection.reportDocumentId : null,
+          }
+        : null,
+      warranty: w
+        ? {
+            startsAt: w.startsAt,
+            endsAt: w.endsAt,
+            coverage: (w.coverage as unknown as CoverageItem[]).map((c) => coverageState(c, now)),
+            conditions: w.conditions,
+            exclusions: w.exclusions.split("\n"),
+            certificateDocumentId: w.certificateDocumentId && visible.has(w.certificateDocumentId) ? w.certificateDocumentId : null,
+          }
+        : null,
+      maintenances,
+    });
   })
 );
 

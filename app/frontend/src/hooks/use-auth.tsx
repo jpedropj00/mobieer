@@ -30,11 +30,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     retry: false,
   });
 
-  useEffect(() => {
-    if (meData) {
-      setUser(meData.data);
-    }
-  }, [meData]);
+  // Copia o usuário no mesmo render em que /auth/me responde. Com useEffect
+  // havia um render "carregado, sem usuário": o guard mandava para /login e
+  // o link direto (ou recarregar a página) acabava no Dashboard.
+  const [syncedMe, setSyncedMe] = useState(meData);
+  if (meData !== syncedMe) {
+    setSyncedMe(meData);
+    if (meData) setUser(meData.data);
+  }
 
   useEffect(() => {
     if (!initialToken) return;

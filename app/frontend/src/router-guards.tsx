@@ -24,8 +24,13 @@ export function ProtectedRoute() {
 
 export function GuestRoute() {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
   if (isLoading) return <FullScreenLoader />;
-  if (isAuthenticated) return <Navigate to="/" replace />;
+  if (isAuthenticated) {
+    // volta para onde a pessoa ia antes de passar pelo login
+    const from = (location.state as { from?: { pathname: string; search?: string } } | null)?.from;
+    return <Navigate to={from ? `${from.pathname}${from.search ?? ""}` : "/"} replace />;
+  }
   return <Outlet />;
 }
 

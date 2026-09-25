@@ -27,6 +27,7 @@ import {
   Scissors,
   Settings,
   ShoppingCart,
+  ShieldCheck,
   Wallet,
   Target,
   Tags,
@@ -96,6 +97,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Requisições de Peças", to: "/requisicoes", icon: Scissors, permission: "requisitions.read" },
       { label: "Atividades", to: "/atividades", icon: FileClock, permission: "activities.read" },
       { label: "Agenda", to: "/agenda", icon: CalendarDays, permission: "agenda.read" },
+      { label: "Pós-venda", to: "/pos-venda", icon: ShieldCheck, permission: "organization.read" },
     ],
   },
   {

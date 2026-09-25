@@ -49,7 +49,7 @@ const stageInclude = {
 } satisfies Prisma.ProjectStageInclude;
 
 /** Cria as etapas que faltam e avança as automáticas. Idempotente. */
-async function ensureTimeline(projectId: string, organizationId: string) {
+export async function ensureTimeline(projectId: string, organizationId: string) {
   const facts = await loadTimelineFacts(projectId);
   if (!facts) throw new NotFoundError("Projeto não encontrado");
   const derived = deriveTimeline(facts);

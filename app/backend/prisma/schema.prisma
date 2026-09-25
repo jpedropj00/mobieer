@@ -134,6 +134,10 @@ model User {
   purchaseReceipts      PurchaseReceipt[]     @relation("PurchaseReceiver")
   productionSteps       ProductionStep[]      @relation("ProductionStepResponsible")
   fileRecords           FileRecord[]          @relation("FileRecordAuthor")
+  siteInspectionsAsTechnician SiteInspection[] @relation("SiteInspectionTechnician")
+  siteInspectionsCreated SiteInspection[] @relation("SiteInspectionCreator")
+  warrantiesCreated     Warranty[]            @relation("WarrantyCreator")
+  maintenancesDone      PreventiveMaintenance[] @relation("MaintenanceDoneBy")
 
   @@index([roleId])
   @@index([organizationId])
@@ -249,6 +253,9 @@ model Organization {
   purchaseRequests       PurchaseRequest[]
   purchaseOrders         PurchaseOrder[]
   fileRecords            FileRecord[]
+  siteInspections        SiteInspection[]
+  warranties             Warranty[]
+  preventiveMaintenances PreventiveMaintenance[]
 
   @@index([enterpriseId])
 }
@@ -1108,6 +1115,9 @@ model Project {
   purchaseRequests PurchaseRequest[]
   purchaseOrders   PurchaseOrder[]
   fileRecords FileRecord[]
+  siteInspections SiteInspection[]
+  warranty        Warranty?
+  maintenances    PreventiveMaintenance[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -2090,6 +2100,8 @@ model ProjectDocument {
   generatedFrom           String? // RECIBO | VISTORIA | CERTIFICADO_GARANTIA | TERMO_PRODUCAO | PASTA_TECNICA ...
   templateVersion         Int?
   createdAt               DateTime                   @default(now())
+  inspectionReport SiteInspection? @relation("SiteInspectionReport")
+  warrantyCertificate Warranty? @relation("WarrantyCertificate")
 
   @@index([organizationId, projectId, type])
   @@index([clientId, visibleToClient])
@@ -3198,6 +3210,8 @@ enum MessageEvent {
   ASSISTANCE_SCHEDULED
   ASSISTANCE_REMINDER
   POST_SALE_FOLLOWUP
+  MAINTENANCE_REMINDER // revisão preventiva chegando (§36)
+  WARRANTY_EXPIRING // garantia (ou item dela) perto do fim (§35)
 }
 
 enum MessageStatus {
@@ -4236,4 +4250,152 @@ model FileRecord {
   @@index([organizationId, entity, entityId])
   @@index([projectId])
   @@index([clientId])
+}
+
+// ============================================================
+// §37 — Vistoria técnica pós-montagem
+//
+// Espelha o checklist em papel da Mobieer (Checklist_Vistoria_Tecnica):
+// seções × itens com Conforme / Não conforme / Não se aplica, resultado,
+// pendências e termo de entrega assinado por técnico e cliente. Não confundir
+// com `InspectionResult`, que é a conferência de REQUISIÇÃO de peças.
+// Fotos vão para o registro central de arquivos (entity "SiteInspection").
+// ============================================================
+
+enum SiteInspectionStatus {
+  DRAFT // em preenchimento
+  COMPLETED // resultado registrado e termo assinado
+}
+
+enum SiteInspectionResult {
+  APPROVED // entrega aprovada sem ressalvas
+  APPROVED_WITH_REMARKS // aprovada com ressalvas (pendências)
+  REJECTED // não aprovada
+}
+
+enum InspectionItemStatus {
+  CONFORME
+  NAO_CONFORME
+  NAO_APLICA
+}
+
+model SiteInspection {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status         SiteInspectionStatus @default(DRAFT)
+  result         SiteInspectionResult?
+  inspectedAt    DateTime             @default(now())
+  ambientes      String? // ambientes vistoriados, texto livre ("Cozinha, Closet")
+  technicianId   String?
+  technician     User?                @relation("SiteInspectionTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+  installerNames String? // montador(es), como no papel
+  pendencias     String?              @db.Text
+  notes          String?              @db.Text
+
+  // termo de entrega: PNG em data URL, como a assinatura dos documentos do montador
+  technicianSignature String? @db.Text
+  clientSignerName    String?
+  clientSignature     String? @db.Text
+  completedAt         DateTime?
+  completedById       String?
+
+  reportDocumentId String?          @unique
+  reportDocument   ProjectDocument? @relation("SiteInspectionReport", fields: [reportDocumentId], references: [id], onDelete: SetNull)
+  createdById      String?
+  createdBy        User?            @relation("SiteInspectionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  items SiteInspectionItem[]
+  warranty Warranty?
+
+  @@index([organizationId, status])
+  @@index([projectId])
+}
+
+model SiteInspectionItem {
+  id           String                @id @default(cuid())
+  inspectionId String
+  inspection   SiteInspection        @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  section      String // Estrutura, Ferragens, Alinhamento...
+  label        String
+  position     Int
+  status       InspectionItemStatus?
+  note         String?
+
+  @@index([inspectionId])
+}
+
+// ============================================================
+// §35/§38 — Garantia e certificado
+//
+// Nasce da vistoria aprovada (com ou sem ressalvas). Prazos por componente
+// conforme o certificado da Mobieer (estrutura e montagem 5 anos, ferragens
+// 5, puxadores 2, aramados 1); o fim geral é o do maior prazo.
+// ============================================================
+
+model Warranty {
+  id                    String           @id @default(cuid())
+  organizationId        String
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId             String           @unique
+  project               Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inspectionId          String?          @unique
+  inspection            SiteInspection?  @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
+  startsAt              DateTime
+  endsAt                DateTime
+  coverage              Json // [{ key, label, detail, months, endsAt }]
+  conditions            String           @db.Text
+  exclusions            String           @db.Text
+  certificateDocumentId String?          @unique
+  certificateDocument   ProjectDocument? @relation("WarrantyCertificate", fields: [certificateDocumentId], references: [id], onDelete: SetNull)
+  // chaves de aviso já enviadas ("aramados:30d", "geral:30d"...), para não repetir
+  alertsSent            String[]         @default([])
+  createdById           String?
+  createdBy             User?            @relation("WarrantyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  maintenances PreventiveMaintenance[]
+
+  @@index([organizationId, endsAt])
+}
+
+// ============================================================
+// §36 — Manutenção preventiva
+// Revisões programadas a partir do início da garantia (padrão 6 e 12 meses,
+// configurável). Lembra cliente (WhatsApp) e equipe (sino) antes da data.
+// ============================================================
+
+enum MaintenanceStatus {
+  SCHEDULED
+  DONE
+  CANCELLED
+}
+
+model PreventiveMaintenance {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  warrantyId     String?
+  warranty       Warranty?         @relation(fields: [warrantyId], references: [id], onDelete: SetNull)
+  label          String
+  monthsAfter    Int?
+  dueAt          DateTime
+  status         MaintenanceStatus @default(SCHEDULED)
+  remindedAt     DateTime? // lembrete já enviado
+  doneAt         DateTime?
+  doneById       String?
+  doneBy         User?             @relation("MaintenanceDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
+  notes          String?           @db.Text
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([organizationId, status, dueAt])
+  @@index([projectId])
 }

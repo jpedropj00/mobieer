@@ -119,6 +119,18 @@ export const AUTOMATION_DEFAULTS: Record<MessageEvent, AutomationDef> = {
     body: "Recebemos seu pagamento de {{recibo.valor}}, {{cliente.primeiroNome}}. Obrigado! O recibo {{recibo.numero}} já está no portal: {{portal.link}} — {{empresa.nome}}",
     vars: [...COMMON, "recibo.numero", "recibo.valor"],
   },
+  MAINTENANCE_REMINDER: {
+    label: "Manutenção preventiva",
+    description: "7 dias antes de cada revisão preventiva programada (padrão 6 e 12 meses após a vistoria).",
+    body: "Olá, {{cliente.primeiroNome}}! Está chegando a {{manutencao.nome}} dos seus móveis do projeto {{projeto.codigo}}, prevista para {{manutencao.data}}. Responda esta mensagem para combinarmos o melhor dia. — {{empresa.nome}}",
+    vars: [...COMMON, "projeto.codigo", "projeto.nome", "manutencao.nome", "manutencao.data"],
+  },
+  WARRANTY_EXPIRING: {
+    label: "Garantia perto do fim",
+    description: "30 dias antes do fim da garantia de cada componente (estrutura, ferragens, puxadores, aramados).",
+    body: "Olá, {{cliente.primeiroNome}}! A garantia de {{garantia.item}} do projeto {{projeto.codigo}} vai até {{garantia.fim}}. Se notou algo que precise de ajuste, abra uma assistência pelo portal antes dessa data: {{portal.link}} — {{empresa.nome}}",
+    vars: [...COMMON, "projeto.codigo", "projeto.nome", "garantia.item", "garantia.fim"],
+  },
 };
 
 export const MESSAGE_EVENTS = Object.keys(AUTOMATION_DEFAULTS) as MessageEvent[];

@@ -120,6 +120,8 @@ const PERMISSIONS = [
   { code: "purchases.approve", label: "Aprovar ou recusar solicitações de compra", module: "Compras" },
   { code: "purchases.manage", label: "Cotar, emitir pedidos e receber material", module: "Compras" },
   { code: "production.steps", label: "Atualizar etapas da produção (iniciar, concluir, bloquear, prazo)", module: "Produção" },
+  { code: "inspections.manage", label: "Registrar vistorias técnicas pós-montagem", module: "Pós-venda" },
+  { code: "warranty.manage", label: "Gerenciar garantias, certificados e manutenções preventivas", module: "Pós-venda" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -138,6 +140,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Gestor",
     description: "Gerencia produtos, estoque e aprova requisições",
     perms: [
+      "inspections.manage", "warranty.manage",
       "production.steps",
       "purchases.read", "purchases.request", "purchases.approve", "purchases.manage",
       "dashboard.read",
@@ -352,6 +355,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Assistência técnica",
     description: "Vistoria, garantia, assistência e manutenção preventiva",
     perms: [
+      "inspections.manage", "warranty.manage",
       "purchases.read", "purchases.request",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
@@ -397,6 +401,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Técnico",
     description: "Campo: medição, vistoria e atendimento de assistência",
     perms: [
+      "inspections.manage",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
       "clients.read.all", "timeline.read", "timeline.edit",

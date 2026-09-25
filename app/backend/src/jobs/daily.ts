@@ -16,6 +16,7 @@ import { runProductionDeliveryAlerts } from "../modules/production/production.se
 import { runFinanceDueAlerts, runReceivableReminders } from "../modules/finance/alerts.service";
 import { runPurchaseDeliveryAlerts } from "../modules/purchases/purchases.service";
 import { runProductionStepAlerts } from "../modules/production/steps.service";
+import { runMaintenanceReminders, runWarrantyAlerts } from "../modules/aftersales/aftersales.service";
 
 const DAY_MS = 86400000;
 
@@ -58,6 +59,8 @@ export const DAILY_JOBS: { name: string; run: () => Promise<unknown> }[] = [
   { name: "contas-a-receber", run: () => runReceivableReminders() },
   { name: "compras-entrega-atrasada", run: () => runPurchaseDeliveryAlerts() },
   { name: "producao-prazo-etapas", run: () => runProductionStepAlerts() },
+  { name: "garantia-fim", run: () => runWarrantyAlerts() },
+  { name: "manutencao-preventiva", run: () => runMaintenanceReminders() },
 ];
 
 export async function runDailyJobs() {
