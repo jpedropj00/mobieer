@@ -40,6 +40,7 @@ import shopFloorRoutes from "./modules/production/shopfloor.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import promobRoutes from "./modules/promob/promob.routes";
 import workspaceRoutes from "./modules/workspace/workspace.routes";
+import purchasesRoutes from "./modules/purchases/purchases.routes";
 import assistanceRoutes from "./modules/assistance/assistance.routes";
 import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
 import cronRoutes from "./modules/cron/cron.routes";
@@ -145,6 +146,7 @@ export function createApp() {
   app.use("/api/fiscal", fiscalRoutes);
   app.use("/api/promob", promobRoutes);
   app.use("/api/workspace", workspaceRoutes);
+  app.use("/api/purchases", purchasesRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

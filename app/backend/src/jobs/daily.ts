@@ -14,6 +14,7 @@ import { runVacationAlerts } from "../modules/hr/hr.service";
 import { runMeasurementDeadlineAlerts } from "../modules/measurements/measurements.service";
 import { runProductionDeliveryAlerts } from "../modules/production/production.service";
 import { runFinanceDueAlerts, runReceivableReminders } from "../modules/finance/alerts.service";
+import { runPurchaseDeliveryAlerts } from "../modules/purchases/purchases.service";
 
 const DAY_MS = 86400000;
 
@@ -54,6 +55,7 @@ export const DAILY_JOBS: { name: string; run: () => Promise<unknown> }[] = [
   { name: "pos-venda", run: () => runPostSaleFollowups() },
   { name: "financeiro-vencimentos", run: () => runFinanceDueAlerts() },
   { name: "contas-a-receber", run: () => runReceivableReminders() },
+  { name: "compras-entrega-atrasada", run: () => runPurchaseDeliveryAlerts() },
 ];
 
 export async function runDailyJobs() {

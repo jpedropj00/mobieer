@@ -11,6 +11,7 @@ const ProductsPage = lazy(() => import("@/pages/products").then((m) => ({ defaul
 const ProductDetailPage = lazy(() => import("@/pages/product-detail").then((m) => ({ default: m.ProductDetailPage })));
 const CategoriesPage = lazy(() => import("@/pages/categories").then((m) => ({ default: m.CategoriesPage })));
 const SuppliersPage = lazy(() => import("@/pages/suppliers").then((m) => ({ default: m.SuppliersPage })));
+const PurchasesPage = lazy(() => import("@/pages/purchases").then((m) => ({ default: m.PurchasesPage })));
 const StockEntryPage = lazy(() => import("@/pages/stock-entry").then((m) => ({ default: m.StockEntryPage })));
 const StockExitPage = lazy(() => import("@/pages/stock-exit").then((m) => ({ default: m.StockExitPage })));
 const MovementsPage = lazy(() => import("@/pages/movements").then((m) => ({ default: m.MovementsPage })));
@@ -96,6 +97,7 @@ export const router = createBrowserRouter([
           { path: "/produtos/:id", element: <PermissionGate permission="products.read"><ProductDetailPage /></PermissionGate> },
           { path: "/categorias", element: <PermissionGate permission="categories.read"><CategoriesPage /></PermissionGate> },
           { path: "/fornecedores", element: <PermissionGate permission="suppliers.read"><SuppliersPage /></PermissionGate> },
+          { path: "/compras", element: <PermissionGate permission="purchases.read"><PurchasesPage /></PermissionGate> },
           { path: "/inventario", element: <PermissionGate permission="inventory.read"><InventoryPage /></PermissionGate> },
           { path: "/inventario/:id", element: <PermissionGate permission="inventory.read"><InventoryDetailPage /></PermissionGate> },
           { path: "/requisicoes", element: <PermissionGate permission="requisitions.read"><RequisitionsPage /></PermissionGate> },

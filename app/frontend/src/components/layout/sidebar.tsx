@@ -26,6 +26,7 @@ import {
   ScrollText,
   Scissors,
   Settings,
+  ShoppingCart,
   Wallet,
   Target,
   Tags,
@@ -78,6 +79,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Produtos", to: "/produtos", icon: Package, permission: "products.read" },
       { label: "Categorias", to: "/categorias", icon: Tags, permission: "categories.read" },
       { label: "Fornecedores", to: "/fornecedores", icon: Truck, permission: "suppliers.read" },
+      { label: "Compras", to: "/compras", icon: ShoppingCart, permission: "purchases.read" },
     ],
   },
   {

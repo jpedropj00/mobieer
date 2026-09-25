@@ -115,6 +115,10 @@ const PERMISSIONS = [
   { code: "clients.read.all", label: "Ver clientes de toda a equipe (sem isto, só a carteira própria)", module: "Clientes" },
   { code: "commercial.goals.manage", label: "Definir metas comerciais", module: "Comercial" },
   { code: "templates.versions", label: "Criar e publicar versões de modelos", module: "Documentos" },
+  { code: "purchases.read", label: "Ver compras (solicitações, cotações e pedidos)", module: "Compras" },
+  { code: "purchases.request", label: "Abrir solicitação de compra", module: "Compras" },
+  { code: "purchases.approve", label: "Aprovar ou recusar solicitações de compra", module: "Compras" },
+  { code: "purchases.manage", label: "Cotar, emitir pedidos e receber material", module: "Compras" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -133,6 +137,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Gestor",
     description: "Gerencia produtos, estoque e aprova requisições",
     perms: [
+      "purchases.read", "purchases.request", "purchases.approve", "purchases.manage",
       "dashboard.read",
       "products.read",
       "products.create",
@@ -186,6 +191,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Financeiro",
     description: "Gestão de receitas, despesas e contas a pagar/receber",
     perms: [
+      "purchases.read",
       "dashboard.read",
       "finance.read", "finance.manage",
       "finance.documents.read", "finance.documents.manage", "finance.documents.pay",
@@ -214,6 +220,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Almoxarife",
     description: "Opera o almoxarifado: entradas, saídas e inventário",
     perms: [
+      "purchases.read", "purchases.request",
       "dashboard.read",
       "products.read",
       "products.update",
@@ -250,6 +257,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Produção",
     description: "Executa e confere as peças liberadas para produção",
     perms: [
+      "purchases.read", "purchases.request",
       "dashboard.read",
       "products.read",
       "stock.read",
@@ -341,6 +349,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Assistência técnica",
     description: "Vistoria, garantia, assistência e manutenção preventiva",
     perms: [
+      "purchases.read", "purchases.request",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
       "clients.read.all", "timeline.read", "timeline.edit",
@@ -355,6 +364,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Corte",
     description: "Setor de corte: plano de corte, peças liberadas e conferência",
     perms: [
+      "purchases.read", "purchases.request",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "timeline.read", "documents.read",
       "products.read", "stock.read", "agenda.read",
@@ -367,6 +377,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Compras",
     description: "Fornecedores, cotações, pedidos de compra e entrada de material",
     perms: [
+      "purchases.read", "purchases.request", "purchases.manage",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "documents.read", "agenda.read",
       "suppliers.read", "suppliers.create", "suppliers.update",
