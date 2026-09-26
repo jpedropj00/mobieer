@@ -13,6 +13,7 @@ import { ForbiddenError, InvalidStateError, NotFoundError, ValidationError } fro
 import { storage } from "../../lib/storage";
 import { dateQuery } from "../../utils/query";
 import { pipeToResponse } from "../../utils/stream";
+import { ASSINATURA_MAX_BYTES, STATUS_LABEL, VISIVEL_PARA_O_MONTADOR, assinaturaCabe, isAssinaturaValida, nextStatus } from "./documents.service";
 import { STATUS_LABEL as PART_STATUS_LABEL } from "../parts/parts.service";
 import { uploadMedia } from "../../middlewares/upload";
 import { acceptLocation, hourBank, performanceSummary, ratingAverage } from "../fieldwork/fieldwork.service";
@@ -313,11 +314,16 @@ router.get(
   asyncHandler(async (req, res) => {
     const c = await me(req);
     const docs = await prisma.contractorDocument.findMany({
-      where: { contractorId: c.id },
-      select: { id: true, kind: true, title: true, fileName: true, mimeType: true, size: true, expiresAt: true, createdAt: true },
+      // rascunho da empresa não aparece para o montador
+      where: { contractorId: c.id, status: { in: VISIVEL_PARA_O_MONTADOR } },
+      select: {
+        id: true, kind: true, title: true, fileName: true, mimeType: true, size: true, expiresAt: true, createdAt: true,
+        status: true, requiresSignature: true, sentAt: true, viewedAt: true, signedAt: true,
+        refusedAt: true, refusalReason: true, signerName: true,
+      },
       orderBy: { createdAt: "desc" },
     });
-    return ok(res, docs);
+    return ok(res, docs.map((d) => ({ ...d, statusLabel: STATUS_LABEL[d.status] })));
   })
 );
 
@@ -326,14 +332,121 @@ router.get(
   "/documents/:id/file",
   asyncHandler(async (req, res) => {
     const c = await me(req);
-    const doc = await prisma.contractorDocument.findFirst({ where: { id: req.params.id, contractorId: c.id } });
+    const doc = await prisma.contractorDocument.findFirst({
+      where: { id: req.params.id, contractorId: c.id, status: { in: VISIVEL_PARA_O_MONTADOR } },
+    });
     if (!doc) throw new NotFoundError("Documento não encontrado");
+
+    // Abrir o arquivo é a prova de que o montador viu: é aqui que o status anda.
+    const visto = nextStatus(doc.status, "VISUALIZAR", doc.requiresSignature);
+    if (visto.ok && visto.status !== doc.status) {
+      await prisma.contractorDocument.update({
+        where: { id: doc.id },
+        data: { status: visto.status, viewedAt: doc.viewedAt ?? new Date() },
+      });
+    }
+
     const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
     if (signed) return res.redirect(signed);
     const stream = await storage.getStream(doc.storageKey);
     res.setHeader("Content-Type", doc.mimeType ?? "application/octet-stream");
     res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.fileName)}"`);
     return pipeToResponse(stream, res);
+  })
+);
+
+/** Documento do montador logado, já barrando o que ainda não foi enviado. */
+async function docDoMontador(req: Parameters<typeof me>[0], id: string) {
+  const c = await me(req);
+  const doc = await prisma.contractorDocument.findFirst({
+    where: { id, contractorId: c.id, status: { in: VISIVEL_PARA_O_MONTADOR } },
+  });
+  if (!doc) throw new NotFoundError("Documento não encontrado");
+  return doc;
+}
+
+// POST /api/me/contractor/documents/:id/sign { signerName, dataUrl }
+router.post(
+  "/documents/:id/sign",
+  asyncHandler(async (req, res) => {
+    const doc = await docDoMontador(req, req.params.id);
+
+    // O estado vem antes do corpo: num documento já assinado, "dados inválidos"
+    // esconderia o motivo real da recusa.
+    const r = nextStatus(doc.status, "ASSINAR", doc.requiresSignature);
+    if (!r.ok) throw new InvalidStateError(r.motivo);
+
+    const input = z
+      .object({
+        signerName: z.string().trim().min(3, "Informe o nome de quem está assinando").max(200),
+        dataUrl: z.string().min(1, "Desenhe a assinatura"),
+      })
+      .parse(req.body);
+
+    // O desenho é renderizado como imagem na tela da empresa: só PNG entra.
+    if (!isAssinaturaValida(input.dataUrl)) throw new ValidationError("Assinatura inválida. Desenhe de novo.");
+    if (!assinaturaCabe(input.dataUrl)) {
+      throw new ValidationError(`Assinatura grande demais (limite de ${Math.round(ASSINATURA_MAX_BYTES / 1024)} KB).`);
+    }
+
+    const atualizado = await prisma.contractorDocument.update({
+      where: { id: doc.id },
+      data: {
+        status: r.status,
+        signedAt: new Date(),
+        signatureDataUrl: input.dataUrl,
+        signerName: input.signerName,
+        signerIp: req.ip ?? null,
+        viewedAt: doc.viewedAt ?? new Date(),
+      },
+      select: { id: true, status: true, signedAt: true, signerName: true },
+    });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: "CONTRACTOR_DOCUMENT_SIGNED",
+        entity: "ContractorDocument",
+        entityId: doc.id,
+        details: { signerName: input.signerName },
+      },
+    });
+    return ok(res, { ...atualizado, statusLabel: STATUS_LABEL[atualizado.status] }, "Documento assinado");
+  })
+);
+
+// POST /api/me/contractor/documents/:id/refuse { reason }
+router.post(
+  "/documents/:id/refuse",
+  asyncHandler(async (req, res) => {
+    const doc = await docDoMontador(req, req.params.id);
+
+    const r = nextStatus(doc.status, "RECUSAR", doc.requiresSignature);
+    if (!r.ok) throw new InvalidStateError(r.motivo);
+
+    const input = z
+      .object({ reason: z.string().trim().min(5, "Diga o motivo da recusa").max(2000) })
+      .parse(req.body);
+
+    const atualizado = await prisma.contractorDocument.update({
+      where: { id: doc.id },
+      data: {
+        status: r.status,
+        refusedAt: new Date(),
+        refusalReason: input.reason,
+        viewedAt: doc.viewedAt ?? new Date(),
+      },
+      select: { id: true, status: true, refusedAt: true, refusalReason: true },
+    });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: "CONTRACTOR_DOCUMENT_REFUSED",
+        entity: "ContractorDocument",
+        entityId: doc.id,
+        details: { reason: input.reason },
+      },
+    });
+    return ok(res, { ...atualizado, statusLabel: STATUS_LABEL[atualizado.status] }, "Recusa registrada");
   })
 );
 

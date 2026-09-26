@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Clock3, Loader2, PackageCheck, Play, RotateCcw, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Loader2, PackageCheck, Play, RotateCcw, ShieldCheck, ShoppingCart, XCircle } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -39,6 +39,7 @@ export function RequisitionDetailPage() {
       {req.status === "REQUESTED" && can("requisitions.analyze") && <Button onClick={() => openAction("IN_REVIEW", "Iniciar análise")}>Iniciar análise</Button>}
       {(req.status === "IN_REVIEW" || req.status === "WAITING_MATERIAL") && can("requisitions.reserve") && <Button variant="outline" onClick={() => reserve.mutate(req)} disabled={reserve.isPending}><PackageCheck className="h-4 w-4" />Reservar materiais</Button>}
       {req.status === "IN_REVIEW" && can("requisitions.analyze") && <Button variant="outline" onClick={() => openAction("WAITING_MATERIAL", "Aguardar material")}>Aguardar material</Button>}
+      {req.status === "WAITING_MATERIAL" && can("purchases.request") && <Button variant="outline" asChild><Link to={`/compras?requisicao=${req.id}`}><ShoppingCart className="h-4 w-4" />Solicitar compra</Link></Button>}
       {(req.status === "IN_REVIEW" || req.status === "WAITING_MATERIAL") && can("requisitions.release") && <Button onClick={() => openAction("RELEASED", "Liberar para corte")} disabled={!allAvailable}>Liberar para corte</Button>}
       {req.status === "RELEASED" && can("requisitions.cut") && <Button onClick={() => openAction("IN_CUTTING", "Iniciar corte")}><Play className="h-4 w-4" />Iniciar corte</Button>}
       {req.status === "IN_CUTTING" && can("requisitions.cut") && <Button onClick={() => openAction("INSPECTION", "Enviar para conferência")} disabled={req.items.some((item) => item.status !== "CUT" && item.status !== "INSPECTED")}><ShieldCheck className="h-4 w-4" />Enviar para conferência</Button>}

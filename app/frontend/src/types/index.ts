@@ -29,6 +29,8 @@ export type FinanceSummary = {
   aPagar: number;
   totalLancamentos: number;
   porCategoria: { category: string; type: FinanceType; total: number }[];
+  /** Quanto cada setor consumiu (§31). O sem-centro vem como id null. */
+  porCentroDeCusto: { id: string | null; code: string; name: string; receitas: number; despesas: number }[];
   porMes: { month: string; receitas: number; despesas: number }[];
 };
 
@@ -272,6 +274,9 @@ export type Employee = {
   id: string;
   registration: string;
   fullName: string;
+  /** CPF, só dígitos. `documentFormatted` vem pronto para exibir. */
+  document: string | null;
+  documentFormatted: string;
   role: string | null;
   sector: string | null;
   status: EmployeeStatus;
@@ -774,4 +779,203 @@ export type BreakEven = {
   currentMonthRevenue: number;
   gap: number;
   reached: boolean;
+};
+
+export type ContractorDocumentType =
+  | "CONTRATO"
+  | "DOCUMENTO_PESSOAL"
+  | "CERTIFICADO"
+  | "COMPROVANTE"
+  | "TERMO_RESPONSABILIDADE"
+  | "REGULAMENTO_INTERNO"
+  | "REGRAS_EMPRESA"
+  | "OUTRO";
+
+/** Os seis passos da entrega/assinatura do documento do montador (§7). */
+export type ContractorDocumentStatus =
+  | "AGUARDANDO_ENVIO"
+  | "ENVIADO"
+  | "VISUALIZADO"
+  | "AGUARDANDO_ASSINATURA"
+  | "ASSINADO"
+  | "RECUSADO";
+
+export type ContractorDocument = {
+  id: string;
+  contractorId?: string;
+  kind: ContractorDocumentType;
+  title: string;
+  fileName: string;
+  mimeType: string | null;
+  size: number | null;
+  expiresAt: string | null;
+  createdAt: string;
+  status: ContractorDocumentStatus;
+  statusLabel: string;
+  requiresSignature: boolean;
+  sentAt: string | null;
+  viewedAt: string | null;
+  signedAt: string | null;
+  refusedAt: string | null;
+  refusalReason: string | null;
+  signerName: string | null;
+};
+
+/** Centro de custo: o setor que consumiu o valor (§31). */
+export type CostCenter = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+};
+
+// ============================================================
+// §30 — Compras
+// ============================================================
+
+export type PurchaseRequestStatus = "REQUESTED" | "APPROVED" | "REJECTED" | "ORDERED" | "CANCELLED";
+export type PurchaseUrgency = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+export type PurchaseOrderStatus = "DRAFT" | "SENT" | "PARTIALLY_RECEIVED" | "RECEIVED" | "CANCELLED";
+
+type Ref = { id: string; name: string };
+
+export type PurchaseQuote = {
+  id: string;
+  supplier: Ref;
+  validUntil: string | null;
+  deliveryDays: number | null;
+  paymentTerms: string | null;
+  freight: number;
+  notes: string | null;
+  selected: boolean;
+  createdBy: Ref | null;
+  createdAt: string;
+  items: { requestItemId: string; unitPrice: number }[];
+};
+
+export type PurchaseRequest = {
+  id: string;
+  number: string;
+  status: PurchaseRequestStatus;
+  statusLabel: string;
+  urgency: PurchaseUrgency;
+  reason: string | null;
+  notes: string | null;
+  neededBy: string | null;
+  requester: Ref;
+  decidedBy: Ref | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  project: { id: string; code: string; name: string } | null;
+  requisition: { id: string; number: string } | null;
+  createdAt: string;
+  items: {
+    id: string;
+    description: string;
+    quantity: number;
+    unit: Unit;
+    product: { id: string; code: string; name: string; unit: Unit; stock: number } | null;
+  }[];
+  quotes: PurchaseQuote[];
+  orders: { id: string; number: string; status: PurchaseOrderStatus; statusLabel: string; supplier: Ref }[];
+};
+
+export type PurchaseComparison = {
+  quotes: {
+    id: string;
+    supplierName: string;
+    subtotal: number;
+    freight: number;
+    total: number;
+    deliveryDays: number | null;
+    complete: boolean;
+    missingItems: string[];
+  }[];
+  items: {
+    requestItemId: string;
+    description: string;
+    quantity: number;
+    bestQuoteId: string | null;
+    bestUnitPrice: number | null;
+    prices: { quoteId: string; unitPrice: number | null }[];
+  }[];
+  cheapestCompleteQuoteId: string | null;
+  fastestCompleteQuoteId: string | null;
+};
+
+export type PurchaseOrder = {
+  id: string;
+  number: string;
+  status: PurchaseOrderStatus;
+  statusLabel: string;
+  supplier: Ref & { phone: string | null; email: string | null };
+  request: { id: string; number: string } | null;
+  project: { id: string; code: string; name: string } | null;
+  expectedDeliveryAt: string | null;
+  late: boolean;
+  paymentTerms: string | null;
+  freight: number;
+  notes: string | null;
+  sentAt: string | null;
+  receivedAt: string | null;
+  cancelledAt: string | null;
+  createdBy: Ref | null;
+  createdAt: string;
+  total: number;
+  payable: { id: string; status: string; amount: number; dueDate: string | null } | null;
+  items: {
+    id: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    receivedQty: number;
+    pendingQty: number;
+    total: number;
+    product: { id: string; code: string; name: string; unit: Unit } | null;
+  }[];
+  receipts: {
+    id: string;
+    receivedAt: string;
+    invoiceNumber: string | null;
+    notes: string | null;
+    receivedBy: Ref | null;
+    warehouse: Ref | null;
+    items: { orderItemId: string; quantity: number; stockMovementId: string | null }[];
+  }[];
+};
+
+export type PurchaseSummary = {
+  awaitingApproval: number;
+  approved: number;
+  openOrders: number;
+  openOrdersValue: number;
+  lateOrders: number;
+  lowStockProducts: number;
+};
+
+export type ReplenishmentRow = {
+  id: string;
+  code: string;
+  name: string;
+  unit: Unit;
+  stock: number;
+  minStock: number;
+  maxStock: number | null;
+  supplier: Ref | null;
+  onOrder: number;
+  suggestedQty: number;
+};
+
+export type PriceHistory = {
+  points: {
+    date: string;
+    source: "QUOTE" | "ORDER";
+    reference: string;
+    description: string;
+    supplier: Ref;
+    unitPrice: number;
+    selected: boolean;
+  }[];
+  stats: { last: number; min: number; max: number; avg: number; change: number | null } | null;
 };

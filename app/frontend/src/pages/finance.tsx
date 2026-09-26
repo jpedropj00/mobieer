@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Area, ComposedChart, Bar, BarChart, CartesianGrid, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIcon, Layers, Loader2, Plus, Target, Trash2, Upload, Wallet } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIcon, Download, Layers, Loader2, Plus, Target, Trash2, Upload, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { FinanceDocuments } from "@/components/finance-documents";
@@ -17,10 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm, apiPut } from "@/services/api";
+import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, formatCurrency, localIsoDate } from "@/lib/utils";
-import type { BreakEven, CardAnalysis, CardStatementDetail, CashflowPoint, CreditCard, Dre, FinanceSummary, FinanceTransaction, InstallmentGroup, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
+import type { BreakEven, CardAnalysis, CardStatementDetail, CashflowPoint, CostCenter, CreditCard, Dre, FinanceSummary, FinanceTransaction, InstallmentGroup, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
 
 const REGIME_LABEL: Record<RegimeTributario, string> = {
   SIMPLES_NACIONAL: "Simples Nacional",
@@ -47,12 +47,20 @@ export function FinancePage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("finance.manage");
+  const canExport = can("reports.export");
 
-  const [filters, setFilters] = useState({ type: "", status: "" });
+  const [filters, setFilters] = useState({ type: "", status: "", costCenterId: "" });
+  /** Filtros da tela como querystring, para o CSV sair igual ao que está na lista. */
+  const queryString = (p: Record<string, string>) => {
+    const qs = new URLSearchParams(p).toString();
+    return qs ? `?${qs}` : "";
+  };
+
   const params = useMemo(() => {
     const p: Record<string, string> = {};
     if (filters.type) p.type = filters.type;
     if (filters.status) p.status = filters.status;
+    if (filters.costCenterId) p.costCenterId = filters.costCenterId;
     return p;
   }, [filters]);
 
@@ -64,6 +72,10 @@ export function FinancePage() {
   const projects = useQuery({ queryKey: ["business-projects", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/business/projects") });
   const clients = useQuery({ queryKey: ["business-clients", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/business/clients") });
   const suppliers = useQuery({ queryKey: ["suppliers", "picklist"], queryFn: () => apiGet<{ data: Picklist }>("/suppliers") });
+  const costCenters = useQuery({
+    queryKey: ["finance", "cost-centers"],
+    queryFn: () => apiGet<{ data: CostCenter[] }>("/finance/cost-centers"),
+  });
   const cashflow = useQuery({ queryKey: ["finance", "cashflow"], queryFn: () => apiGet<{ data: CashflowPoint[] }>("/finance/cashflow", { back: 3, forward: 6 }) });
   const [dreRange, setDreRange] = useState({ from: `${new Date().getFullYear()}-01-01`, to: localIsoDate(), basis: "accrual" });
   const dre = useQuery({
@@ -127,7 +139,7 @@ export function FinancePage() {
   });
 
   const [dialog, setDialog] = useState(false);
-  const blank = { type: "DESPESA", category: "", amount: "", date: localIsoDate(), dueDate: "", description: "", status: "PENDENTE", projectId: "", clientId: "", supplierId: "" };
+  const blank = { type: "DESPESA", category: "", amount: "", date: localIsoDate(), dueDate: "", description: "", status: "PENDENTE", projectId: "", clientId: "", supplierId: "", costCenterId: "" };
   const [form, setForm] = useState(blank);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["finance"] });
@@ -145,6 +157,7 @@ export function FinancePage() {
         projectId: form.projectId || null,
         clientId: form.clientId || null,
         supplierId: form.supplierId || null,
+        costCenterId: form.costCenterId || null,
       }),
     onSuccess: () => {
       toast.success("Lançamento registrado");
@@ -347,6 +360,29 @@ export function FinancePage() {
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-base">Por centro de custo</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {(s?.porCentroDeCusto ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum lançamento.</p>
+              ) : (
+                s!.porCentroDeCusto.map((c) => (
+                  <div key={c.id ?? "sem"} className="flex items-center justify-between text-sm">
+                    <span className={c.id ? "" : "italic text-muted-foreground"}>
+                      {c.id ? `${c.code} — ${c.name}` : c.name}
+                    </span>
+                    <span className="flex gap-3 tabular-nums">
+                      {c.receitas > 0 && <span className="text-success">{formatCurrency(c.receitas)}</span>}
+                      {c.despesas > 0 && <span className="font-medium text-destructive">{formatCurrency(c.despesas)}</span>}
+                    </span>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><Target className="h-4 w-4" /> Ponto de equilíbrio</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -412,11 +448,43 @@ export function FinancePage() {
                 <SelectItem value="PAGO">Pagos</SelectItem>
               </SelectContent>
             </Select>
-            {canManage && (
-              <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setInstForm(instBlank); setInstDialog(true); }}>
-                <Layers className="mr-2 h-4 w-4" /> Compra parcelada
-              </Button>
-            )}
+            <Select
+              value={filters.costCenterId || "ALL"}
+              onValueChange={(v) => setFilters({ ...filters, costCenterId: v === "ALL" ? "" : v })}
+            >
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="Centro de custo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Todos os centros</SelectItem>
+                {(costCenters.data?.data ?? []).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.code} — {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="ml-auto flex flex-wrap gap-2">
+              {canExport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    apiDownload(
+                      `/finance/transactions.csv${queryString(params)}`,
+                      `lancamentos-financeiros-${localIsoDate()}.csv`
+                    ).catch((e) => toast.error(errorMessage(e, "Falha ao exportar")))
+                  }
+                >
+                  <Download className="mr-2 h-4 w-4" /> Exportar CSV
+                </Button>
+              )}
+              {canManage && (
+                <Button size="sm" variant="outline" onClick={() => { setInstForm(instBlank); setInstDialog(true); }}>
+                  <Layers className="mr-2 h-4 w-4" /> Compra parcelada
+                </Button>
+              )}
+            </div>
           </div>
 
           {(installments.data?.data ?? []).length > 0 && (
@@ -1004,6 +1072,13 @@ export function FinancePage() {
             </Field>
             <Field label="Projeto (opcional)">
               <Picker value={form.projectId} onChange={(v) => setForm({ ...form, projectId: v })} items={projects.data?.data ?? []} />
+            </Field>
+            <Field label="Centro de custo (opcional)">
+              <Picker
+                value={form.costCenterId}
+                onChange={(v) => setForm({ ...form, costCenterId: v })}
+                items={(costCenters.data?.data ?? []).map((c) => ({ id: c.id, name: `${c.code} — ${c.name}` }))}
+              />
             </Field>
             {form.type === "RECEITA" ? (
               <Field label="Cliente (opcional)">

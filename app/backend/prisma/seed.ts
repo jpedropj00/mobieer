@@ -115,6 +115,15 @@ const PERMISSIONS = [
   { code: "clients.read.all", label: "Ver clientes de toda a equipe (sem isto, só a carteira própria)", module: "Clientes" },
   { code: "commercial.goals.manage", label: "Definir metas comerciais", module: "Comercial" },
   { code: "templates.versions", label: "Criar e publicar versões de modelos", module: "Documentos" },
+  { code: "purchases.read", label: "Ver compras (solicitações, cotações e pedidos)", module: "Compras" },
+  { code: "purchases.request", label: "Abrir solicitação de compra", module: "Compras" },
+  { code: "purchases.approve", label: "Aprovar ou recusar solicitações de compra", module: "Compras" },
+  { code: "purchases.manage", label: "Cotar, emitir pedidos e receber material", module: "Compras" },
+  { code: "production.steps", label: "Atualizar etapas da produção (iniciar, concluir, bloquear, prazo)", module: "Produção" },
+  { code: "inspections.manage", label: "Registrar vistorias técnicas pós-montagem", module: "Pós-venda" },
+  { code: "warranty.manage", label: "Gerenciar garantias, certificados e manutenções preventivas", module: "Pós-venda" },
+  { code: "productivity.read", label: "Ver produtividade da equipe (indicadores mensais)", module: "Produtividade" },
+  { code: "productivity.manage", label: "Definir metas de produtividade", module: "Produtividade" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -133,6 +142,10 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Gestor",
     description: "Gerencia produtos, estoque e aprova requisições",
     perms: [
+      "inspections.manage", "warranty.manage",
+      "productivity.read", "productivity.manage",
+      "production.steps",
+      "purchases.read", "purchases.request", "purchases.approve", "purchases.manage",
       "dashboard.read",
       "products.read",
       "products.create",
@@ -186,6 +199,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Financeiro",
     description: "Gestão de receitas, despesas e contas a pagar/receber",
     perms: [
+      "purchases.read",
       "dashboard.read",
       "finance.read", "finance.manage",
       "finance.documents.read", "finance.documents.manage", "finance.documents.pay",
@@ -202,6 +216,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     perms: [
       "dashboard.read",
       "hr.read", "hr.employees.manage", "hr.vacations.manage", "hr.vacations.approve", "hr.timeclock.manage",
+      "productivity.read", "productivity.manage",
       "agenda.read", "agenda.read.all",
       "notifications.read",
       "users.read",
@@ -214,6 +229,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Almoxarife",
     description: "Opera o almoxarifado: entradas, saídas e inventário",
     perms: [
+      "purchases.read", "purchases.request",
       "dashboard.read",
       "products.read",
       "products.update",
@@ -247,9 +263,12 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
   },
   {
     name: "PRODUCTION",
-    label: "Produção / Corte",
+    label: "Produção",
     description: "Executa e confere as peças liberadas para produção",
     perms: [
+      "production.steps",
+      "productivity.read",
+      "purchases.read", "purchases.request",
       "dashboard.read",
       "products.read",
       "stock.read",
@@ -341,6 +360,8 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     label: "Assistência técnica",
     description: "Vistoria, garantia, assistência e manutenção preventiva",
     perms: [
+      "inspections.manage", "warranty.manage",
+      "purchases.read", "purchases.request",
       "dashboard.read", "notifications.read", "chat.use",
       "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
       "clients.read.all", "timeline.read", "timeline.edit",
@@ -349,10 +370,84 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
       "parts.read", "parts.read.all", "parts.create", "parts.analyze",
     ],
   },
+
+  {
+    name: "CORTE",
+    label: "Corte",
+    description: "Setor de corte: plano de corte, peças liberadas e conferência",
+    perms: [
+      "production.steps",
+      "purchases.read", "purchases.request",
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "timeline.read", "documents.read",
+      "products.read", "stock.read", "agenda.read",
+      "requisitions.read", "requisitions.read.all", "requisitions.cut", "requisitions.release",
+      "parts.read", "parts.read.all", "parts.produce",
+    ],
+  },
+  {
+    name: "COMPRAS",
+    label: "Compras",
+    description: "Fornecedores, cotações, pedidos de compra e entrada de material",
+    perms: [
+      "purchases.read", "purchases.request", "purchases.manage",
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "documents.read", "agenda.read",
+      "suppliers.read", "suppliers.create", "suppliers.update",
+      "products.read", "products.create", "products.update", "categories.read", "warehouses.read",
+      "stock.read", "stock.entry", "stock.movements",
+      "requisitions.read", "requisitions.read.all",
+      "finance.read", "finance.documents.read", "finance.documents.manage",
+      "reports.read",
+    ],
+  },
+  {
+    name: "TECNICO",
+    label: "Técnico",
+    description: "Campo: medição, vistoria e atendimento de assistência",
+    perms: [
+      "inspections.manage",
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "clients.read.all", "timeline.read", "timeline.edit",
+      "activities.read", "activities.create", "activities.edit", "activities.complete", "activities.sign",
+      "agenda.read", "agenda.read.all", "agenda.create", "agenda.edit", "agenda.cancel",
+      "parts.read", "parts.create",
+      "documents.read", "documents.manage",
+    ],
+  },
+  {
+    name: "FUNCIONARIO",
+    label: "Funcionário",
+    // sem clients.read.all: acesso básico não enxerga a carteira de clientes
+    description: "Acesso básico: próprias atividades, agenda, tarefas e chat",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.create", "organization.tasks.edit", "organization.tasks.comment",
+      "activities.read", "activities.create", "activities.edit", "activities.complete",
+      "agenda.read", "agenda.create",
+      "documents.read",
+    ],
+  },
+  {
+    name: "MONTADOR_INTERNO",
+    label: "Montador interno",
+    // sem contractors.self: essa área é do montador externo (perfil MONTADOR)
+    description: "Montagem pela equipe da casa: atividades, peças e agenda",
+    perms: [
+      "dashboard.read", "notifications.read", "chat.use",
+      "organization.read", "organization.tasks.comment",
+      "timeline.read", "documents.read",
+      "activities.read", "activities.create", "activities.edit", "activities.complete", "activities.sign",
+      "agenda.read",
+      "parts.read", "parts.create",
+      "requisitions.read", "requisitions.create",
+    ],
+  },
 ];
 
 // Chat para todos os perfis; gestão/RH também gerenciam grupos (ADMIN já tem tudo).
-const NEW_ROLES = ["COMERCIAL", "CONSULTOR", "PROJETISTA", "ASSISTENCIA"];
+const NEW_ROLES = ["COMERCIAL", "CONSULTOR", "PROJETISTA", "ASSISTENCIA", "CORTE", "COMPRAS", "TECNICO", "FUNCIONARIO", "MONTADOR_INTERNO"];
 for (const def of ROLE_DEFS) {
   if (def.name === "ADMIN" || NEW_ROLES.includes(def.name)) continue;
   const extra: PermissionCode[] = [];

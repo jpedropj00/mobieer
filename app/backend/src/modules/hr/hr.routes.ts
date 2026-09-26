@@ -13,6 +13,7 @@ import { holidaysForYear, runHolidayNotices, upcomingHolidays, ymd } from "./hol
 import timeclockRoutes from "./timeclock.routes";
 import { pipeToResponse } from "../../utils/stream";
 import { enumQuery } from "../../utils/query";
+import { formatCpf, isValidCpf, onlyDigits } from "../../utils/document";
 import { VacationRequestStatus } from "@prisma/client";
 
 const router = Router();
@@ -23,6 +24,7 @@ const nullable = (max: number) => z.string().trim().max(max).optional().nullable
 
 const employeeSchema = z.object({
   fullName: z.string().trim().min(2).max(255),
+  document: nullable(20), // CPF
   registration: z.string().trim().min(1).max(30).optional(),
   role: nullable(120),
   sector: nullable(120),
@@ -62,7 +64,7 @@ async function getEmployee(id: string, organizationId: string) {
 }
 
 const employeeSummary = (e: {
-  id: string; registration: string; fullName: string; role: string | null; sector: string | null;
+  id: string; registration: string; fullName: string; document: string | null; role: string | null; sector: string | null;
   status: string; admittedAt: Date; user: { id: string; name: string } | null;
   vacationPeriods: { daysEntitled: number; daysTaken: number; concessionLimit: Date; status: string }[];
 }) => {
@@ -71,6 +73,8 @@ const employeeSummary = (e: {
     id: e.id,
     registration: e.registration,
     fullName: e.fullName,
+    document: e.document,
+    documentFormatted: formatCpf(e.document),
     role: e.role,
     sector: e.sector,
     status: e.status,
@@ -81,6 +85,29 @@ const employeeSummary = (e: {
       : null,
   };
 };
+
+/**
+ * CPF pronto para gravar: só dígitos, com os verificadores conferidos e sem
+ * repetir outro colaborador da organização. Campo vazio grava NULL — CPF é
+ * opcional, mas quando vem tem que estar certo.
+ */
+async function cpfParaGravar(valor: string | null | undefined, organizationId: string, ignorarId: string | null): Promise<string | null> {
+  if (!valor?.trim()) return null;
+  const cpf = onlyDigits(valor);
+  if (!isValidCpf(cpf)) throw new BadRequestError("CPF inválido", { field: "document" }, "VALIDATION_ERROR");
+  const jaExiste = await prisma.employee.findFirst({
+    where: { organizationId, document: cpf, ...(ignorarId ? { id: { not: ignorarId } } : {}) },
+    select: { registration: true, fullName: true },
+  });
+  if (jaExiste) {
+    throw new BadRequestError(
+      `Este CPF já está no cadastro de ${jaExiste.fullName} (${jaExiste.registration})`,
+      { field: "document" },
+      "DUPLICATE"
+    );
+  }
+  return cpf;
+}
 
 // ---------------- Colaboradores ----------------
 
@@ -93,7 +120,14 @@ router.get(
       where: {
         organizationId: req.user!.organizationId,
         ...(search
-          ? { OR: [{ fullName: { contains: search, mode: "insensitive" } }, { registration: { contains: search, mode: "insensitive" } }] }
+          ? {
+              OR: [
+                { fullName: { contains: search, mode: "insensitive" as const } },
+                { registration: { contains: search, mode: "insensitive" as const } },
+                // CPF: quem procura digita com ponto e traço, o banco guarda só dígitos
+                ...(onlyDigits(search) ? [{ document: { contains: onlyDigits(search) } }] : []),
+              ],
+            }
           : {}),
       },
       include: {
@@ -141,6 +175,7 @@ router.post(
         organizationId: req.user!.organizationId,
         registration,
         fullName: input.fullName,
+        document: await cpfParaGravar(input.document, req.user!.organizationId, null),
         role: input.role || null,
         sector: input.sector || null,
         email: input.email || null,
@@ -168,6 +203,7 @@ router.patch(
       data: {
         fullName: input.fullName,
         registration: input.registration,
+        document: input.document === undefined ? undefined : await cpfParaGravar(input.document, req.user!.organizationId, req.params.id),
         role: input.role === undefined ? undefined : input.role || null,
         sector: input.sector === undefined ? undefined : input.sector || null,
         email: input.email === undefined ? undefined : input.email || null,

@@ -30,6 +30,17 @@ const UNKNOWN_TOKEN: WhatsAppStatus["token"] = { valid: true, expiresAt: null, e
 async function tokenInfo(): Promise<{ token: WhatsAppStatus["token"]; warning?: string }> {
   const t = encodeURIComponent(env.whatsapp.token);
   const res = await graph<{ data?: { is_valid?: boolean; expires_at?: number } }>(`debug_token?input_token=${t}&access_token=${t}`);
+  // O debug_token se autentica com o próprio token: quando ele vence, esta
+  // chamada também falha. Cair no "não sei" aqui faria a tela dizer que está
+  // tudo certo justamente quando nada mais é entregue.
+  if (!res.ok && isAuthError(res.body.error)) {
+    return {
+      token: { valid: false, expiresAt: null, expired: true, daysLeft: 0 },
+      warning:
+        `A Meta recusou o token do WhatsApp e nenhuma mensagem está saindo (${res.body.error?.message ?? "OAuthException"}). ` +
+        "Gere um token permanente (System User) no painel da Meta e atualize WHATSAPP_TOKEN.",
+    };
+  }
   if (!res.ok || !res.body.data) return { token: UNKNOWN_TOKEN };
 
   const { is_valid: isValid = true, expires_at: expiresAt = 0 } = res.body.data;
@@ -55,12 +66,24 @@ async function tokenInfo(): Promise<{ token: WhatsAppStatus["token"]; warning?: 
   };
 }
 
-async function graph<T>(path: string): Promise<{ ok: boolean; status: number; body: T & { error?: { message?: string } } }> {
+type GraphError = { message?: string; code?: number; error_subcode?: number; type?: string };
+
+async function graph<T>(path: string): Promise<{ ok: boolean; status: number; body: T & { error?: GraphError } }> {
   const res = await fetch(`https://graph.facebook.com/${env.whatsapp.graphVersion}/${path}`, {
     headers: { Authorization: `Bearer ${env.whatsapp.token}` },
   });
-  const body = (await res.json().catch(() => ({}))) as T & { error?: { message?: string } };
+  const body = (await res.json().catch(() => ({}))) as T & { error?: GraphError };
   return { ok: res.ok, status: res.status, body };
+}
+
+/**
+ * A Meta recusou a chamada por causa do token? É o código 190 (OAuthException).
+ * Alguns erros vêm só com a mensagem, por isso o texto também é olhado.
+ */
+function isAuthError(e: GraphError | undefined): boolean {
+  if (!e) return false;
+  if (e.code === 190 || e.type === "OAuthException") return true;
+  return /session has expired|access token|token de acesso|expirou/i.test(e.message ?? "");
 }
 
 export async function whatsappStatus(): Promise<WhatsAppStatus> {
@@ -89,10 +112,18 @@ export async function whatsappStatus(): Promise<WhatsAppStatus> {
   const { token, warning: tokenWarning } = await tokenInfo();
   if (tokenWarning) warnings.push(tokenWarning);
 
+  // Avisos que não dependem da Meta responder: valem mesmo se a consulta falhar.
+  if (!webhook.verifyTokenSet) warnings.push("WHATSAPP_VERIFY_TOKEN vazio: o webhook de respostas (CONFIRMAR/REMARCAR) não pode ser validado na Meta.");
+  if (!webhook.appSecretSet) warnings.push("WHATSAPP_APP_SECRET vazio: as chamadas do webhook entram sem conferir a assinatura da Meta.");
+
   const num = await graph<{ display_phone_number?: string; verified_name?: string; quality_rating?: string; code_verification_status?: string }>(
     `${env.whatsapp.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,code_verification_status`
   );
   if (!num.ok) {
+    // Se o token venceu, o aviso dele já explica a falha; não repete o mesmo assunto.
+    if (isAuthError(num.body.error) && !token.expired && token.valid) {
+      warnings.push(`A Meta recusou a consulta do número: ${num.body.error?.message ?? "erro de autenticação"}. Confira WHATSAPP_TOKEN e WHATSAPP_PHONE_NUMBER_ID.`);
+    }
     return {
       configured: true,
       number: null,
@@ -134,9 +165,6 @@ export async function whatsappStatus(): Promise<WhatsAppStatus> {
   } else {
     warnings.push("Defina WHATSAPP_ACCOUNT_ID (id da conta do WhatsApp Business) para listar os templates aprovados.");
   }
-
-  if (!webhook.verifyTokenSet) warnings.push("WHATSAPP_VERIFY_TOKEN vazio: o webhook de respostas (CONFIRMAR/REMARCAR) não pode ser validado na Meta.");
-  if (!webhook.appSecretSet) warnings.push("WHATSAPP_APP_SECRET vazio: as chamadas do webhook entram sem conferir a assinatura da Meta.");
 
   return { configured: true, number, templates, token, webhook, warnings };
 }

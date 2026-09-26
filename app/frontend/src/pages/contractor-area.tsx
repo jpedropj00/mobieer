@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiGet, apiPost } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
+import { MyContractorDocuments } from "@/components/contractor-documents";
 
 export type InstallationTask = {
   id: string;
@@ -145,6 +146,7 @@ export function ContractorAreaPage() {
           <TabsTrigger value="hoje" className="flex-1">Hoje</TabsTrigger>
           <TabsTrigger value="produtividade" className="flex-1">Produtividade</TabsTrigger>
           <TabsTrigger value="horas" className="flex-1">Horas</TabsTrigger>
+          <TabsTrigger value="documentos" className="flex-1">Documentos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="hoje" className="space-y-4 pt-4">
@@ -218,6 +220,10 @@ export function ContractorAreaPage() {
         <TabsContent value="horas" className="space-y-4 pt-4">
           <BancoDeHoras />
           <MeuDesempenho />
+        </TabsContent>
+
+        <TabsContent value="documentos" className="space-y-4 pt-4">
+          <MyContractorDocuments />
         </TabsContent>
 
         <TabsContent value="produtividade" className="space-y-4 pt-4">

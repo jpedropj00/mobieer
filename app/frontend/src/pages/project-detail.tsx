@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AftersalesPanel } from "@/components/aftersales-panel";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignaturePad } from "@/components/signature-pad";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
@@ -235,6 +236,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="campo">Campo</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="promob">Promob</TabsTrigger>
+          <TabsTrigger value="posvenda">Pós-venda</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
 
@@ -371,6 +373,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="promob">
           <PromobPanel projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="posvenda">
+          <AftersalesPanel projectId={projectId} />
         </TabsContent>
 
         <TabsContent value="portal" className="space-y-4">

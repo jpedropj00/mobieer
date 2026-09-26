@@ -147,7 +147,11 @@ export async function getOrCreateOrder(projectId: string, organizationId: string
       events: { create: { stage: "RELEASED", note: "Projeto liberado para produção", createdById: createdById ?? null } },
     },
   });
-  return prisma.productionOrder.findUniqueOrThrow({ where: { projectId }, include: orderInclude });
+  const order = await prisma.productionOrder.findUniqueOrThrow({ where: { projectId }, include: orderInclude });
+  // §63: pedido entrou em produção -> nascem as etapas da fábrica com prazo.
+  // Import tardio: steps.service importa este arquivo.
+  await (await import("./steps.service")).ensureSteps(order.id, { fromRelease: true });
+  return order;
 }
 
 /**

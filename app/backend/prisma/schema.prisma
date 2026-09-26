@@ -5,6 +5,8 @@ generator client {
   provider      = "prisma-client-js"
   // "native" para desenvolvimento local; "rhel-openssl-3.0.x" para a runtime do Vercel (serverless).
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  // Includes aninhados viram uma consulta só (JOIN) em vez de uma ida ao banco por nível.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -127,6 +129,19 @@ model User {
   measurementRooms          MeasurementRoom[]          @relation("MeasurementRoomAuthor")
   diaryEntries              InstallationDiaryEntry[]   @relation("DiaryAuthor")
   ratingsGiven              ContractorRating[]         @relation("ContractorRater")
+  purchaseRequests      PurchaseRequest[]     @relation("PurchaseRequester")
+  purchaseDecisions     PurchaseRequest[]     @relation("PurchaseDecider")
+  purchaseQuotes        PurchaseQuote[]       @relation("PurchaseQuoteCreator")
+  purchaseOrders        PurchaseOrder[]       @relation("PurchaseOrderCreator")
+  purchaseReceipts      PurchaseReceipt[]     @relation("PurchaseReceiver")
+  productionSteps       ProductionStep[]      @relation("ProductionStepResponsible")
+  fileRecords           FileRecord[]          @relation("FileRecordAuthor")
+  siteInspectionsAsTechnician SiteInspection[] @relation("SiteInspectionTechnician")
+  siteInspectionsCreated SiteInspection[] @relation("SiteInspectionCreator")
+  warrantiesCreated     Warranty[]            @relation("WarrantyCreator")
+  maintenancesDone      PreventiveMaintenance[] @relation("MaintenanceDoneBy")
+  employeeGoals         EmployeeGoal[]        @relation("EmployeeGoalOwner")
+  employeeGoalsSet      EmployeeGoal[]        @relation("EmployeeGoalAuthor")
 
   @@index([roleId])
   @@index([organizationId])
@@ -203,6 +218,7 @@ model Organization {
   postSales              PostSale[]
   employees              Employee[]
   financeTransactions    FinanceTransaction[]
+  costCenters            CostCenter[]
   taxRules               TaxRule[]
   dreCategoryMappings    DreCategoryMapping[]
   documentTemplates      DocumentTemplate[]
@@ -238,6 +254,13 @@ model Organization {
   salesGoals             SalesGoal[]
   diaryEntries           InstallationDiaryEntry[]
   contractorRatings      ContractorRating[]
+  purchaseRequests       PurchaseRequest[]
+  purchaseOrders         PurchaseOrder[]
+  fileRecords            FileRecord[]
+  siteInspections        SiteInspection[]
+  warranties             Warranty[]
+  preventiveMaintenances PreventiveMaintenance[]
+  employeeGoals          EmployeeGoal[]
 
   @@index([enterpriseId])
 }
@@ -323,6 +346,8 @@ model Supplier {
   products            Product[]
   movements           StockMovement[]
   financeTransactions FinanceTransaction[]
+  purchaseQuotes      PurchaseQuote[]
+  purchaseOrders      PurchaseOrder[]
 }
 
 model Warehouse {
@@ -336,6 +361,7 @@ model Warehouse {
   originMovements      StockMovement[]         @relation("MovementOriginWarehouse")
   destinationMovements StockMovement[]         @relation("MovementDestinationWarehouse")
   reservations         StockReservation[]
+  purchaseReceipts     PurchaseReceipt[]
 }
 
 model Product {
@@ -378,6 +404,8 @@ model Product {
   activityMaterials ActivityMaterial[]
   quoteItems        CommercialQuoteItem[]
   orderItems        SalesOrderItem[]
+  purchaseRequestItems PurchaseRequestItem[]
+  purchaseOrderItems   PurchaseOrderItem[]
 
   @@index([name])
   @@index([categoryId])
@@ -596,6 +624,7 @@ model StockMovement {
   operationCode          String?
 
   createdAt DateTime @default(now())
+  purchaseReceiptItem PurchaseReceiptItem?
 
   @@index([productId])
   @@index([date])
@@ -776,6 +805,7 @@ model Requisition {
   attachments  RequisitionAttachment[]
   agendaEvents AgendaEvent[]
   kanbanTasks  KanbanTask[]
+  purchaseRequests PurchaseRequest[]
 
   @@index([status])
   @@index([productionOrderId])
@@ -1036,6 +1066,7 @@ model Client {
   financeTransactions FinanceTransaction[]
   fiscalInvoices      FiscalInvoice[]
   agendaEvents        AgendaEvent[]           @relation("AgendaClient")
+  fileRecords FileRecord[]
 
   @@unique([organizationId, document])
   @@index([organizationId, status, name])
@@ -1086,6 +1117,12 @@ model Project {
   agendaEvents        AgendaEvent[]             @relation("AgendaProject")
   diaryEntries        InstallationDiaryEntry[]
   contractorRatings   ContractorRating[]
+  purchaseRequests PurchaseRequest[]
+  purchaseOrders   PurchaseOrder[]
+  fileRecords FileRecord[]
+  siteInspections SiteInspection[]
+  warranty        Warranty?
+  maintenances    PreventiveMaintenance[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -2068,6 +2105,8 @@ model ProjectDocument {
   generatedFrom           String? // RECIBO | VISTORIA | CERTIFICADO_GARANTIA | TERMO_PRODUCAO | PASTA_TECNICA ...
   templateVersion         Int?
   createdAt               DateTime                   @default(now())
+  inspectionReport SiteInspection? @relation("SiteInspectionReport")
+  warrantyCertificate Warranty? @relation("WarrantyCertificate")
 
   @@index([organizationId, projectId, type])
   @@index([clientId, visibleToClient])
@@ -2126,6 +2165,7 @@ model Employee {
   organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   registration   String // matrícula (gerada: EMP-0001)
   fullName       String
+  document       String? // CPF (só dígitos)
   role           String? // cargo
   sector         String?
   email          String?
@@ -2147,6 +2187,9 @@ model Employee {
   updatedAt        DateTime             @updatedAt
 
   @@unique([organizationId, registration])
+  // CPF não repete dentro da organização. Vários NULL convivem no Postgres,
+  // então quem ainda não tem CPF cadastrado não trava o índice.
+  @@unique([organizationId, document])
   @@index([organizationId, status])
 }
 
@@ -2298,6 +2341,10 @@ model FinanceTransaction {
   client        Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   supplierId    String?
   supplier      Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  // setor que consumiu o valor (§31); SetNull para apagar um centro não
+  // apagar o lançamento junto
+  costCenterId  String?
+  costCenter    CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
   cardExpenseId String?      @unique
   cardExpense   CardExpense? @relation(fields: [cardExpenseId], references: [id], onDelete: SetNull)
 
@@ -2325,6 +2372,7 @@ model FinanceTransaction {
   createdBy   User?    @relation("FinanceCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  purchaseOrder PurchaseOrder?
 
   @@index([organizationId, docType, status])
   @@index([organizationId, dueDate])
@@ -2612,6 +2660,7 @@ model ProductionOrder {
   items               ProductionItem[]
   requisitions        Requisition[]
   dispatchChecklist   DispatchChecklist?
+  steps               ProductionStep[]
 
   @@index([organizationId, stage])
 }
@@ -2889,6 +2938,28 @@ model ProductionTimeLog {
 // Quando não há mapeamento, um classificador por palavra-chave decide.
 // ============================================================
 
+/// Centro de custo (§31): o SETOR que consumiu o dinheiro.
+/// É uma dimensão diferente de `category` (a natureza do gasto) e de
+/// `projectId` (a obra). Uma compra de fita de borda é categoria "material",
+/// centro de custo "Produção" e pode ou não estar ligada a uma obra.
+model CostCenter {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String // curto, para relatório: PROD, ADM, COM...
+  name           String
+  description    String?      @db.Text
+  active         Boolean      @default(true)
+
+  transactions FinanceTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, active])
+}
+
 model DreCategoryMapping {
   id             String       @id @default(cuid())
   organizationId String
@@ -3144,6 +3215,8 @@ enum MessageEvent {
   ASSISTANCE_SCHEDULED
   ASSISTANCE_REMINDER
   POST_SALE_FOLLOWUP
+  MAINTENANCE_REMINDER // revisão preventiva chegando (§36)
+  WARRANTY_EXPIRING // garantia (ou item dela) perto do fim (§35)
 }
 
 enum MessageStatus {
@@ -3427,7 +3500,20 @@ enum ContractorDocumentType {
   DOCUMENTO_PESSOAL
   CERTIFICADO
   COMPROVANTE
+  TERMO_RESPONSABILIDADE // ferramentas e equipamentos sob guarda do montador
+  REGULAMENTO_INTERNO
+  REGRAS_EMPRESA
   OUTRO
+}
+
+/// Entrega e assinatura do documento do montador (§7). A ordem é a do fluxo.
+enum ContractorDocumentStatus {
+  AGUARDANDO_ENVIO
+  ENVIADO
+  VISUALIZADO
+  AGUARDANDO_ASSINATURA
+  ASSINADO
+  RECUSADO
 }
 
 /// Pagamento (total ou parcial) de um documento financeiro.
@@ -3490,7 +3576,21 @@ model ContractorDocument {
   uploadedBy   User?                  @relation("ContractorDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   createdAt    DateTime               @default(now())
 
+  // Entrega e assinatura (§7). O status é governado por documents.service.ts.
+  status            ContractorDocumentStatus @default(AGUARDANDO_ENVIO)
+  requiresSignature Boolean                  @default(false)
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  signedAt          DateTime?
+  refusedAt         DateTime?
+  refusalReason     String?                  @db.Text
+  /// PNG base64 do desenho, igual ao DocumentSignature do lado do cliente.
+  signatureDataUrl  String?                  @db.Text
+  signerName        String?
+  signerIp          String?
+
   @@index([contractorId])
+  @@index([contractorId, status])
 }
 
 /// Solicitacao de pecas feita pelo montador externo na obra.
@@ -3865,4 +3965,475 @@ model ContractorRating {
 
   @@unique([projectId, contractorId])
   @@index([contractorId, createdAt])
+}
+
+// ============================================================
+// §30 — COMPRAS
+//
+// Solicitação → aprovação → cotações (comparação) → pedido → recebimento.
+// O recebimento dá entrada no estoque pelo mesmo caminho da tela de entrada
+// (StockMovement ENTRY) e o pedido emitido vira conta a pagar no financeiro.
+// Histórico de preço não tem tabela própria: sai das cotações e dos pedidos.
+// ============================================================
+
+enum PurchaseRequestStatus {
+  REQUESTED // aguardando aprovação
+  APPROVED // liberada para cotar/comprar
+  REJECTED
+  ORDERED // já virou pedido
+  CANCELLED
+}
+
+enum PurchaseUrgency {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum PurchaseOrderStatus {
+  DRAFT // montado, ainda não enviado ao fornecedor
+  SENT // enviado; aguardando entrega
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseRequest {
+  id             String                @id @default(cuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  number         String                @unique // SC-00001
+  status         PurchaseRequestStatus @default(REQUESTED)
+  urgency        PurchaseUrgency       @default(NORMAL)
+  reason         String?               @db.Text
+  notes          String?               @db.Text
+  neededBy       DateTime?
+
+  requesterId  String
+  requester    User      @relation("PurchaseRequester", fields: [requesterId], references: [id])
+  decidedById  String?
+  decidedBy    User?     @relation("PurchaseDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decisionNote String?   @db.Text
+
+  // origem: projeto (obra) e/ou requisição que parou por falta de material
+  projectId     String?
+  project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  requisitionId String?
+  requisition   Requisition? @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+
+  items     PurchaseRequestItem[]
+  quotes    PurchaseQuote[]
+  orders    PurchaseOrder[]
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@index([organizationId, status])
+  @@index([projectId])
+}
+
+model PurchaseRequestItem {
+  id          String          @id @default(cuid())
+  requestId   String
+  request     PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description String
+  quantity    Int
+  unit        Unit            @default(UNIT)
+
+  quoteItems PurchaseQuoteItem[]
+  orderItems PurchaseOrderItem[]
+
+  @@index([requestId])
+}
+
+model PurchaseQuote {
+  id           String          @id @default(cuid())
+  requestId    String
+  request      PurchaseRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  supplierId   String
+  supplier     Supplier        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  validUntil   DateTime?
+  deliveryDays Int? // prazo de entrega prometido, em dias
+  paymentTerms String?
+  freight      Decimal         @default(0) @db.Decimal(12, 2)
+  notes        String?         @db.Text
+  selected     Boolean         @default(false)
+  createdById  String?
+  createdBy    User?           @relation("PurchaseQuoteCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime        @default(now())
+
+  items PurchaseQuoteItem[]
+  order PurchaseOrder?
+
+  @@unique([requestId, supplierId])
+  @@index([supplierId])
+}
+
+model PurchaseQuoteItem {
+  id            String              @id @default(cuid())
+  quoteId       String
+  quote         PurchaseQuote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  requestItemId String
+  requestItem   PurchaseRequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  unitPrice     Decimal             @db.Decimal(12, 2)
+
+  @@unique([quoteId, requestItemId])
+}
+
+model PurchaseOrder {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  number             String              @unique // PC-00001
+  status             PurchaseOrderStatus @default(DRAFT)
+  supplierId         String
+  supplier           Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  requestId          String?
+  request            PurchaseRequest?    @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  quoteId            String?             @unique
+  quote              PurchaseQuote?      @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  projectId          String?
+  project            Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  expectedDeliveryAt DateTime?
+  paymentTerms       String?
+  freight            Decimal             @default(0) @db.Decimal(12, 2)
+  notes              String?             @db.Text
+  sentAt             DateTime?
+  receivedAt         DateTime?
+  cancelledAt        DateTime?
+
+  // conta a pagar gerada ao emitir; única para não duplicar num reenvio
+  financeTransactionId String?             @unique
+  financeTransaction   FinanceTransaction? @relation(fields: [financeTransactionId], references: [id], onDelete: SetNull)
+  lateAlertAt          DateTime? // último aviso de atraso (dedup do job diário)
+  createdById          String?
+  createdBy            User?               @relation("PurchaseOrderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  items    PurchaseOrderItem[]
+  receipts PurchaseReceipt[]
+
+  @@index([organizationId, status])
+  @@index([supplierId])
+  @@index([expectedDeliveryAt])
+}
+
+model PurchaseOrderItem {
+  id            String               @id @default(cuid())
+  orderId       String
+  order         PurchaseOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  requestItemId String?
+  requestItem   PurchaseRequestItem? @relation(fields: [requestItemId], references: [id], onDelete: SetNull)
+  productId     String?
+  product       Product?             @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description   String
+  quantity      Int
+  unitPrice     Decimal              @db.Decimal(12, 2)
+  receivedQty   Int                  @default(0)
+
+  receiptItems PurchaseReceiptItem[]
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model PurchaseReceipt {
+  id            String        @id @default(cuid())
+  orderId       String
+  order         PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  receivedAt    DateTime      @default(now())
+  invoiceNumber String?
+  notes         String?       @db.Text
+  warehouseId   String?
+  warehouse     Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  receivedById  String?
+  receivedBy    User?         @relation("PurchaseReceiver", fields: [receivedById], references: [id], onDelete: SetNull)
+
+  items PurchaseReceiptItem[]
+
+  @@index([orderId])
+}
+
+model PurchaseReceiptItem {
+  id              String            @id @default(cuid())
+  receiptId       String
+  receipt         PurchaseReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  orderItemId     String
+  orderItem       PurchaseOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  quantity        Int
+  stockMovementId String?           @unique
+  stockMovement   StockMovement?    @relation(fields: [stockMovementId], references: [id], onDelete: SetNull)
+}
+
+// ============================================================
+// §23/§24 — Etapas do pedido na fábrica, com prazo
+//
+// A ProductionOrder acompanha o pedido em nível macro (liberado → produção →
+// pré-montagem → entrega) e os ProductionItem acompanham peça por peça. Faltava
+// o meio-termo que a especificação pede: cada ETAPA do pedido com responsável,
+// início, prazo, conclusão, observações e anexos — é o que gera os avisos de
+// prazo próximo, vencido e etapa bloqueada.
+// ============================================================
+
+enum ProductionStepKey {
+  PLANO_CORTE
+  CORTE
+  FITA_BORDA
+  PECAS_ESPECIAIS
+  LIMPEZA
+  EMBALAGEM
+  PRE_MONTAGEM
+  LIBERACAO
+  SAIDA
+}
+
+enum ProductionStepStatus {
+  PENDING
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  SKIPPED // etapa que não se aplica ao pedido (ex.: sem peças especiais)
+}
+
+model ProductionStep {
+  id            String               @id @default(cuid())
+  orderId       String
+  order         ProductionOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  step          ProductionStepKey
+  position      Int
+  status        ProductionStepStatus @default(PENDING)
+  responsibleId String?
+  responsible   User?                @relation("ProductionStepResponsible", fields: [responsibleId], references: [id], onDelete: SetNull)
+  startedAt     DateTime?
+  dueAt         DateTime?
+  completedAt   DateTime?
+  notes         String?              @db.Text
+  blockedReason String?              @db.Text
+  // dedup dos avisos: tipo e data do último (DUE_SOON | OVERDUE)
+  lastAlertKind String?
+  lastAlertAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([orderId, step])
+  @@index([status, dueAt])
+  @@index([responsibleId])
+}
+
+// ============================================================
+// §55 — Registro central de arquivos
+//
+// Arquivo genérico ligado a qualquer entidade (entity + entityId), com projeto e
+// cliente denormalizados para a busca central. Os anexos antigos (medição,
+// assistência, financeiro...) continuam nas tabelas deles; o índice central
+// os lê de lá em vez de copiar.
+// ============================================================
+
+model FileRecord {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entity         String // ProductionStep | Inspection | Warranty | Project | Client | Employee ...
+  entityId       String
+  projectId      String?
+  project        Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clientId       String?
+  client         Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  category       String? // rótulo livre: FOTO, DOCUMENTO, RELATORIO...
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  storageKey     String
+  createdById    String?
+  createdBy      User?        @relation("FileRecordAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, entity, entityId])
+  @@index([projectId])
+  @@index([clientId])
+}
+
+// ============================================================
+// §37 — Vistoria técnica pós-montagem
+//
+// Espelha o checklist em papel da Mobieer (Checklist_Vistoria_Tecnica):
+// seções × itens com Conforme / Não conforme / Não se aplica, resultado,
+// pendências e termo de entrega assinado por técnico e cliente. Não confundir
+// com `InspectionResult`, que é a conferência de REQUISIÇÃO de peças.
+// Fotos vão para o registro central de arquivos (entity "SiteInspection").
+// ============================================================
+
+enum SiteInspectionStatus {
+  DRAFT // em preenchimento
+  COMPLETED // resultado registrado e termo assinado
+}
+
+enum SiteInspectionResult {
+  APPROVED // entrega aprovada sem ressalvas
+  APPROVED_WITH_REMARKS // aprovada com ressalvas (pendências)
+  REJECTED // não aprovada
+}
+
+enum InspectionItemStatus {
+  CONFORME
+  NAO_CONFORME
+  NAO_APLICA
+}
+
+model SiteInspection {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status         SiteInspectionStatus @default(DRAFT)
+  result         SiteInspectionResult?
+  inspectedAt    DateTime             @default(now())
+  ambientes      String? // ambientes vistoriados, texto livre ("Cozinha, Closet")
+  technicianId   String?
+  technician     User?                @relation("SiteInspectionTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
+  installerNames String? // montador(es), como no papel
+  pendencias     String?              @db.Text
+  notes          String?              @db.Text
+
+  // termo de entrega: PNG em data URL, como a assinatura dos documentos do montador
+  technicianSignature String? @db.Text
+  clientSignerName    String?
+  clientSignature     String? @db.Text
+  completedAt         DateTime?
+  completedById       String?
+
+  reportDocumentId String?          @unique
+  reportDocument   ProjectDocument? @relation("SiteInspectionReport", fields: [reportDocumentId], references: [id], onDelete: SetNull)
+  createdById      String?
+  createdBy        User?            @relation("SiteInspectionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  items SiteInspectionItem[]
+  warranty Warranty?
+
+  @@index([organizationId, status])
+  @@index([projectId])
+}
+
+model SiteInspectionItem {
+  id           String                @id @default(cuid())
+  inspectionId String
+  inspection   SiteInspection        @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  section      String // Estrutura, Ferragens, Alinhamento...
+  label        String
+  position     Int
+  status       InspectionItemStatus?
+  note         String?
+
+  @@index([inspectionId])
+}
+
+// ============================================================
+// §35/§38 — Garantia e certificado
+//
+// Nasce da vistoria aprovada (com ou sem ressalvas). Prazos por componente
+// conforme o certificado da Mobieer (estrutura e montagem 5 anos, ferragens
+// 5, puxadores 2, aramados 1); o fim geral é o do maior prazo.
+// ============================================================
+
+model Warranty {
+  id                    String           @id @default(cuid())
+  organizationId        String
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId             String           @unique
+  project               Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inspectionId          String?          @unique
+  inspection            SiteInspection?  @relation(fields: [inspectionId], references: [id], onDelete: SetNull)
+  startsAt              DateTime
+  endsAt                DateTime
+  coverage              Json // [{ key, label, detail, months, endsAt }]
+  conditions            String           @db.Text
+  exclusions            String           @db.Text
+  certificateDocumentId String?          @unique
+  certificateDocument   ProjectDocument? @relation("WarrantyCertificate", fields: [certificateDocumentId], references: [id], onDelete: SetNull)
+  // chaves de aviso já enviadas ("aramados:30d", "geral:30d"...), para não repetir
+  alertsSent            String[]         @default([])
+  createdById           String?
+  createdBy             User?            @relation("WarrantyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  maintenances PreventiveMaintenance[]
+
+  @@index([organizationId, endsAt])
+}
+
+// ============================================================
+// §36 — Manutenção preventiva
+// Revisões programadas a partir do início da garantia (padrão 6 e 12 meses,
+// configurável). Lembra cliente (WhatsApp) e equipe (sino) antes da data.
+// ============================================================
+
+enum MaintenanceStatus {
+  SCHEDULED
+  DONE
+  CANCELLED
+}
+
+model PreventiveMaintenance {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  warrantyId     String?
+  warranty       Warranty?         @relation(fields: [warrantyId], references: [id], onDelete: SetNull)
+  label          String
+  monthsAfter    Int?
+  dueAt          DateTime
+  status         MaintenanceStatus @default(SCHEDULED)
+  remindedAt     DateTime? // lembrete já enviado
+  doneAt         DateTime?
+  doneById       String?
+  doneBy         User?             @relation("MaintenanceDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
+  notes          String?           @db.Text
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([organizationId, status, dueAt])
+  @@index([projectId])
+}
+
+// ============================================================
+// §5 — Produtividade interna: metas mensais por funcionário
+//
+// Os indicadores NÃO têm tabela: saem na leitura dos dados reais (atividades,
+// apontamento de horas da fábrica, peças concluídas, tarefas e ponto). Só a
+// meta, que é decisão da gestão, é gravada.
+// ============================================================
+
+enum ProductivityMetric {
+  ACTIVITIES_DONE // atividades concluídas
+  PRODUCTION_STEPS // etapas de peça concluídas na fábrica
+  PRODUCTION_HOURS // horas apontadas na produção
+  TASKS_DONE // tarefas concluídas
+}
+
+model EmployeeGoal {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User               @relation("EmployeeGoalOwner", fields: [userId], references: [id], onDelete: Cascade)
+  month          String // YYYY-MM
+  metric         ProductivityMetric
+  target         Int
+  createdById    String?
+  createdBy      User?              @relation("EmployeeGoalAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([userId, month, metric])
+  @@index([organizationId, month])
 }

@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   PieChart,
   Timer,
+  Gauge,
   HardHat,
   CalendarDays,
   ClipboardCheck,
@@ -26,6 +27,8 @@ import {
   ScrollText,
   Scissors,
   Settings,
+  ShoppingCart,
+  ShieldCheck,
   Wallet,
   Target,
   Tags,
@@ -78,6 +81,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Produtos", to: "/produtos", icon: Package, permission: "products.read" },
       { label: "Categorias", to: "/categorias", icon: Tags, permission: "categories.read" },
       { label: "Fornecedores", to: "/fornecedores", icon: Truck, permission: "suppliers.read" },
+      { label: "Compras", to: "/compras", icon: ShoppingCart, permission: "purchases.read" },
     ],
   },
   {
@@ -94,6 +98,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Requisições de Peças", to: "/requisicoes", icon: Scissors, permission: "requisitions.read" },
       { label: "Atividades", to: "/atividades", icon: FileClock, permission: "activities.read" },
       { label: "Agenda", to: "/agenda", icon: CalendarDays, permission: "agenda.read" },
+      { label: "Pós-venda", to: "/pos-venda", icon: ShieldCheck, permission: "organization.read" },
     ],
   },
   {
@@ -109,6 +114,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" },
       { label: "Montadores externos", to: "/montadores", icon: HardHat, permission: "hr.read" },
       { label: "Solicitação de peças", to: "/solicitacao-pecas", icon: Package, permission: "parts.read" },
+      { label: "Produtividade", to: "/produtividade", icon: Gauge, hideForRoles: ["MONTADOR"] },
     ],
   },
   {

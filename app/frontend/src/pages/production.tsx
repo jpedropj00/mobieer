@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
 import { ProductionItemsPanel } from "./production-items";
 import { LeadTimesCard } from "@/components/lead-times";
+import { FactoryStepsOverview, ProductionStepsCard } from "@/components/production-steps";
 
 export const PRODUCTION_STAGES = ["RELEASED", "IN_PRODUCTION", "PRE_ASSEMBLY", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
@@ -199,6 +200,7 @@ function CutPlanCard({
 
 export function ProductionProjectPanel({ projectId, canManage }: { projectId: string; canManage: boolean }) {
   const qc = useQueryClient();
+  const { can } = useAuth();
   const key = ["production", "project", projectId];
   const q = useQuery({ queryKey: key, queryFn: () => apiGet<{ data: ProductionOrder }>(`/production/projects/${projectId}`) });
   const invalidate = () => {
@@ -348,6 +350,8 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
         </CardContent>
       </Card>
 
+      <ProductionStepsCard projectId={projectId} canEdit={canManage || can("production.steps")} />
+
       <CutPlanCard projectId={projectId} canManage={canManage} cutPlan={o.cutPlan} onChange={(id) => patch.mutate({ cutPlanImportId: id })} saving={patch.isPending} />
 
       <ProductionItemsPanel projectId={projectId} canManage={canManage} />
@@ -471,6 +475,7 @@ export function ProductionPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Produção" description="Esteira dos pedidos: liberado → produção → pré-montagem → entrega." />
+      <FactoryStepsOverview />
       <LeadTimesCard />
       {total === 0 ? (
         <EmptyState title="Nenhum pedido em produção" description="Quando o cliente aprovar o projeto técnico, o pedido entra aqui." />

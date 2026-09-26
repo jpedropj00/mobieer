@@ -19,6 +19,25 @@ import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, localIsoDate } from "@/lib/utils";
 import type { Employee, EmployeeDocument, EmployeeDocumentType, HourBank, HrAlert, TimeMirror, User, VacationRequest } from "@/types";
 
+type PontoPreview = {
+  fileName: string;
+  totalPunches: number;
+  rowsError: number;
+  requiresConfirmation: boolean;
+  rows: {
+    registration: string;
+    fileName: string | null;
+    employee: { id: string; registration: string; fullName: string; status: string } | null;
+    punches: number;
+    from: string;
+    to: string;
+    nameMismatch: boolean;
+    inactive: boolean;
+  }[];
+};
+
+
+
 const EMP_DOC_TYPE_LABEL: Record<EmployeeDocumentType, string> = {
   CONTRATO: "Contrato assinado", RESCISAO: "Rescisão", FERIAS: "Documento de férias",
   RESPONSABILIDADE_FERRAMENTA: "Responsabilidade por ferramentas", REGULAMENTO_INTERNO: "Regulamento interno", OUTRO: "Outro",
@@ -70,7 +89,7 @@ export function HrPage() {
   const [tab, setTab] = useState("employees");
   const [dialog, setDialog] = useState<"employee" | "period" | "request" | "manualPunch" | "adjust" | "docUpload" | null>(null);
   const [periodEmployeeId, setPeriodEmployeeId] = useState<string>("");
-  const [empForm, setEmpForm] = useState({ fullName: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
+  const [empForm, setEmpForm] = useState({ fullName: "", document: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
 
   // Documentos do colaborador (contrato, rescisão, férias, ferramentas...)
   const [docsEmployeeId, setDocsEmployeeId] = useState<string>("");
@@ -149,14 +168,28 @@ export function HrPage() {
     queryFn: () => apiGet<{ data: TimeMirror }>("/hr/timeclock/mirror", { employeeId: pontoEmp, month: pontoMonth }),
     enabled: Boolean(pontoEmp) && /^\d{4}-\d{2}$/.test(pontoMonth),
   });
-  const importPonto = useMutation({
+  const [conferencia, setConferencia] = useState<{ file: File; data: PontoPreview } | null>(null);
+
+  const conferirPonto = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
+      return apiPostForm<{ data: PontoPreview }>("/hr/timeclock/import/preview", fd).then((r) => ({ file, data: r.data }));
+    },
+    onSuccess: (r) => setConferencia(r),
+    onError: (e) => toast.error(errorMessage(e, "Não foi possível ler o arquivo")),
+  });
+
+  const importPonto = useMutation({
+    mutationFn: ({ file, confirmar }: { file: File; confirmar: boolean }) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (confirmar) fd.append("confirmarDivergencias", "true");
       return apiPostForm<{ data: { importadas: number; reconhecidas: number; semColaborador: number; linhasInvalidas: number } }>("/hr/timeclock/import", fd);
     },
     onSuccess: (r) => {
       toast.success(`Importado: ${r.data.importadas} marcações (${r.data.semColaborador} sem colaborador, ${r.data.linhasInvalidas} inválidas)`);
+      setConferencia(null);
       qc.invalidateQueries({ queryKey: ["hr", "mirror"] });
     },
     onError: (e) => toast.error(errorMessage(e, "Falha ao importar")),
@@ -180,6 +213,7 @@ export function HrPage() {
     mutationFn: () =>
       apiPost("/hr/employees", {
         fullName: empForm.fullName,
+        document: empForm.document,
         role: empForm.role || null,
         sector: empForm.sector || null,
         phone: empForm.phone || null,
@@ -191,7 +225,7 @@ export function HrPage() {
     onSuccess: () => {
       toast.success("Colaborador cadastrado");
       setDialog(null);
-      setEmpForm({ fullName: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
+      setEmpForm({ fullName: "", document: "", role: "", sector: "", phone: "", address: "", admittedAt: "", weeklyHours: "44", userId: "" });
       refreshAll();
     },
     onError: (e) => toast.error(errorMessage(e, "Falha ao cadastrar")),
@@ -285,7 +319,7 @@ export function HrPage() {
                       {e.fullName} <span className="font-mono text-xs text-muted-foreground">· {e.registration}</span>
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {[e.role, e.sector].filter(Boolean).join(" · ") || "—"} · admissão {fmt(e.admittedAt)}
+                      {[e.documentFormatted || null, e.role, e.sector].filter(Boolean).join(" · ") || "—"} · admissão {fmt(e.admittedAt)}
                     </p>
                   </div>
                   {e.openPeriod ? (
@@ -429,12 +463,12 @@ export function HrPage() {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) importPonto.mutate(f);
+                    if (f) conferirPonto.mutate(f);
                     e.target.value = "";
                   }}
                 />
-                <Button variant="outline" disabled={importPonto.isPending} onClick={() => pontoFileRef.current?.click()}>
-                  {importPonto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                <Button variant="outline" disabled={conferirPonto.isPending || importPonto.isPending} onClick={() => pontoFileRef.current?.click()}>
+                  {conferirPonto.isPending || importPonto.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                   Importar arquivo do aparelho
                 </Button>
                 <Button variant="ghost" disabled={!pontoEmp} onClick={() => setDialog("manualPunch")}>
@@ -444,7 +478,8 @@ export function HrPage() {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Aparelho de referência: KNUP KP-1028 (exporta por pendrive). Layout aceito: <code>matrícula; data; hora</code> em CSV/TXT.
+            Aceita a exportação com cabeçalho (S362E e similares, TXT em UTF-16 com colunas <code>EnNo</code> e <code>DateTime</code>) e o
+            layout simples <code>matrícula; data; hora</code> em CSV/TXT (KNUP KP-1028). O arquivo é conferido antes de gravar.
           </p>
 
           {!pontoEmp ? (
@@ -658,6 +693,14 @@ export function HrPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Nome completo" className="sm:col-span-2">
               <Input value={empForm.fullName} onChange={(e) => setEmpForm({ ...empForm, fullName: e.target.value })} />
+            </Field>
+            <Field label="CPF">
+              <Input
+                value={empForm.document}
+                inputMode="numeric"
+                placeholder="000.000.000-00"
+                onChange={(e) => setEmpForm({ ...empForm, document: e.target.value })}
+              />
             </Field>
             <Field label="Cargo">
               <Input value={empForm.role} onChange={(e) => setEmpForm({ ...empForm, role: e.target.value })} />
@@ -901,6 +944,71 @@ export function HrPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {conferencia && (
+        <Dialog open onOpenChange={() => setConferencia(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Conferir antes de importar</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {conferencia.data.fileName} · {conferencia.data.totalPunches} marcações
+                {conferencia.data.rowsError > 0 && ` · ${conferencia.data.rowsError} linha(s) inválida(s)`}
+              </p>
+              <div className="max-h-[45vh] overflow-y-auto rounded-md border border-border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 text-xs">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left">Matrícula</th>
+                      <th className="px-2 py-1.5 text-left">No relógio</th>
+                      <th className="px-2 py-1.5 text-left">Vai para</th>
+                      <th className="px-2 py-1.5 text-right">Marcações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {conferencia.data.rows.map((r) => (
+                      <tr key={r.registration} className={r.nameMismatch ? "bg-destructive/5" : !r.employee ? "bg-warning/5" : ""}>
+                        <td className="px-2 py-1.5 tabular-nums">{r.registration}</td>
+                        <td className="px-2 py-1.5">{r.fileName ?? "—"}</td>
+                        <td className="px-2 py-1.5">
+                          {r.employee ? (
+                            <span className={r.nameMismatch ? "font-medium text-destructive" : ""}>
+                              {r.employee.fullName} ({r.employee.registration})
+                              {r.nameMismatch && " — nome diferente!"}
+                            </span>
+                          ) : (
+                            <span className="text-warning">Sem colaborador — será ignorado</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{r.punches}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {conferencia.data.requiresConfirmation && (
+                <p className="rounded-md bg-destructive/10 p-2 text-xs">
+                  O nome no relógio não bate com o cadastro nas linhas em vermelho. Isso costuma ser matrícula reaproveitada — importar assim
+                  grava o ponto de uma pessoa no cadastro de outra. Cadastre os colaboradores com a matrícula certa antes, ou confirme abaixo
+                  se souber que está correto.
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConferencia(null)}>Cancelar</Button>
+              <Button
+                variant={conferencia.data.requiresConfirmation ? "destructive" : "default"}
+                disabled={importPonto.isPending}
+                onClick={() => importPonto.mutate({ file: conferencia.file, confirmar: conferencia.data.requiresConfirmation })}
+              >
+                {importPonto.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {conferencia.data.requiresConfirmation ? "Importar mesmo assim" : "Importar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
