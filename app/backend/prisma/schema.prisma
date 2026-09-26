@@ -5,6 +5,8 @@ generator client {
   provider      = "prisma-client-js"
   // "native" para desenvolvimento local; "rhel-openssl-3.0.x" para a runtime do Vercel (serverless).
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  // Includes aninhados viram uma consulta só (JOIN) em vez de uma ida ao banco por nível.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
