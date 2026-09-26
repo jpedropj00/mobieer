@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ok } from "../../utils/response";
 import * as authService from "./auth.service";
@@ -47,4 +49,18 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
   await authService.changePassword(req.user!.id, currentPassword, newPassword);
   return ok(res, { changed: true }, "Senha alterada com sucesso");
+});
+
+/** Assinatura desenhada que sai no PDF do orçamento (PNG em data URL). */
+export const getSignature = asyncHandler(async (req: Request, res: Response) => {
+  const u = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { signatureImage: true } });
+  return ok(res, { signatureImage: u?.signatureImage ?? null });
+});
+
+export const saveSignature = asyncHandler(async (req: Request, res: Response) => {
+  const { signatureImage } = z
+    .object({ signatureImage: z.string().max(400_000).regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "Assinatura inválida").nullable() })
+    .parse(req.body);
+  await prisma.user.update({ where: { id: req.user!.id }, data: { signatureImage } });
+  return ok(res, { saved: Boolean(signatureImage) }, signatureImage ? "Assinatura salva" : "Assinatura removida");
 });

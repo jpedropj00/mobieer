@@ -16,5 +16,7 @@ router.use(authenticate);
 router.get("/me", authController.me);
 router.post("/logout", authController.logout);
 router.post("/change-password", authController.changePassword);
+router.get("/me/signature", authController.getSignature);
+router.put("/me/signature", authController.saveSignature);
 
 export default router;

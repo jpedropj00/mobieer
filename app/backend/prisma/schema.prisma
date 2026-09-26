@@ -32,6 +32,8 @@ model User {
   sector           String?
   status           UserStatus @default(ACTIVE)
   imageUrl         String?
+  /// Assinatura desenhada (PNG em data URL) que sai no PDF do orçamento.
+  signatureImage   String?    @db.Text
   lastLogin        DateTime?
   resetToken       String?    @unique
   resetTokenExpiry DateTime?
@@ -82,6 +84,8 @@ model User {
   commercialInteractions    CommercialInteraction[]
   commercialHistory         CommercialHistory[]
   createdQuotes             CommercialQuote[]          @relation("QuoteSeller")
+  decidedQuotes             CommercialQuote[]          @relation("QuoteApprovalDecider")
+  quoteCommissions          CommercialQuoteCommission[] @relation("QuoteCommissionUser")
   createdProposals          CommercialProposal[]       @relation("ProposalSeller")
   commercialOrders          SalesOrder[]               @relation("OrderSeller")
   commercialSales           Sale[]                     @relation("SaleSeller")
@@ -1094,6 +1098,7 @@ model Project {
   assistances         AssistanceTicket[]
   kanbanTasks         KanbanTask[]
   salesOrders         SalesOrder[]
+  quotes              CommercialQuote[]
   postSales           PostSale[]
   feedbackFormUrl     String?
   documents           ProjectDocument[]
@@ -1480,6 +1485,28 @@ enum CommercialInteractionType {
   OTHER
 }
 
+enum QuoteApproval {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model CommercialQuoteCommission {
+  id      String          @id @default(cuid())
+  name    String
+  role    String
+  percent Decimal         @db.Decimal(6, 2)
+  amount  Decimal         @db.Decimal(14, 2)
+  quoteId String
+  quote   CommercialQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  userId  String?
+  user    User?           @relation("QuoteCommissionUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId])
+  @@index([userId])
+}
+
 enum QuoteStatus {
   DRAFT
   SENT
@@ -1694,6 +1721,29 @@ model CommercialQuote {
   notes          String?                @db.Text
   sentAt         DateTime?
   approvedAt     DateTime?
+  // Formação do preço (quote.rules.ts). Custos e comissões nunca saem no PDF.
+  costTotal           Decimal       @default(0) @db.Decimal(14, 2)
+  markup              Decimal       @default(1) @db.Decimal(8, 4)
+  commissionPercent   Decimal       @default(0) @db.Decimal(6, 2)
+  freight             Decimal       @default(0) @db.Decimal(14, 2)
+  otherCosts          Decimal       @default(0) @db.Decimal(14, 2)
+  paymentMethod       String        @default("AVISTA")
+  financingPlanId     String?
+  financingPlanName   String?
+  installments        Int           @default(1)
+  downPayment         Decimal       @default(0) @db.Decimal(14, 2)
+  financingFeePercent Decimal       @default(0) @db.Decimal(6, 2)
+  financingFee        Decimal       @default(0) @db.Decimal(14, 2)
+  netRevenue          Decimal       @default(0) @db.Decimal(14, 2)
+  result              Decimal       @default(0) @db.Decimal(14, 2)
+  score               Decimal?      @db.Decimal(8, 4)
+  // Liberação quando a pontuação fica abaixo do mínimo.
+  approvalStatus      QuoteApproval @default(NOT_REQUIRED)
+  approvalRequestedAt DateTime?
+  approvalDecidedAt   DateTime?
+  approvalDecidedById String?
+  approvalDecidedBy   User?         @relation("QuoteApprovalDecider", fields: [approvalDecidedById], references: [id], onDelete: SetNull)
+  approvalNote        String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   organizationId String
@@ -1702,8 +1752,11 @@ model CommercialQuote {
   client         Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
   opportunityId  String?
   opportunity    CommercialOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  projectId      String?
+  project        Project?               @relation(fields: [projectId], references: [id], onDelete: SetNull)
   sellerId       String
   seller         User                   @relation("QuoteSeller", fields: [sellerId], references: [id])
+  commissions    CommercialQuoteCommission[]
   parentId       String?
   parent         CommercialQuote?       @relation("QuoteVersions", fields: [parentId], references: [id], onDelete: SetNull)
   versions       CommercialQuote[]      @relation("QuoteVersions")
@@ -1721,7 +1774,10 @@ model CommercialQuote {
 
 model CommercialQuoteItem {
   id          String          @id @default(cuid())
+  room        String?
   description String
+  unitCost    Decimal         @default(0) @db.Decimal(14, 2)
+  position    Int             @default(0)
   quantity    Decimal         @db.Decimal(12, 3)
   unitPrice   Decimal         @db.Decimal(14, 2)
   discount    Decimal         @default(0) @db.Decimal(14, 2)
