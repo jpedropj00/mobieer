@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { QuotesTab } from "@/pages/quotes";
 import { ReferrersTab } from "@/components/referrers-tab";
+import { TeamsTab } from "@/components/teams-tab";
 import { errorMessage, formatCurrency } from "@/lib/utils";
 import type { CommercialLead, Opportunity, PipelineSummary, SalesStage } from "@/types";
 
@@ -151,6 +152,7 @@ export function CommercialPage() {
           <TabsTrigger value="funil">Funil ({oppList.length})</TabsTrigger>
           <TabsTrigger value="orcamentos">Orçamentos</TabsTrigger>
           <TabsTrigger value="indicadores">Indicadores e RT</TabsTrigger>
+          <TabsTrigger value="equipes">Equipes e carteira</TabsTrigger>
           <TabsTrigger value="leads">Leads ({leadList.filter((l) => l.status !== "CONVERTED").length})</TabsTrigger>
           <TabsTrigger value="conversao">Conversão</TabsTrigger>
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
@@ -207,6 +209,9 @@ export function CommercialPage() {
         </TabsContent>
         <TabsContent value="indicadores">
           <ReferrersTab />
+        </TabsContent>
+        <TabsContent value="equipes">
+          <TeamsTab />
         </TabsContent>
 
         {/* ---- Leads ---- */}

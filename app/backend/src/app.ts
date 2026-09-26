@@ -56,6 +56,7 @@ import timelineRoutes from "./modules/timeline/timeline.routes";
 import goalsRoutes from "./modules/commercial/goals.routes";
 import quoteRoutes from "./modules/commercial/quote.routes";
 import referrerRoutes from "./modules/commercial/referrers.routes";
+import teamsRoutes from "./modules/commercial/teams.routes";
 import portalFinanceRoutes from "./modules/portal/portal-finance.routes";
 import agendaResponseRoutes from "./modules/agenda/response.routes";
 import fieldworkRoutes from "./modules/fieldwork/fieldwork.routes";
@@ -147,6 +148,7 @@ export function createApp() {
   app.use("/api/commercial/goals", goalsRoutes);
   app.use("/api/commercial/quotes", quoteRoutes);
   app.use("/api/referrers", referrerRoutes);
+  app.use("/api/commercial", teamsRoutes);
   app.use("/api/commercial", commercialRoutes);
   app.use("/api/briefing", briefingRoutes);
   app.use("/api/appliances", appliancesRoutes);

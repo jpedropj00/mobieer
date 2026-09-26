@@ -42,6 +42,9 @@ model User {
   lockedAt           DateTime?
   passwordChangedAt  DateTime?
   mustChangePassword Boolean   @default(false)
+  salesTeamId        String?
+  salesTeam          SalesTeam? @relation("SalesTeamMembers", fields: [salesTeamId], references: [id], onDelete: SetNull)
+  ledTeams           SalesTeam[] @relation("SalesTeamLeader")
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -258,6 +261,7 @@ model Organization {
   installationTasks      InstallationTask[]
   workOrders             InstallationWorkOrder[]
   referrers              Referrer[]
+  salesTeams             SalesTeam[]
   contractorBonuses      ContractorBonus[]
   bonusPolicy            BonusPolicy?
   integrationTokens      IntegrationToken[]
@@ -1496,6 +1500,23 @@ enum CommercialInteractionType {
   VISIT
   INTERNAL_MESSAGE
   OTHER
+}
+
+/// Equipe comercial (ex.: "Equipe A", "Prospecção"): agrupa vendedores para
+/// relatórios e para transferir carteira.
+model SalesTeam {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  leaderId       String?
+  leader         User?        @relation("SalesTeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  members        User[]       @relation("SalesTeamMembers")
+
+  @@unique([organizationId, name])
 }
 
 /// Indicador da venda (arquiteto, designer, corretor, parceiro): recebe a
