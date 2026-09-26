@@ -65,6 +65,8 @@ const quoteSchema = calcSchema.extend({
   referrerId: z.string().optional().nullable(),
   /** cria um adendo do contrato (orçamento aceito) informado */
   addendumOf: z.string().optional().nullable(),
+  futureSale: z.boolean().optional(),
+  futureReleaseDate: z.coerce.date().optional().nullable(),
   validUntil: z.coerce.date().optional().nullable(),
   paymentTerms: text(500),
   notes: text(4000),
@@ -215,6 +217,7 @@ router.get(
         ...(req.query.opportunityId ? { opportunityId: String(req.query.opportunityId) } : {}),
         ...(status ? { status } : {}),
         ...(req.query.approval === "PENDING" ? { approvalStatus: "PENDING" as const } : {}),
+        ...(req.query.future === "1" ? { futureSale: true } : {}),
       },
       include: quoteInclude,
       orderBy: [{ issuedAt: "desc" }, { version: "desc" }],
@@ -275,6 +278,8 @@ router.post(
         number,
         kind: parent ? "ADENDO" : "PADRAO",
         parentId: parent?.id ?? null,
+        futureSale: Boolean(input.futureSale),
+        futureReleaseDate: input.futureSale ? input.futureReleaseDate ?? null : null,
         clientId: input.clientId,
         opportunityId: input.opportunityId || null,
         projectId: input.projectId || null,
@@ -321,6 +326,8 @@ router.put(
           opportunityId: input.opportunityId || null,
           projectId: input.projectId || null,
           referrerId: input.referrerId || null,
+          futureSale: Boolean(input.futureSale),
+          futureReleaseDate: input.futureSale ? input.futureReleaseDate ?? null : null,
           validUntil: input.validUntil ?? cur.validUntil,
           paymentTerms: input.paymentTerms || null,
           notes: input.notes || null,
@@ -369,6 +376,8 @@ router.post(
         opportunityId: cur.opportunityId,
         projectId: cur.projectId,
         referrerId: cur.referrerId,
+        futureSale: cur.futureSale,
+        futureReleaseDate: cur.futureReleaseDate,
         sellerId: cur.sellerId,
         validUntil: new Date(Date.now() + config.validityDays * DAY),
         paymentTerms: cur.paymentTerms,
@@ -564,6 +573,10 @@ router.patch(
       }
       const q = await tx.commercialQuote.update({ where: { id: cur.id }, data, include: quoteInclude });
       if (accepting) {
+        // Venda futura: o projeto fica segurado até a nova medição e a liberação.
+        if (cur.futureSale && cur.projectId) {
+          await tx.project.update({ where: { id: cur.projectId }, data: { futureSale: true, futureReleaseDate: cur.futureReleaseDate, futureReleasedAt: null } });
+        }
         // Cliente aceitou: a oportunidade passa a valer o total fechado.
         if (cur.opportunityId) await tx.commercialOpportunity.update({ where: { id: cur.opportunityId }, data: { estimatedValue: cur.total } });
         if (wantsFinance) finance = await generateFinance(tx, { ...serializeQuote(q), organizationId: cur.organizationId }, req.user!.id);

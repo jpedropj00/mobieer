@@ -1107,6 +1107,10 @@ model Project {
   kanbanTasks         KanbanTask[]
   salesOrders         SalesOrder[]
   quotes              CommercialQuote[]
+  // venda futura: produção só depois de nova medição e liberação
+  futureSale          Boolean   @default(false)
+  futureReleaseDate   DateTime?
+  futureReleasedAt    DateTime?
   postSales           PostSale[]
   feedbackFormUrl     String?
   documents           ProjectDocument[]
@@ -1763,6 +1767,9 @@ model CommercialQuote {
   competenceDate DateTime?
   cancelledAt    DateTime?
   cancelReason   String?
+  // venda futura: entrega bem depois do prazo normal (fim de obra, entrega do imóvel)
+  futureSale        Boolean   @default(false)
+  futureReleaseDate DateTime?
   // Formação do preço (quote.rules.ts). Custos e comissões nunca saem no PDF.
   costTotal           Decimal       @default(0) @db.Decimal(14, 2)
   markup              Decimal       @default(1) @db.Decimal(8, 4)

@@ -61,6 +61,8 @@ type Quote = {
   parentId?: string | null;
   competenceDate?: string | null;
   cancelReason?: string | null;
+  futureSale?: boolean;
+  futureReleaseDate?: string | null;
 };
 type FinanceEntry = { id: string; type: "RECEITA" | "DESPESA"; category: string; amount: number; dueDate: string; status: string; description: string | null };
 type PlannedEntry = { type: "RECEITA" | "DESPESA"; category: string; amount: number; dueDay: string; description: string };
@@ -176,6 +178,7 @@ export function QuotesTab() {
                         {r.number}{r.version > 1 ? ` v${r.version}` : ""}
                       </Link>
                       {r.kind === "ADENDO" && <Badge variant="muted" className="ml-2">adendo</Badge>}
+                      {r.futureSale && <Badge variant="warning" className="ml-2">venda futura{r.futureReleaseDate ? ` · ${dayBR(r.futureReleaseDate)}` : ""}</Badge>}
                     </TableCell>
                     <TableCell>{r.client.name}</TableCell>
                     <TableCell className="text-right">{formatCurrency(r.total)}</TableCell>
@@ -224,6 +227,8 @@ type Form = {
   feePercent: string;
   paymentTerms: string;
   notes: string;
+  futureSale: boolean;
+  futureReleaseDate: string;
 };
 
 const emptyItem = (): ItemForm => ({ room: "", description: "", quantity: "1", unitCost: "" });
@@ -247,6 +252,8 @@ function fromQuote(q: Quote): Form {
     feePercent: toField(q.payment.feePercent),
     paymentTerms: q.paymentTerms ?? "",
     notes: q.notes ?? "",
+    futureSale: Boolean(q.futureSale),
+    futureReleaseDate: q.futureReleaseDate ? q.futureReleaseDate.slice(0, 10) : "",
   };
 }
 
@@ -275,6 +282,8 @@ function toPayload(f: Form, roleLabel: (role: string) => string, addendumOf?: st
     },
     paymentTerms: f.paymentTerms || null,
     notes: f.notes || null,
+    futureSale: f.futureSale,
+    futureReleaseDate: f.futureSale && f.futureReleaseDate ? `${f.futureReleaseDate}T12:00:00.000Z` : null,
   };
 }
 
@@ -331,6 +340,8 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           feePercent: "",
           paymentTerms: "",
           notes: "",
+          futureSale: false,
+          futureReleaseDate: "",
         }
   );
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -608,6 +619,17 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
               <Field label="Condição no PDF (opcional)" className="sm:col-span-4">
                 <Input disabled={!canEdit} placeholder="Deixe vazio para montar a partir da forma de pagamento" value={form.paymentTerms} onChange={(e) => set("paymentTerms", e.target.value)} />
               </Field>
+              <div className="flex flex-wrap items-end gap-3 sm:col-span-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" disabled={!canEdit} checked={form.futureSale} onChange={(e) => set("futureSale", e.target.checked)} />
+                  Venda futura (entrega depois do prazo normal: fim de obra, entrega do imóvel)
+                </label>
+                {form.futureSale && (
+                  <Field label="Previsão de liberação para produção">
+                    <Input type="date" disabled={!canEdit} value={form.futureReleaseDate} onChange={(e) => set("futureReleaseDate", e.target.value)} />
+                  </Field>
+                )}
+              </div>
               <Field label="Observações para o cliente" className="sm:col-span-4">
                 <Textarea disabled={!canEdit} rows={2} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
               </Field>

@@ -1,3 +1,4 @@
+import { InvalidStateError } from "../../utils/ApiError";
 import { prisma } from "../../prisma";
 
 const DAY = 86400000;
@@ -137,6 +138,12 @@ export function serializeOrder(o: OrderRow) {
 export async function getOrCreateOrder(projectId: string, organizationId: string, createdById?: string | null) {
   const existing = await prisma.productionOrder.findUnique({ where: { projectId }, include: orderInclude });
   if (existing) return existing;
+  // Venda futura: não nasce ordem de produção antes da nova medição e da liberação.
+  const hold = await prisma.project.findUnique({ where: { id: projectId }, select: { futureSale: true, futureReleasedAt: true, futureReleaseDate: true } });
+  if (hold?.futureSale && !hold.futureReleasedAt) {
+    const when = hold.futureReleaseDate ? ` (previsão ${hold.futureReleaseDate.toLocaleDateString("pt-BR", { timeZone: "UTC" })})` : "";
+    throw new InvalidStateError(`Venda futura${when}: faça a nova medição e libere a venda antes de mandar para produção.`);
+  }
   const now = new Date();
   await prisma.productionOrder.create({
     data: {
@@ -206,4 +213,31 @@ export function isDispatchReady(c: {
   pendencia: boolean;
 }) {
   return c.producaoCompleta && c.materialCompleto && c.ferragens && c.insumos && !c.pendencia;
+}
+
+/**
+ * Job diário: venda futura chegando na previsão de liberação — lembra de
+ * agendar a nova medição (a 30, 15 e 7 dias e no dia) para quem gere a obra.
+ */
+export async function runFutureSaleReminders(now = new Date()) {
+  const { notifyUsersWithPermission } = await import("../../lib/notify");
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const rows = await prisma.project.findMany({
+    where: { futureSale: true, futureReleasedAt: null, futureReleaseDate: { not: null } },
+    select: { id: true, code: true, name: true, organizationId: true, futureReleaseDate: true, client: { select: { name: true } } },
+  });
+  let sent = 0;
+  for (const p of rows) {
+    const d = p.futureReleaseDate!;
+    const days = Math.round((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - today) / DAY);
+    if (![30, 15, 7, 0].includes(days)) continue;
+    await notifyUsersWithPermission({
+      organizationId: p.organizationId,
+      permission: "organization.manage",
+      title: days === 0 ? `Venda futura ${p.code}: previsão é hoje` : `Venda futura ${p.code}: faltam ${days} dias`,
+      message: `${p.client.name} — ${p.name}. Agende a nova medição e, depois dela, libere a venda para produção.`,
+    });
+    sent++;
+  }
+  return { checked: rows.length, sent };
 }

@@ -42,6 +42,8 @@ export function serializeQuote(q: QuoteRow) {
     sentAt: q.sentAt,
     approvedAt: q.approvedAt,
     kind: q.kind,
+    futureSale: q.futureSale,
+    futureReleaseDate: q.futureReleaseDate,
     parentId: q.parentId,
     competenceDate: q.competenceDate,
     cancelledAt: q.cancelledAt,
