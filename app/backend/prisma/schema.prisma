@@ -3328,6 +3328,8 @@ model Contractor {
   phone                String?
   address              String?
   specialty            String? // montagem, marcenaria, elétrica...
+  // na grade: montador titular ou ajudante de montagem
+  crewRole             String                   @default("MONTADOR") // MONTADOR | AJUDANTE
   dailyRate            Decimal                  @default(0) @db.Decimal(12, 2) // valor da diária
   active               Boolean                  @default(true)
   notes                String?                  @db.Text
@@ -3617,6 +3619,10 @@ model InstallationWorkOrder {
   token           String                   @unique
   status          InstallationWorkOrderStatus @default(OPEN)
   scheduledFor    DateTime?
+  // grade de montagem: quantos dias ocupa, ajudantes e se é montagem extra
+  days            Int                      @default(1)
+  helperIds       String[]                 @default([])
+  kind            String                   @default("MONTAGEM") // MONTAGEM | EXTRA
   instructions    String?                  @db.Text
   // conferência do cliente na conclusão (substitui a assinatura no papel)
   receivedByName  String?
@@ -3631,6 +3637,7 @@ model InstallationWorkOrder {
   @@unique([organizationId, number])
   @@index([organizationId, status])
   @@index([contractorId, status])
+  @@index([organizationId, scheduledFor])
   @@index([projectId])
 }
 
