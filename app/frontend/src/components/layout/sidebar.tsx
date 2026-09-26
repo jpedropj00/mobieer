@@ -10,6 +10,7 @@ import {
   MessagesSquare,
   PieChart,
   Timer,
+  Gauge,
   HardHat,
   CalendarDays,
   ClipboardCheck,
@@ -113,6 +114,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" },
       { label: "Montadores externos", to: "/montadores", icon: HardHat, permission: "hr.read" },
       { label: "Solicitação de peças", to: "/solicitacao-pecas", icon: Package, permission: "parts.read" },
+      { label: "Produtividade", to: "/produtividade", icon: Gauge, hideForRoles: ["MONTADOR"] },
     ],
   },
   {

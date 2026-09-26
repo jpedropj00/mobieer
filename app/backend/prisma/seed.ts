@@ -122,6 +122,8 @@ const PERMISSIONS = [
   { code: "production.steps", label: "Atualizar etapas da produção (iniciar, concluir, bloquear, prazo)", module: "Produção" },
   { code: "inspections.manage", label: "Registrar vistorias técnicas pós-montagem", module: "Pós-venda" },
   { code: "warranty.manage", label: "Gerenciar garantias, certificados e manutenções preventivas", module: "Pós-venda" },
+  { code: "productivity.read", label: "Ver produtividade da equipe (indicadores mensais)", module: "Produtividade" },
+  { code: "productivity.manage", label: "Definir metas de produtividade", module: "Produtividade" },
 ] as const;
 
 type PermissionCode = (typeof PERMISSIONS)[number]["code"];
@@ -141,6 +143,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     description: "Gerencia produtos, estoque e aprova requisições",
     perms: [
       "inspections.manage", "warranty.manage",
+      "productivity.read", "productivity.manage",
       "production.steps",
       "purchases.read", "purchases.request", "purchases.approve", "purchases.manage",
       "dashboard.read",
@@ -213,6 +216,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     perms: [
       "dashboard.read",
       "hr.read", "hr.employees.manage", "hr.vacations.manage", "hr.vacations.approve", "hr.timeclock.manage",
+      "productivity.read", "productivity.manage",
       "agenda.read", "agenda.read.all",
       "notifications.read",
       "users.read",
@@ -263,6 +267,7 @@ const ROLE_DEFS: { name: Role["name"]; label: string; description: string; perms
     description: "Executa e confere as peças liberadas para produção",
     perms: [
       "production.steps",
+      "productivity.read",
       "purchases.read", "purchases.request",
       "dashboard.read",
       "products.read",

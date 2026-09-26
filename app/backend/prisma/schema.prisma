@@ -140,6 +140,8 @@ model User {
   siteInspectionsCreated SiteInspection[] @relation("SiteInspectionCreator")
   warrantiesCreated     Warranty[]            @relation("WarrantyCreator")
   maintenancesDone      PreventiveMaintenance[] @relation("MaintenanceDoneBy")
+  employeeGoals         EmployeeGoal[]        @relation("EmployeeGoalOwner")
+  employeeGoalsSet      EmployeeGoal[]        @relation("EmployeeGoalAuthor")
 
   @@index([roleId])
   @@index([organizationId])
@@ -258,6 +260,7 @@ model Organization {
   siteInspections        SiteInspection[]
   warranties             Warranty[]
   preventiveMaintenances PreventiveMaintenance[]
+  employeeGoals          EmployeeGoal[]
 
   @@index([enterpriseId])
 }
@@ -4400,4 +4403,37 @@ model PreventiveMaintenance {
 
   @@index([organizationId, status, dueAt])
   @@index([projectId])
+}
+
+// ============================================================
+// §5 — Produtividade interna: metas mensais por funcionário
+//
+// Os indicadores NÃO têm tabela: saem na leitura dos dados reais (atividades,
+// apontamento de horas da fábrica, peças concluídas, tarefas e ponto). Só a
+// meta, que é decisão da gestão, é gravada.
+// ============================================================
+
+enum ProductivityMetric {
+  ACTIVITIES_DONE // atividades concluídas
+  PRODUCTION_STEPS // etapas de peça concluídas na fábrica
+  PRODUCTION_HOURS // horas apontadas na produção
+  TASKS_DONE // tarefas concluídas
+}
+
+model EmployeeGoal {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User               @relation("EmployeeGoalOwner", fields: [userId], references: [id], onDelete: Cascade)
+  month          String // YYYY-MM
+  metric         ProductivityMetric
+  target         Int
+  createdById    String?
+  createdBy      User?              @relation("EmployeeGoalAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([userId, month, metric])
+  @@index([organizationId, month])
 }
