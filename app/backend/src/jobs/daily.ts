@@ -15,6 +15,7 @@ import { runMeasurementDeadlineAlerts } from "../modules/measurements/measuremen
 import { runFutureSaleReminders, runProductionDeliveryAlerts } from "../modules/production/production.service";
 import { runFinanceDueAlerts, runReceivableReminders } from "../modules/finance/alerts.service";
 import { runPurchaseDeliveryAlerts } from "../modules/purchases/purchases.service";
+import { runRecurringGeneration } from "../modules/finance/recurring.routes";
 import { runProductionStepAlerts } from "../modules/production/steps.service";
 import { runMaintenanceReminders, runWarrantyAlerts } from "../modules/aftersales/aftersales.service";
 
@@ -53,6 +54,7 @@ export const DAILY_JOBS: { name: string; run: () => Promise<unknown> }[] = [
   { name: "prazo-projeto-tecnico", run: runMeasurementDeadlineAlerts },
   { name: "entrega-producao", run: runProductionDeliveryAlerts },
   { name: "venda-futura", run: () => runFutureSaleReminders() },
+  { name: "lancamentos-fixos", run: () => runRecurringGeneration() },
   { name: "feriados", run: () => runHolidayNotices() },
   { name: "assistencia-lembretes", run: () => runAssistanceReminders() },
   { name: "pos-venda", run: () => runPostSaleFollowups() },

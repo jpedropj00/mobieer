@@ -39,6 +39,7 @@ import productionRoutes from "./modules/production/production.routes";
 import shopFloorRoutes from "./modules/production/shopfloor.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
+import financeRecurringRoutes from "./modules/finance/recurring.routes";
 import promobRoutes from "./modules/promob/promob.routes";
 import workspaceRoutes from "./modules/workspace/workspace.routes";
 import purchasesRoutes from "./modules/purchases/purchases.routes";
@@ -166,6 +167,7 @@ export function createApp() {
   app.use("/api/aftersales", aftersalesRoutes);
   app.use("/api/productivity", productivityRoutes);
   app.use("/api/work-orders", workOrderRoutes);
+  app.use("/api/finance", financeRecurringRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

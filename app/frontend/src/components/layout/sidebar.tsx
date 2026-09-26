@@ -11,6 +11,7 @@ import {
   PieChart,
   Timer,
   Gauge,
+  HandCoins,
   HardHat,
   CalendarDays,
   ClipboardCheck,
@@ -126,6 +127,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Financeiro", to: "/financeiro", icon: Wallet, permission: "finance.read" },
       { label: "Notas fiscais", to: "/notas-fiscais", icon: ScrollText, permission: "finance.read" },
+      { label: "Solicitar ao financeiro", to: "/solicitacoes-financeiras", icon: HandCoins, permission: "finance.request" },
     ],
   },
   {

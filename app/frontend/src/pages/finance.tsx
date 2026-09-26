@@ -5,6 +5,7 @@ import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIco
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { FinanceDocuments } from "@/components/finance-documents";
+import { FinanceRequestsPanel, RecurringTab } from "@/components/finance-recurring";
 import { KpiCard } from "@/components/kpi-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -293,6 +294,8 @@ export function FinancePage() {
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="lancamentos">Lançamentos ({rows.length})</TabsTrigger>
+          <TabsTrigger value="fixos">Fixos</TabsTrigger>
+          <TabsTrigger value="solicitacoes">Solicitações</TabsTrigger>
           <TabsTrigger value="cartoes">Cartões ({cards.data?.data.length ?? 0})</TabsTrigger>
           <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
           <TabsTrigger value="dre">DRE</TabsTrigger>
@@ -579,6 +582,13 @@ export function FinancePage() {
         </TabsContent>
 
         {/* ---- Cartões ---- */}
+        <TabsContent value="fixos">
+          <RecurringTab />
+        </TabsContent>
+        <TabsContent value="solicitacoes">
+          <FinanceRequestsPanel />
+        </TabsContent>
+
         <TabsContent value="cartoes" className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">Faturas de cartão de crédito e gastos por categoria.</p>

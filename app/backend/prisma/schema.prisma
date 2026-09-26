@@ -262,6 +262,8 @@ model Organization {
   workOrders             InstallationWorkOrder[]
   referrers              Referrer[]
   salesTeams             SalesTeam[]
+  financeRecurrings      FinanceRecurring[]
+  financeRequests        FinanceRequest[]
   contractorBonuses      ContractorBonus[]
   bonusPolicy            BonusPolicy?
   integrationTokens      IntegrationToken[]
@@ -1502,6 +1504,59 @@ enum CommercialInteractionType {
   OTHER
 }
 
+/// Despesa ou receita fixa (aluguel, internet, pró-labore...): gera uma
+/// parcela por mês no financeiro.
+model FinanceRecurring {
+  id             String               @id @default(cuid())
+  organizationId String
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           FinanceType          @default(DESPESA)
+  description    String
+  category       String
+  amount         Decimal              @db.Decimal(12, 2)
+  dayOfMonth     Int                  @default(10)
+  startMonth     String // "AAAA-MM"
+  endMonth       String?
+  method         String?
+  supplierId     String?
+  costCenterId   String?
+  active         Boolean              @default(true)
+  createdById    String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  entries        FinanceTransaction[]
+
+  @@index([organizationId, active])
+}
+
+/// Pedido de lançamento feito por quem não mexe no financeiro: o financeiro
+/// aprova (vira lançamento) ou recusa com o motivo.
+model FinanceRequest {
+  id             String              @id @default(cuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           FinanceType // DESPESA = débito (a pagar) | RECEITA = crédito (a receber)
+  description    String
+  category       String?
+  amount         Decimal             @db.Decimal(12, 2)
+  dueDate        DateTime?
+  supplierName   String?
+  projectId      String?
+  clientId       String?
+  status         String              @default("PENDENTE") // PENDENTE | APROVADA | RECUSADA
+  requestedById  String
+  decidedById    String?
+  decidedAt      DateTime?
+  decisionNote   String?
+  transactionId  String?             @unique
+  transaction    FinanceTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([organizationId, status])
+  @@index([requestedById])
+}
+
 /// Equipe comercial (ex.: "Equipe A", "Prospecção"): agrupa vendedores para
 /// relatórios e para transferir carteira.
 model SalesTeam {
@@ -2473,6 +2528,12 @@ model FinanceTransaction {
   // reserva técnica a pagar ao indicador
   referrerId          String?
   referrer            Referrer?              @relation(fields: [referrerId], references: [id], onDelete: SetNull)
+  // parcela gerada por uma despesa/receita fixa (um lançamento por mês)
+  recurringId         String?
+  recurring           FinanceRecurring?      @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  recurringMonth      String? // "AAAA-MM"
+  // veio de uma solicitação aprovada
+  request             FinanceRequest?
 
   projectId     String?
   project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -2523,6 +2584,7 @@ model FinanceTransaction {
   @@index([projectId])
   @@index([supplierId])
   @@index([clientId])
+  @@unique([recurringId, recurringMonth])
   @@index([referrerId])
   @@index([originQuoteId])
 }

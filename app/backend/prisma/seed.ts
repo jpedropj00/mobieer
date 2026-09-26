@@ -97,6 +97,7 @@ const PERMISSIONS = [
   { code: "hr.timeclock.manage", label: "Importar e ajustar ponto eletrônico", module: "RH" },
   { code: "finance.read", label: "Ver financeiro (lançamentos e resumo)", module: "Financeiro" },
   { code: "finance.manage", label: "Lançar e gerenciar movimentos financeiros", module: "Financeiro" },
+  { code: "finance.request", label: "Solicitar lançamento (débito/crédito) ao financeiro", module: "Financeiro" },
   { code: "chat.use", label: "Usar o chat interno", module: "Chat" },
   { code: "chat.manage", label: "Criar grupos e gerenciar membros do chat", module: "Chat" },
   { code: "contractors.self", label: "Área do montador externo (ponto, cômodos e produtividade próprios)", module: "Montadores externos" },
