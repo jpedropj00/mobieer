@@ -10,7 +10,7 @@ import { InspectionItemStatus, SiteInspectionResult } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { prisma } from "../../prisma";
-import { projectScope } from "../../lib/scope";
+import { clientScope, projectScope } from "../../lib/scope";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
@@ -408,6 +408,102 @@ router.get(
       maintenancesDue: maintenances.map((m) => ({ ...m, overdue: m.dueAt < now })),
       warrantiesExpiring: expiring.sort((a, b) => a.daysLeft - b.daysLeft),
     });
+  })
+);
+
+const INSPECTION_RESULT_LABEL: Record<string, string> = {
+  APPROVED: "Concluída — aprovada",
+  APPROVED_WITH_REMARKS: "Concluída — com ressalvas",
+  REJECTED: "Concluída — não aprovada",
+};
+const ASSIST_OPEN = ["OPEN", "TRIAGE", "SCHEDULED", "IN_PROGRESS", "WAITING_CLIENT"] as const;
+const ASSIST_LABEL: Record<string, string> = {
+  OPEN: "Aberto",
+  TRIAGE: "Em triagem",
+  SCHEDULED: "Visita marcada",
+  IN_PROGRESS: "Em atendimento",
+  WAITING_CLIENT: "Aguardando cliente",
+  RESOLVED: "Resolvido",
+  CANCELLED: "Cancelado",
+};
+
+// GET /api/aftersales/attendances?scope=open|month
+// Atendimentos do pós-venda (vistorias técnicas e assistências): os ainda
+// vigentes, ou tudo o que foi atendido nos últimos 30 dias.
+router.get(
+  "/attendances",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const view = z.enum(["open", "month"]).default("open").parse(req.query.scope || undefined);
+    const org = req.user!.organizationId;
+    const since = new Date(Date.now() - 30 * 86_400_000);
+    const [inspections, tickets] = await Promise.all([
+      prisma.siteInspection.findMany({
+        where: {
+          organizationId: org,
+          project: projectScope(req.user!),
+          ...(view === "open" ? { status: "DRAFT" as const } : { OR: [{ inspectedAt: { gte: since } }, { completedAt: { gte: since } }] }),
+        },
+        select: {
+          id: true,
+          status: true,
+          result: true,
+          inspectedAt: true,
+          completedAt: true,
+          ambientes: true,
+          technician: { select: { name: true } },
+          project: { select: { id: true, code: true, name: true, client: { select: { name: true } } } },
+        },
+        orderBy: { inspectedAt: "desc" },
+        take: 200,
+      }),
+      prisma.assistanceTicket.findMany({
+        where: {
+          organizationId: org,
+          client: clientScope(req.user!),
+          ...(view === "open" ? { status: { in: [...ASSIST_OPEN] } } : { OR: [{ createdAt: { gte: since } }, { resolvedAt: { gte: since } }, { scheduledAt: { gte: since } }] }),
+        },
+        select: {
+          id: true,
+          number: true,
+          title: true,
+          status: true,
+          createdAt: true,
+          scheduledAt: true,
+          resolvedAt: true,
+          assignee: { select: { name: true } },
+          client: { select: { name: true } },
+          project: { select: { id: true, code: true, name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      }),
+    ]);
+    const rows = [
+      ...inspections.map((i) => ({
+        kind: "VISTORIA" as const,
+        id: i.id,
+        title: `Vistoria técnica${i.ambientes ? ` — ${i.ambientes}` : ""}`,
+        status: i.status === "DRAFT" ? "Em preenchimento" : i.result ? INSPECTION_RESULT_LABEL[i.result] : "Concluída",
+        open: i.status === "DRAFT",
+        date: i.completedAt ?? i.inspectedAt,
+        responsible: i.technician?.name ?? null,
+        client: i.project.client.name,
+        project: { id: i.project.id, code: i.project.code, name: i.project.name },
+      })),
+      ...tickets.map((t) => ({
+        kind: "ASSISTENCIA" as const,
+        id: t.id,
+        title: `${t.number} — ${t.title}`,
+        status: ASSIST_LABEL[t.status] ?? t.status,
+        open: (ASSIST_OPEN as readonly string[]).includes(t.status),
+        date: t.resolvedAt ?? t.scheduledAt ?? t.createdAt,
+        responsible: t.assignee?.name ?? null,
+        client: t.client.name,
+        project: t.project,
+      })),
+    ].sort((a, b) => b.date.getTime() - a.date.getTime());
+    return ok(res, { scope: view, since, rows });
   })
 );
 

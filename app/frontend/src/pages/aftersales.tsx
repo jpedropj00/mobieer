@@ -89,8 +89,69 @@ export function AftersalesPage() {
           ))}
         </Section>
       </div>
+      <AttendancesCard />
       {can("warranty.manage") && <MaintenanceMonthsCard />}
     </div>
+  );
+}
+
+type Attendance = {
+  kind: "VISTORIA" | "ASSISTENCIA";
+  id: string;
+  title: string;
+  status: string;
+  open: boolean;
+  date: string;
+  responsible: string | null;
+  client: string;
+  project: ProjectRef | null;
+};
+
+/** Atendimentos do pós-venda: os vigentes ou tudo do último mês (vistorias e assistências). */
+function AttendancesCard() {
+  const [scope, setScope] = useState<"open" | "month">("open");
+  const q = useQuery({
+    queryKey: ["aftersales", "attendances", scope],
+    queryFn: () => apiGet<{ data: { rows: Attendance[] } }>("/aftersales/attendances", { scope }),
+  });
+  const rows = q.data?.data.rows ?? [];
+  return (
+    <Card>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 py-3">
+        <CardTitle className="text-base">Atendimentos</CardTitle>
+        <div className="flex gap-1">
+          <Button size="sm" variant={scope === "open" ? "default" : "outline"} onClick={() => setScope("open")}>Vigentes</Button>
+          <Button size="sm" variant={scope === "month" ? "default" : "outline"} onClick={() => setScope("month")}>Último mês</Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Carregando…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{scope === "open" ? "Nenhuma vistoria ou assistência em aberto." : "Nenhum atendimento nos últimos 30 dias."}</p>
+        ) : (
+          <ul className="divide-y">
+            {rows.map((r) => (
+              <li key={`${r.kind}-${r.id}`} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <Badge variant="secondary">{r.kind === "VISTORIA" ? "Vistoria" : "Assistência"}</Badge>
+                    {r.project ? <ProjectLink p={r.project} /> : <span className="font-medium">{r.client}</span>}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {r.title}{r.project ? ` · ${r.client}` : ""}{r.responsible ? ` · ${r.responsible}` : ""}
+                  </span>
+                </span>
+                <span className="text-right text-xs">
+                  <Badge variant={r.open ? "warning" : "success"}>{r.status}</Badge>
+                  <span className="block text-muted-foreground">{formatDate(r.date)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
