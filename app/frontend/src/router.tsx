@@ -46,6 +46,7 @@ const ProductionPage = lazy(() => import("@/pages/production").then((m) => ({ de
 const FactoryBoardPage = lazy(() => import("@/pages/production-items").then((m) => ({ default: m.FactoryBoardPage })));
 const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage })));
 const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
+const WorkOrderPublicPage = lazy(() => import("@/pages/work-order-public").then((m) => ({ default: m.WorkOrderPublicPage })));
 const ConfirmVisitPage = lazy(() => import("@/pages/confirm-visit").then((m) => ({ default: m.ConfirmVisitPage })));
 const PortalSignupPage = lazy(() => import("@/pages/portal/signup").then((m) => ({ default: m.PortalSignupPage })));
 const PortalBriefingPage = lazy(() => import("@/pages/portal/briefing").then((m) => ({ default: m.PortalBriefingPage })));
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
   // o briefing agora começa pelo cadastro curto no portal
   { path: "/briefing", element: <Navigate to="/portal/cadastro" replace /> },
   { path: "/confirmar-visita/:token", element: <LazyBoundary><ConfirmVisitPage /></LazyBoundary>, errorElement: <RouteError /> },
+  { path: "/os/:token", element: <LazyBoundary><WorkOrderPublicPage /></LazyBoundary>, errorElement: <RouteError /> },
   {
     element: <GuestRoute />,
     errorElement: <RouteError />,

@@ -85,6 +85,7 @@ model User {
   commercialHistory         CommercialHistory[]
   createdQuotes             CommercialQuote[]          @relation("QuoteSeller")
   decidedQuotes             CommercialQuote[]          @relation("QuoteApprovalDecider")
+  createdWorkOrders         InstallationWorkOrder[]    @relation("WorkOrderCreator")
   quoteCommissions          CommercialQuoteCommission[] @relation("QuoteCommissionUser")
   createdProposals          CommercialProposal[]       @relation("ProposalSeller")
   commercialOrders          SalesOrder[]               @relation("OrderSeller")
@@ -250,6 +251,7 @@ model Organization {
   messageLogs            MessageLog[]
   chatChannels           ChatChannel[]
   installationTasks      InstallationTask[]
+  workOrders             InstallationWorkOrder[]
   contractorBonuses      ContractorBonus[]
   bonusPolicy            BonusPolicy?
   integrationTokens      IntegrationToken[]
@@ -1111,6 +1113,7 @@ model Project {
   promobImports       PromobImport[]
   contractorShifts    ContractorShift[]
   installationTasks   InstallationTask[]
+  workOrders          InstallationWorkOrder[]
   partRequests        PartRequest[]
   chatChannel         ChatChannel?
   architectName       String?
@@ -3195,6 +3198,7 @@ model Contractor {
   hiredAt              DateTime?
   shifts               ContractorShift[]
   installationTasks    InstallationTask[]
+  workOrders           InstallationWorkOrder[]
   bonuses              ContractorBonus[]
   documents            ContractorDocument[]
   partRequests         PartRequest[]
@@ -3443,10 +3447,51 @@ model InstallationTask {
   updatedAt      DateTime              @updatedAt
   logs           InstallationTaskLog[]
   bonus          ContractorBonus?
+  // requisição impressa (com QR) em que o cômodo foi passado ao montador
+  workOrderId    String?
+  workOrder      InstallationWorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status])
   @@index([contractorId, roomType, status])
   @@index([projectId])
+  @@index([workOrderId])
+}
+
+/// Requisição de montagem impressa para o montador (§ reunião 26/09): o QR da
+/// folha abre uma página sem login, pelo token, onde ele conclui os cômodos.
+model InstallationWorkOrder {
+  id              String                   @id @default(cuid())
+  organizationId  String
+  organization    Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  number          String
+  projectId       String
+  project         Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId    String
+  contractor      Contractor               @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  token           String                   @unique
+  status          InstallationWorkOrderStatus @default(OPEN)
+  scheduledFor    DateTime?
+  instructions    String?                  @db.Text
+  // conferência do cliente na conclusão (substitui a assinatura no papel)
+  receivedByName  String?
+  clientSignature String?                  @db.Text
+  completedAt     DateTime?
+  createdById     String?
+  createdBy       User?                    @relation("WorkOrderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  tasks           InstallationTask[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status])
+  @@index([contractorId, status])
+  @@index([projectId])
+}
+
+enum InstallationWorkOrderStatus {
+  OPEN
+  DONE
+  CANCELLED
 }
 
 model InstallationTaskLog {

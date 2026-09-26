@@ -47,6 +47,7 @@ import aftersalesRoutes from "./modules/aftersales/aftersales.routes";
 import productivityRoutes from "./modules/productivity/productivity.routes";
 import assistanceRoutes from "./modules/assistance/assistance.routes";
 import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
+import { publicWorkOrderRoutes, workOrderRoutes } from "./modules/contractors/workorder.routes";
 import cronRoutes from "./modules/cron/cron.routes";
 import storeRoutes from "./modules/store/store.routes";
 import partsRoutes from "./modules/parts/parts.routes";
@@ -126,6 +127,7 @@ export function createApp() {
   app.use("/api/hr", hrRoutes);
   app.use("/api/contractors", contractorsRoutes);
   app.use("/api/assistance", assistanceRoutes);
+  app.use("/api/public/os", publicWorkOrderRoutes);
   app.use("/api/public", publicConfirmRoutes);
   app.use("/api/cron", cronRoutes);
   app.use("/api/automations", automationsRoutes);
@@ -157,6 +159,7 @@ export function createApp() {
   app.use("/api/files", filesRoutes);
   app.use("/api/aftersales", aftersalesRoutes);
   app.use("/api/productivity", productivityRoutes);
+  app.use("/api/work-orders", workOrderRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {
