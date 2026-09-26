@@ -370,6 +370,7 @@ router.get(
         id: true, type: true, title: true, description: true, fileName: true, mimeType: true, sizeBytes: true,
         version: true, createdAt: true, requiresSignature: true, signerRoles: true, signatureStatus: true,
         signatures: { select: { role: true, signerName: true, signedAt: true } },
+        signedStorageKey: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -396,9 +397,10 @@ router.get(
         attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/portal/assistances/${a.id}/attachments/${att.id}/download` })),
         schedule: serializeSchedule(a),
       })),
-      documents: docs.map((d) => ({
+      documents: docs.map(({ signedStorageKey, ...d }) => ({
         ...d,
         downloadUrl: `/api/portal/documents/${d.id}/download`,
+        signedDownloadUrl: signedStorageKey ? `/api/portal/documents/${d.id}/download?signed=1` : null,
         clientSigned: d.signatures.some((s) => s.role === "CLIENTE"),
         canClientSign: d.requiresSignature && d.signerRoles.includes("CLIENTE") && !d.signatures.some((s) => s.role === "CLIENTE"),
       })),
@@ -442,11 +444,14 @@ router.get(
       where: { id: req.params.id, clientId: req.portal!.clientId, visibleToClient: true },
     });
     if (!doc) throw new NotFoundError("Documento não encontrado");
-    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    const wantsSigned = req.query.signed === "1" && Boolean(doc.signedStorageKey);
+    const key = wantsSigned ? doc.signedStorageKey! : doc.storageKey;
+    const name = wantsSigned ? doc.fileName.replace(/\.[^.]+$/, "") + "-assinado.pdf" : doc.fileName;
+    const signed = await storage.getSignedUrl(key, name);
     if (signed) return res.redirect(signed);
-    const stream = await storage.getStream(doc.storageKey);
-    res.setHeader("Content-Type", doc.mimeType);
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
+    const stream = await storage.getStream(key);
+    res.setHeader("Content-Type", wantsSigned ? "application/pdf" : doc.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
     return pipeToResponse(stream, res);
   })
 );

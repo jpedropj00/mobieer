@@ -32,6 +32,7 @@ type Doc = {
   version: number;
   createdAt: string;
   downloadUrl: string;
+  signedDownloadUrl?: string | null;
   requiresSignature: boolean;
   signatureStatus: "NOT_REQUIRED" | "PENDING" | "SIGNED";
   clientSigned: boolean;
@@ -112,6 +113,15 @@ function DocRow({ doc, projectId }: { doc: Doc; projectId: string }) {
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {doc.signedDownloadUrl && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => portalDownload(doc.signedDownloadUrl!.replace("/api/portal", ""), `${doc.fileName.replace(/\.[^.]+$/, "")}-assinado.pdf`).catch((err) => toast.error(errorMessage(err, "Falha ao baixar")))}
+          >
+            <Download className="mr-1 h-4 w-4" /> Assinado
+          </Button>
+        )}
         {doc.canClientSign && (
           <Button size="sm" variant="outline" onClick={() => setSigning(true)}>
             <FileSignature className="mr-1 h-4 w-4" /> Assinar

@@ -2158,6 +2158,10 @@ model ProjectDocument {
   uploadedById            String?
   uploadedBy              User?                      @relation("ProjectDocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
   signatures              DocumentSignature[]
+  // cópia com o carimbo e a página de assinaturas, gerada quando todos assinam
+  signedStorageKey        String?
+  signedChecksum          String?
+  signedFileAt            DateTime?
   technicalApprovals      TechnicalProjectApproval[]
   approvalRounds          TechApprovalRound[]
   paymentReceipt          FinancePayment?            @relation("PaymentReceipt")
@@ -3701,6 +3705,9 @@ model ContractorDocument {
   signatureDataUrl  String?                  @db.Text
   signerName        String?
   signerIp          String?
+  // cópia com o carimbo e a página de assinatura
+  signedStorageKey  String?
+  signedChecksum    String?
 
   @@index([contractorId])
   @@index([contractorId, status])

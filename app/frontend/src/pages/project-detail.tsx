@@ -57,6 +57,7 @@ type Doc = {
   signatureProviderUrl?: string | null;
   signatureProviderStatus?: string | null;
   signatures: { id: string; role: string; signerName: string; signedAt: string }[];
+  signedDownloadUrl?: string | null;
   version: number;
   createdAt: string;
   uploadedBy: { id: string; name: string } | null;
@@ -323,7 +324,12 @@ export function ProjectDetailPage() {
                           {d.signatureProviderStatus ?? "enviado"} ↗
                         </a>
                       )}
-                      <Button size="sm" variant="outline" onClick={() => apiDownload(`/documents/${d.id}/download`, d.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
+                      {d.signedDownloadUrl && (
+                        <Button size="sm" variant="outline" title="PDF com carimbo e página de assinaturas" onClick={() => apiDownload(`/documents/${d.id}/download?signed=1`, `${d.fileName.replace(/\.[^.]+$/, "")}-assinado.pdf`).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
+                          <Download className="mr-1 h-4 w-4" /> Assinado
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" title="Arquivo original" onClick={() => apiDownload(`/documents/${d.id}/download`, d.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
                         <Download className="h-4 w-4" />
                       </Button>
                       {canManage && (

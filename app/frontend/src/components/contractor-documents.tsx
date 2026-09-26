@@ -17,7 +17,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/states";
 import { SignaturePad } from "@/components/signature-pad";
-import { apiDelete, apiGet, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiGet, apiObjectUrl, apiPost, apiPostForm } from "@/services/api";
+
+/** Abre o arquivo numa aba nova com o login (link direto chegaria sem o token). */
+async function openFile(path: string) {
+  const win = window.open("", "_blank");
+  try {
+    const url = await apiObjectUrl(path);
+    if (win) win.location.href = url;
+    else window.location.href = url;
+  } catch (e) {
+    win?.close();
+    toast.error(errorMessage(e, "Falha ao abrir o arquivo"));
+  }
+}
 import { errorMessage } from "@/lib/utils";
 import type { Contractor, ContractorDocument, ContractorDocumentStatus, ContractorDocumentType } from "@/types";
 
@@ -182,12 +195,16 @@ export function ContractorDocumentsTab({ contractors, canManage }: { contractors
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={`/api/contractors/documents/${d.id}/file`} target="_blank" rel="noreferrer">
-                      <Download className="mr-2 h-3.5 w-3.5" />
-                      Abrir
-                    </a>
+                  <Button variant="outline" size="sm" onClick={() => void openFile(`/contractors/documents/${d.id}/file`)}>
+                    <Download className="mr-2 h-3.5 w-3.5" />
+                    Abrir
                   </Button>
+                  {d.hasSignedCopy && (
+                    <Button variant="outline" size="sm" onClick={() => void openFile(`/contractors/documents/${d.id}/file?signed=1`)}>
+                      <Download className="mr-2 h-3.5 w-3.5" />
+                      Assinado
+                    </Button>
+                  )}
 
                   {canManage && (d.status === "AGUARDANDO_ENVIO" || d.status === "RECUSADO") && (
                     <Button size="sm" disabled={enviar.isPending} onClick={() => enviar.mutate(d.id)}>
@@ -364,12 +381,16 @@ export function MyContractorDocuments() {
             )}
             {d.status === "ASSINADO" && fmt(d.signedAt) && <p className="text-xs text-success">Assinado em {fmt(d.signedAt)}</p>}
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <a href={`/api/me/contractor/documents/${d.id}/file`} target="_blank" rel="noreferrer">
-                  <Download className="mr-2 h-3.5 w-3.5" />
-                  Abrir
-                </a>
+              <Button variant="outline" size="sm" onClick={() => void openFile(`/me/contractor/documents/${d.id}/file`)}>
+                <Download className="mr-2 h-3.5 w-3.5" />
+                Abrir
               </Button>
+              {d.hasSignedCopy && (
+                <Button variant="outline" size="sm" onClick={() => void openFile(`/me/contractor/documents/${d.id}/file?signed=1`)}>
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Assinado
+                </Button>
+              )}
               {d.requiresSignature && d.status !== "ASSINADO" && (
                 <>
                   <Button size="sm" onClick={() => setAssinando(d)}>

@@ -430,7 +430,7 @@ async function auditarDoc(userId: string, action: string, entityId: string, deta
 const docSelect = {
   id: true, contractorId: true, kind: true, title: true, fileName: true, mimeType: true, size: true,
   expiresAt: true, createdAt: true, status: true, requiresSignature: true, sentAt: true, viewedAt: true,
-  signedAt: true, refusedAt: true, refusalReason: true, signerName: true,
+  signedAt: true, refusedAt: true, refusalReason: true, signerName: true, signedStorageKey: true,
 } as const;
 
 type DocRow = {
@@ -438,10 +438,11 @@ type DocRow = {
   mimeType: string | null; size: number | null; expiresAt: Date | null; createdAt: Date;
   status: ContractorDocumentStatus; requiresSignature: boolean; sentAt: Date | null; viewedAt: Date | null;
   signedAt: Date | null; refusedAt: Date | null; refusalReason: string | null; signerName: string | null;
+  signedStorageKey: string | null;
 };
 
 /** O que a tela mostra. Nunca devolve o desenho da assinatura nem o storageKey. */
-const serializeDoc = (d: DocRow) => ({ ...d, statusLabel: STATUS_LABEL[d.status] });
+const serializeDoc = ({ signedStorageKey, ...d }: DocRow) => ({ ...d, statusLabel: STATUS_LABEL[d.status], hasSignedCopy: Boolean(signedStorageKey) });
 
 async function ensureDoc(id: string, organizationId: string) {
   const doc = await prisma.contractorDocument.findFirst({
@@ -544,11 +545,15 @@ router.get(
   requirePermission("hr.read"),
   asyncHandler(async (req, res) => {
     const doc = await ensureDoc(req.params.docId, req.user!.organizationId);
-    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    // ?signed=1 abre a cópia assinada (carimbo + página de assinatura)
+    const wantsSigned = req.query.signed === "1" && Boolean(doc.signedStorageKey);
+    const key = wantsSigned ? doc.signedStorageKey! : doc.storageKey;
+    const name = wantsSigned ? doc.fileName.replace(/\.[^.]+$/, "") + "-assinado.pdf" : doc.fileName;
+    const signed = await storage.getSignedUrl(key, name);
     if (signed) return res.redirect(signed);
-    const stream = await storage.getStream(doc.storageKey);
-    res.setHeader("Content-Type", doc.mimeType ?? "application/octet-stream");
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.fileName)}"`);
+    const stream = await storage.getStream(key);
+    res.setHeader("Content-Type", wantsSigned ? "application/pdf" : doc.mimeType ?? "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(name)}"`);
     return pipeToResponse(stream, res);
   })
 );

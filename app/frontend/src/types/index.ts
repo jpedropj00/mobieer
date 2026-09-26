@@ -801,6 +801,7 @@ export type ContractorDocumentStatus =
   | "RECUSADO";
 
 export type ContractorDocument = {
+  hasSignedCopy?: boolean;
   id: string;
   contractorId?: string;
   kind: ContractorDocumentType;

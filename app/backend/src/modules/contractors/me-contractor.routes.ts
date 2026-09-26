@@ -14,6 +14,7 @@ import { storage } from "../../lib/storage";
 import { dateQuery } from "../../utils/query";
 import { pipeToResponse } from "../../utils/stream";
 import { ASSINATURA_MAX_BYTES, STATUS_LABEL, VISIVEL_PARA_O_MONTADOR, assinaturaCabe, isAssinaturaValida, nextStatus } from "./documents.service";
+import { generateContractorDocumentSignedCopy } from "../../lib/signed-copy";
 import { STATUS_LABEL as PART_STATUS_LABEL } from "../parts/parts.service";
 import { uploadMedia } from "../../middlewares/upload";
 import { acceptLocation, hourBank, performanceSummary, ratingAverage } from "../fieldwork/fieldwork.service";
@@ -319,11 +320,11 @@ router.get(
       select: {
         id: true, kind: true, title: true, fileName: true, mimeType: true, size: true, expiresAt: true, createdAt: true,
         status: true, requiresSignature: true, sentAt: true, viewedAt: true, signedAt: true,
-        refusedAt: true, refusalReason: true, signerName: true,
+        refusedAt: true, refusalReason: true, signerName: true, signedStorageKey: true,
       },
       orderBy: { createdAt: "desc" },
     });
-    return ok(res, docs.map((d) => ({ ...d, statusLabel: STATUS_LABEL[d.status] })));
+    return ok(res, docs.map(({ signedStorageKey, ...d }) => ({ ...d, statusLabel: STATUS_LABEL[d.status], hasSignedCopy: Boolean(signedStorageKey) })));
   })
 );
 
@@ -346,11 +347,15 @@ router.get(
       });
     }
 
-    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    // ?signed=1 abre a cópia assinada (carimbo + página de assinatura)
+    const wantsSigned = req.query.signed === "1" && Boolean(doc.signedStorageKey);
+    const key = wantsSigned ? doc.signedStorageKey! : doc.storageKey;
+    const name = wantsSigned ? doc.fileName.replace(/\.[^.]+$/, "") + "-assinado.pdf" : doc.fileName;
+    const signed = await storage.getSignedUrl(key, name);
     if (signed) return res.redirect(signed);
-    const stream = await storage.getStream(doc.storageKey);
-    res.setHeader("Content-Type", doc.mimeType ?? "application/octet-stream");
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(doc.fileName)}"`);
+    const stream = await storage.getStream(key);
+    res.setHeader("Content-Type", wantsSigned ? "application/pdf" : doc.mimeType ?? "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(name)}"`);
     return pipeToResponse(stream, res);
   })
 );
@@ -401,6 +406,7 @@ router.post(
       },
       select: { id: true, status: true, signedAt: true, signerName: true },
     });
+    await generateContractorDocumentSignedCopy(doc.id);
     await prisma.auditLog.create({
       data: {
         userId: req.user!.id,

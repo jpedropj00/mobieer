@@ -11,6 +11,7 @@ import { ok } from "../../utils/response";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { SignatureError, createSignatureRequest, getSignatureStatus, signatureEnabled } from "../../lib/signature-provider";
 import { pipeToResponse } from "../../utils/stream";
+import { generateProjectDocumentSignedCopy } from "../../lib/signed-copy";
 
 const router = Router();
 router.use(authenticate);
@@ -78,6 +79,7 @@ const serialize = (d: {
   createdAt: Date;
   uploadedBy?: { id: string; name: string } | null;
   signatures?: SigRow[];
+  signedStorageKey?: string | null;
 }) => ({
   id: d.id,
   type: d.type,
@@ -98,6 +100,7 @@ const serialize = (d: {
   uploadedBy: d.uploadedBy ?? null,
   signatures: (d.signatures ?? []).map((s) => ({ id: s.id, role: s.role, signerName: s.signerName, signedAt: s.signedAt })),
   downloadUrl: `/api/documents/${d.id}/download`,
+  signedDownloadUrl: d.signedStorageKey ? `/api/documents/${d.id}/download?signed=1` : null,
 });
 
 /** Recalcula PENDING/SIGNED conforme as assinaturas cobrem os papéis exigidos. */
@@ -118,6 +121,8 @@ async function recomputeSignatureStatus(documentId: string) {
     where: { id: documentId },
     data: { signatureStatus: done ? "SIGNED" : "PENDING" },
   });
+  // Todos assinaram: grava a cópia com carimbo e página de assinaturas.
+  if (done) await generateProjectDocumentSignedCopy(documentId);
 }
 
 export { recomputeSignatureStatus };
@@ -378,11 +383,15 @@ router.get(
   requirePermission("documents.read"),
   asyncHandler(async (req, res) => {
     const doc = await ensureDocument(req.params.id, req.user!.organizationId);
-    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    // ?signed=1 baixa a cópia assinada (carimbo + página de assinaturas)
+    const wantsSigned = req.query.signed === "1" && Boolean(doc.signedStorageKey);
+    const key = wantsSigned ? doc.signedStorageKey! : doc.storageKey;
+    const name = wantsSigned ? doc.fileName.replace(/\.[^.]+$/, "") + "-assinado.pdf" : doc.fileName;
+    const signed = await storage.getSignedUrl(key, name);
     if (signed) return res.redirect(signed);
-    const stream = await storage.getStream(doc.storageKey);
-    res.setHeader("Content-Type", doc.mimeType);
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
+    const stream = await storage.getStream(key);
+    res.setHeader("Content-Type", wantsSigned ? "application/pdf" : doc.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
     return pipeToResponse(stream, res);
   })
 );
@@ -394,6 +403,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const doc = await ensureDocument(req.params.id, req.user!.organizationId);
     await storage.remove(doc.storageKey).catch(() => undefined);
+    if (doc.signedStorageKey) await storage.remove(doc.signedStorageKey).catch(() => undefined);
     await prisma.projectDocument.delete({ where: { id: doc.id } });
     await prisma.auditLog.create({
       data: {
