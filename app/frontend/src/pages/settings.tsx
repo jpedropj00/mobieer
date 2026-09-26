@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/hooks/use-auth";
 import { AutomationsSettings } from "@/components/settings-automations";
 import { SignaturePad } from "@/components/signature-pad";
+import { SecuritySettings } from "@/components/settings-security";
 import { IntegrationsSettings } from "@/components/settings-integrations";
 
 const passwordSchema = z.object({
@@ -274,6 +275,7 @@ export function SettingsPage() {
           {can("settings.manage") && <TabsTrigger value="system">Sistema</TabsTrigger>}
           {can("settings.manage") && <TabsTrigger value="mensagens">Mensagens automáticas</TabsTrigger>}
           {can("settings.manage") && <TabsTrigger value="integracoes">Integrações</TabsTrigger>}
+          {can("settings.manage") && <TabsTrigger value="seguranca">Segurança</TabsTrigger>}
         </TabsList>
         <TabsContent value="account">
           <AccountTab />
@@ -285,6 +287,9 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="integracoes">
               <IntegrationsSettings />
+            </TabsContent>
+            <TabsContent value="seguranca">
+              <SecuritySettings />
             </TabsContent>
             <TabsContent value="system">
               <SystemTab />

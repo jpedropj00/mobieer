@@ -46,6 +46,9 @@ const ProductionPage = lazy(() => import("@/pages/production").then((m) => ({ de
 const FactoryBoardPage = lazy(() => import("@/pages/production-items").then((m) => ({ default: m.FactoryBoardPage })));
 const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage })));
 const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
+const ForcePasswordChangePage = lazy(() => import("@/pages/password-pages").then((m) => ({ default: m.ForcePasswordChangePage })));
+const ForgotPasswordPage = lazy(() => import("@/pages/password-pages").then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import("@/pages/password-pages").then((m) => ({ default: m.ResetPasswordPage })));
 const WorkOrderPublicPage = lazy(() => import("@/pages/work-order-public").then((m) => ({ default: m.WorkOrderPublicPage })));
 const ConfirmVisitPage = lazy(() => import("@/pages/confirm-visit").then((m) => ({ default: m.ConfirmVisitPage })));
 const PortalSignupPage = lazy(() => import("@/pages/portal/signup").then((m) => ({ default: m.PortalSignupPage })));
@@ -78,12 +81,17 @@ export const router = createBrowserRouter([
   {
     element: <GuestRoute />,
     errorElement: <RouteError />,
-    children: [{ path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> }],
+    children: [
+      { path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> },
+      { path: "/esqueci-senha", element: <LazyBoundary><ForgotPasswordPage /></LazyBoundary> },
+      { path: "/redefinir-senha", element: <LazyBoundary><ResetPasswordPage /></LazyBoundary> },
+    ],
   },
   {
     element: <ProtectedRoute />,
     errorElement: <RouteError />,
     children: [
+      { path: "/trocar-senha", element: <LazyBoundary><ForcePasswordChangePage /></LazyBoundary> },
       {
         element: <LazyBoundary><AppShell /></LazyBoundary>,
         children: [

@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
-import { Loader2, Pencil, Plus, Search, Shield, Trash2, Users } from "lucide-react";
+import { KeyRound, Loader2, LockOpen, Pencil, Plus, Search, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/services/api";
 import type { Paginated, RoleInfo, User } from "@/types";
@@ -84,15 +84,33 @@ export function UsersPage() {
         roleId: values.roleId,
       };
       if (editing) return apiPut(`/users/${editing.id}`, body);
-      body.password = values.password || "mudar123";
-      return apiPost("/users", body);
+      // sem senha, o sistema gera uma provisória e mostra uma vez
+      if (values.password) body.password = values.password;
+      return apiPost<{ data: User & { temporaryPassword?: string } }>("/users", body);
     },
-    onSuccess: () => {
-      toast.success(editing ? "Usuário atualizado" : "Usuário criado");
+    onSuccess: (r) => {
+      toast.success(editing ? "Usuário atualizado" : "Usuário criado — troca a senha no primeiro acesso");
       queryClient.invalidateQueries({ queryKey: ["users"] });
       setDialogOpen(false);
+      const created = (r as { data?: User & { temporaryPassword?: string } } | undefined)?.data;
+      if (!editing && created?.temporaryPassword) setTempPassword({ name: created.name, password: created.temporaryPassword });
     },
     onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao salvar"),
+  });
+
+  const [tempPassword, setTempPassword] = useState<{ name: string; password: string } | null>(null);
+  const unlock = useMutation({
+    mutationFn: (u: User) => apiPost<{ message: string }>(`/users/${u.id}/unlock`),
+    onSuccess: (r) => { toast.success(r.message); queryClient.invalidateQueries({ queryKey: ["users"] }); },
+    onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao desbloquear"),
+  });
+  const resetPassword = useMutation({
+    mutationFn: (u: User) => apiPost<{ data: User & { temporaryPassword: string }; message: string }>(`/users/${u.id}/reset-password`),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setTempPassword({ name: r.data.name, password: r.data.temporaryPassword });
+    },
+    onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao limpar a senha"),
   });
 
   const toggleStatus = async (u: User) => {
@@ -198,7 +216,11 @@ export function UsersPage() {
                         {u.lastLogin ? formatDate(u.lastLogin, true) : "Nunca acessou"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={u.status === "ACTIVE" ? "success" : "muted"}>{u.status === "ACTIVE" ? "Ativo" : "Inativo"}</Badge>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge variant={u.status === "ACTIVE" ? "success" : "muted"}>{u.status === "ACTIVE" ? "Ativo" : "Inativo"}</Badge>
+                          {u.locked && <Badge variant="danger">Bloqueado</Badge>}
+                          {u.mustChangePassword && <Badge variant="warning">Troca a senha</Badge>}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
@@ -207,6 +229,23 @@ export function UsersPage() {
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(u)}>
                                 <Pencil className="h-4 w-4" />
                               </Button>
+                              {u.locked && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8" title="Desbloquear" disabled={unlock.isPending} onClick={() => unlock.mutate(u)}>
+                                  <LockOpen className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {u.id !== me?.id && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Limpar senha (gera uma provisória)"
+                                  disabled={resetPassword.isPending}
+                                  onClick={() => confirm(`Gerar senha provisória para ${u.name}? A senha atual deixa de valer.`) && resetPassword.mutate(u)}
+                                >
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => toggleStatus(u)} title={u.status === "ACTIVE" ? "Inativar" : "Ativar"}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -223,6 +262,19 @@ export function UsersPage() {
           </>
         )}
       </Card>
+      {tempPassword && (
+        <Dialog open onOpenChange={(v) => !v && setTempPassword(null)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Senha provisória de {tempPassword.name}</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">Repasse à pessoa por um canal seguro. Ela aparece só agora e será trocada no primeiro acesso.</p>
+            <Input readOnly value={tempPassword.password} className="font-mono" onFocus={(e) => e.currentTarget.select()} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { void navigator.clipboard?.writeText(tempPassword.password); toast.success("Copiada"); }}>Copiar</Button>
+              <Button onClick={() => setTempPassword(null)}>Pronto</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">

@@ -2,7 +2,12 @@ import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { prisma } from "../prisma";
-import { UnauthorizedError } from "../utils/ApiError";
+import { ApiError, UnauthorizedError } from "../utils/ApiError";
+import { accessAllowed, passwordExpired } from "../lib/security-policy";
+import { loadSecurityPolicy } from "../lib/security";
+
+/** Com troca de senha pendente, só estas rotas respondem (a tela de troca usa). */
+const PASSWORD_CHANGE_ALLOWED = ["/api/auth/me", "/api/auth/change-password", "/api/auth/logout"];
 
 type JwtPayload = { sub: string };
 
@@ -35,6 +40,16 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
     if (!user || user.status !== "ACTIVE" || user.organization.enterprise.status !== "ACTIVE") {
       throw new UnauthorizedError("Usuário inativo ou não encontrado");
+    }
+    if (user.lockedAt) throw new UnauthorizedError("Usuário bloqueado. Fale com o administrador.");
+
+    // IP e horário valem para a sessão inteira, não só na entrada
+    const policy = await loadSecurityPolicy();
+    const access = accessAllowed(policy, { role: user.role.name, ip: req.ip });
+    if (!access.ok) throw new ApiError(403, access.message, undefined, "ACCESS_RESTRICTED");
+    const path = req.originalUrl.split("?")[0];
+    if ((user.mustChangePassword || passwordExpired(user.passwordChangedAt, policy)) && !PASSWORD_CHANGE_ALLOWED.includes(path)) {
+      throw new ApiError(403, "Troque a sua senha para continuar.", undefined, "PASSWORD_CHANGE_REQUIRED");
     }
 
     req.user = {

@@ -28,6 +28,16 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
   return ok(res, user, "Usuário criado com sucesso");
 });
 
+export const unlockUser = asyncHandler(async (req: Request, res: Response) => {
+  const user = await usersService.unlockUser(req.params.id, req.user!.id);
+  return ok(res, user, "Usuário desbloqueado");
+});
+
+export const resetUserPassword = asyncHandler(async (req: Request, res: Response) => {
+  const user = await usersService.resetUserPassword(req.params.id, req.user!.id);
+  return ok(res, user, "Senha provisória gerada — a pessoa troca no próximo acesso");
+});
+
 export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   const input = updateUserSchema.parse(req.body);
   const user = await usersService.updateUser(req.params.id, input, req.user!.id);

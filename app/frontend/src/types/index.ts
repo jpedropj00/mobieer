@@ -345,6 +345,8 @@ export type AuthUser = {
   role: Role;
   roleLabel: string;
   permissions: string[];
+  /** senha provisória ou vencida: só entra depois de trocar */
+  passwordChangeRequired?: boolean;
 };
 
 export type Unit = "UNIT" | "BOX" | "PACKAGE" | "METER" | "LITER" | "KILO" | "ROLL" | "PAIR";
@@ -609,6 +611,9 @@ export type User = {
   lastLogin: string | null;
   createdAt: string;
   role: { id: string; name: Role; label: string };
+  locked?: boolean;
+  failedLoginCount?: number;
+  mustChangePassword?: boolean;
 };
 
 export type RoleInfo = {

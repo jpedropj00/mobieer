@@ -14,11 +14,13 @@ function FullScreenLoader() {
 }
 
 export function ProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
 
   if (isLoading) return <FullScreenLoader />;
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: location }} replace />;
+  // senha provisória ou vencida: nada abre antes da troca (o backend também barra)
+  if (user?.passwordChangeRequired && location.pathname !== "/trocar-senha") return <Navigate to="/trocar-senha" replace />;
   return <Outlet />;
 }
 

@@ -10,6 +10,7 @@ type AuthContextValue = {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   can: (permission: string) => boolean;
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -94,8 +95,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       can,
+      // relê o /auth/me (ex.: depois de trocar a senha obrigatória)
+      refresh: async () => {
+        const r = await refetch();
+        if (r.data) setUser(r.data.data);
+      },
     }),
-    [user, initialToken, isLoading, login, logout, can]
+    [user, initialToken, isLoading, login, logout, can, refetch]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

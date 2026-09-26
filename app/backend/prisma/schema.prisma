@@ -37,6 +37,11 @@ model User {
   lastLogin        DateTime?
   resetToken       String?    @unique
   resetTokenExpiry DateTime?
+  // política de segurança (lib/security-policy)
+  failedLoginCount   Int       @default(0)
+  lockedAt           DateTime?
+  passwordChangedAt  DateTime?
+  mustChangePassword Boolean   @default(false)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
