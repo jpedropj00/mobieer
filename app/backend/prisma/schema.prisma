@@ -2782,11 +2782,18 @@ model FiscalInvoice {
   errorMessage   String?             @db.Text
   issuedAt       DateTime?
   cancelledAt    DateTime?
+  // EMITIDA = pelo provedor, aqui; CONTABILIDADE = XML/PDF recebido só para registro
+  source              String   @default("EMITIDA")
+  direction           String   @default("SAIDA") // SAIDA (empresa emitiu) | ENTRADA (empresa recebeu)
+  accessKey           String? // chave de acesso da NF-e / código da NFS-e: evita registrar duas vezes
+  counterpartName     String?
+  counterpartDocument String?
   createdById    String?
   createdBy      User?               @relation("FiscalInvoiceCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
+  @@unique([organizationId, accessKey])
   @@index([organizationId, status])
   @@index([projectId])
 }
