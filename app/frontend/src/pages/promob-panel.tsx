@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiDownload, apiGet, apiPostForm } from "@/services/api";
 import { errorMessage } from "@/lib/utils";
+import { PromobCompareButton } from "@/components/promob-compare";
 
 type ParsedItem = { descricao: string; referencia?: string | null; quantidade?: number | null; ambiente?: string | null };
 type Peca = {
@@ -115,8 +116,9 @@ export function PromobPanel({ projectId, canManage }: { projectId: string; canMa
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-3">
           <CardTitle className="text-base">Importar do Promob</CardTitle>
+          <PromobCompareButton imports={rows} />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <p className="text-xs text-muted-foreground">
