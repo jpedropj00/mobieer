@@ -42,7 +42,8 @@ type Quote = {
   project: { id: string; code: string; name: string } | null;
   seller: { id: string; name: string };
   items: { room: string | null; description: string; quantity: number; unitCost: number; unitPrice: number; total: number }[];
-  commissions: { userId: string | null; name: string; role: string; percent: number; amount: number }[];
+  commissions: { userId: string | null; referrerId?: string | null; name: string; role: string; percent: number; amount: number }[];
+  referrer?: { id: string; name: string } | null;
   costTotal: number;
   markup: number;
   subtotal: number;
@@ -197,11 +198,14 @@ export function QuotesTab() {
 // ------------------------------------------------------------------ editor
 
 type ItemForm = { room: string; description: string; quantity: string; unitCost: string };
-type CommissionForm = { userId: string; name: string; role: string; percent: string };
+type CommissionForm = { userId: string; referrerId?: string; name: string; role: string; percent: string };
+type Referrer = { id: string; name: string; kind: string; defaultRtPercent: number };
+const RT_ROLE = "INDICADOR";
 type Form = {
   clientId: string;
   opportunityId: string;
   projectId: string;
+  referrerId: string;
   items: ItemForm[];
   markup: string;
   commissions: CommissionForm[];
@@ -224,9 +228,10 @@ function fromQuote(q: Quote): Form {
     clientId: q.client.id,
     opportunityId: q.opportunity?.id ?? "",
     projectId: q.project?.id ?? "",
+    referrerId: q.referrer?.id ?? "",
     items: q.items.map((i) => ({ room: i.room ?? "", description: i.description, quantity: String(i.quantity).replace(".", ","), unitCost: toField(i.unitCost) })),
     markup: String(q.markup).replace(".", ","),
-    commissions: q.commissions.map((c) => ({ userId: c.userId ?? "", name: c.name, role: c.role, percent: toField(c.percent) })),
+    commissions: q.commissions.map((c) => ({ userId: c.userId ?? "", referrerId: c.referrerId ?? "", name: c.name, role: c.role, percent: toField(c.percent) })),
     discount: toField(q.discount),
     freight: toField(q.freight),
     otherCosts: toField(q.otherCosts),
@@ -245,12 +250,13 @@ function toPayload(f: Form, roleLabel: (role: string) => string) {
     clientId: f.clientId,
     opportunityId: f.opportunityId || null,
     projectId: f.projectId || null,
+    referrerId: f.referrerId || null,
     items: f.items
       .filter((i) => i.description.trim() || parse(i.unitCost) > 0)
       .map((i) => ({ room: i.room || null, description: i.description.trim() || i.room || "Item", quantity: parse(i.quantity) || 1, unitCost: parse(i.unitCost) })),
     markup: parse(f.markup),
     // percentual sem pessoa escolhida ainda conta no preço, com o nome do papel
-    commissions: f.commissions.filter((c) => parse(c.percent) > 0).map((c) => ({ userId: c.userId || null, name: c.name.trim() || roleLabel(c.role), role: c.role, percent: parse(c.percent) })),
+    commissions: f.commissions.filter((c) => parse(c.percent) > 0).map((c) => ({ userId: c.userId || null, referrerId: c.referrerId || null, name: c.name.trim() || roleLabel(c.role), role: c.role, percent: parse(c.percent) })),
     discount: parse(f.discount),
     freight: parse(f.freight),
     otherCosts: parse(f.otherCosts),
@@ -303,6 +309,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           clientId: params.get("clientId") ?? "",
           opportunityId: params.get("opportunityId") ?? "",
           projectId: "",
+          referrerId: "",
           items: [emptyItem()],
           markup: String(config.defaultMarkup).replace(".", ","),
           commissions: config.commissionRoles
@@ -324,6 +331,17 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
 
   const clients = useQuery({ queryKey: ["business-clients", "picklist"], queryFn: () => apiGet<{ data: { id: string; name: string }[] }>("/business/clients") });
   const people = useQuery({ queryKey: ["kanban-people"], queryFn: () => apiGet<{ data: { id: string; name: string }[] }>("/organization/people") });
+  const referrers = useQuery({ queryKey: ["referrers"], queryFn: () => apiGet<{ data: Referrer[] }>("/referrers") });
+  /** Escolher o indicador cria/atualiza a linha de reserva técnica nas comissões. */
+  const pickReferrer = (id: string) => {
+    const r = (referrers.data?.data ?? []).find((x) => x.id === id);
+    setForm((f) => {
+      const others = f.commissions.filter((c) => c.role !== RT_ROLE);
+      if (!r) return { ...f, referrerId: "", commissions: others };
+      const cur = f.commissions.find((c) => c.role === RT_ROLE);
+      return { ...f, referrerId: r.id, commissions: [...others, { userId: "", referrerId: r.id, name: r.name, role: RT_ROLE, percent: cur?.percent || toField(r.defaultRtPercent) }] };
+    });
+  };
   const opps = useQuery({
     queryKey: ["commercial", "opportunities", "client", form.clientId],
     queryFn: () => apiGet<{ data: { id: string; title: string }[] }>("/commercial/opportunities", { clientId: form.clientId, closed: "1" }),
@@ -404,7 +422,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
         <div className="space-y-6">
           <Card>
             <CardHeader className="py-3"><CardTitle className="text-base">Cliente</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3">
+            <CardContent className="grid gap-4 sm:grid-cols-4">
               <Field label="Cliente">
                 <Select disabled={!canEdit} value={form.clientId || "NONE"} onValueChange={(v) => setForm((f) => ({ ...f, clientId: v === "NONE" ? "" : v, opportunityId: "", projectId: "" }))}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -429,6 +447,15 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
                   <SelectContent>
                     <SelectItem value="NONE">Nenhum</SelectItem>
                     {(projects.data?.data ?? []).map((p) => <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Indicador (arquiteto/parceiro)">
+                <Select disabled={!canEdit} value={form.referrerId || "NONE"} onValueChange={(v) => pickReferrer(v === "NONE" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">Sem indicador</SelectItem>
+                    {(referrers.data?.data ?? []).map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </Field>
@@ -481,7 +508,14 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
             <Card>
               <CardHeader className="py-3"><CardTitle className="text-base">Comissões</CardTitle></CardHeader>
               <CardContent className="space-y-2">
-                {form.commissions.map((c, i) => (
+                {form.commissions.map((c, i) => c.role === RT_ROLE ? (
+                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px_32px] items-center gap-2">
+                    <span className="truncate text-sm">{c.name}</span>
+                    <span className="text-xs text-muted-foreground">Reserva técnica</span>
+                    <Input disabled={!canEdit} inputMode="decimal" aria-label="% RT" value={c.percent} onChange={(e) => set("commissions", form.commissions.map((x, k) => (k === i ? { ...x, percent: e.target.value } : x)))} />
+                    {canEdit ? <Button variant="ghost" size="icon" aria-label="Remover" onClick={() => pickReferrer("")}><Trash2 className="h-4 w-4" /></Button> : <span />}
+                  </div>
+                ) : (
                   <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px_32px] items-center gap-2">
                     <Select
                       disabled={!canEdit}

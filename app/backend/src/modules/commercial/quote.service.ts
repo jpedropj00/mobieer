@@ -22,6 +22,7 @@ export const quoteInclude = {
   project: { select: { id: true, code: true, name: true } },
   seller: { select: { id: true, name: true } },
   approvalDecidedBy: { select: { id: true, name: true } },
+  referrer: { select: { id: true, name: true, kind: true } },
   items: { orderBy: { position: "asc" } },
   commissions: true,
 } satisfies Prisma.CommercialQuoteInclude;
@@ -55,7 +56,8 @@ export function serializeQuote(q: QuoteRow) {
       unitPrice: n(i.unitPrice),
       total: n(i.total),
     })),
-    commissions: q.commissions.map((c) => ({ id: c.id, userId: c.userId, name: c.name, role: c.role, percent: n(c.percent), amount: n(c.amount) })),
+    commissions: q.commissions.map((c) => ({ id: c.id, userId: c.userId, referrerId: c.referrerId, name: c.name, role: c.role, percent: n(c.percent), amount: n(c.amount) })),
+    referrer: q.referrer,
     costTotal: n(q.costTotal),
     markup: n(q.markup),
     commissionPercent: n(q.commissionPercent),
@@ -123,7 +125,7 @@ export function calcToData(c: QuoteCalc) {
       })),
     },
     commissions: {
-      create: c.commissions.map((m) => ({ userId: m.userId, name: m.name, role: m.role, percent: D(m.percent), amount: D(m.amount) })),
+      create: c.commissions.map((m) => ({ userId: m.userId, referrerId: m.referrerId, name: m.name, role: m.role, percent: D(m.percent), amount: D(m.amount) })),
     },
   };
 }

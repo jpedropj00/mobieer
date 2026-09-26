@@ -20,7 +20,7 @@ export type QuoteForFinance = {
   version: number;
   total: number;
   payment: { method: PaymentMethod; planName: string | null; installments: number; downPayment: number; feePercent: number };
-  commissions: { name: string; percent: number; amount: number }[];
+  commissions: { name: string; percent: number; amount: number; role?: string; referrerId?: string | null }[];
 };
 
 export type PlannedEntry = {
@@ -33,12 +33,15 @@ export type PlannedEntry = {
   method: string;
   installmentNumber: number | null;
   installmentTotal: number | null;
+  /** reserva técnica: a quem pagar */
+  referrerId?: string | null;
 };
 
 export const CATEGORY_SALE = "Contrato — venda";
 export const CATEGORY_FINANCING_FEE = "Taxa de financiamento";
 export const CATEGORY_CARD_FEE = "Taxa de cartão";
 export const CATEGORY_COMMISSION = "Comissão de venda";
+export const CATEGORY_TECHNICAL_RESERVE = "Reserva técnica";
 
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -107,15 +110,17 @@ export function planFinance(q: QuoteForFinance, today: string): PlannedEntry[] {
 
   for (const c of q.commissions) {
     if (c.amount > 0) {
+      const rt = c.role === "INDICADOR";
       out.push({
         type: "DESPESA",
-        category: CATEGORY_COMMISSION,
+        category: rt ? CATEGORY_TECHNICAL_RESERVE : CATEGORY_COMMISSION,
         amount: r2(c.amount),
         dueDay: firstDue,
-        description: `${ref} — comissão ${c.name} (${String(c.percent).replace(".", ",")}%)`,
-        method: "Comissão",
+        description: `${ref} — ${rt ? "reserva técnica" : "comissão"} ${c.name} (${String(c.percent).replace(".", ",")}%)`,
+        method: rt ? "Reserva técnica" : "Comissão",
         installmentNumber: null,
         installmentTotal: null,
+        referrerId: rt ? c.referrerId ?? null : null,
       });
     }
   }

@@ -83,3 +83,21 @@ test("entrada cobrindo o total: só a entrada; versão aparece na descrição", 
   assert.equal(p[0].amount, 1000);
   assert.equal(p[0].description, "Orçamento ORC-00007 v2 — entrada");
 });
+
+test("reserva técnica do indicador vira conta a pagar própria, ligada ao indicador", () => {
+  const p = planFinance(
+    q({ method: "PIX" }, { commissions: [{ name: "Ana", percent: 3, amount: 30 }, { name: "Arq. Paula", percent: 10, amount: 100, role: "INDICADOR", referrerId: "ref1" }] }),
+    "2026-09-26"
+  );
+  const rt = p.find((x) => x.category === "Reserva técnica");
+  assert.ok(rt);
+  assert.equal(rt!.amount, 100);
+  assert.equal(rt!.referrerId, "ref1");
+  assert.equal(rt!.description, "Orçamento ORC-00007 — reserva técnica Arq. Paula (10%)");
+  assert.equal(p.find((x) => x.category === "Comissão de venda")!.referrerId, null);
+});
+
+test("DRE classifica a reserva técnica como despesa de vendas", async () => {
+  const { classifyDreLine } = await import("../src/modules/finance/dre.service");
+  assert.equal(classifyDreLine("DESPESA", "Reserva técnica"), "DESPESA_VENDAS");
+});

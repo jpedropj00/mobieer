@@ -257,6 +257,7 @@ model Organization {
   chatChannels           ChatChannel[]
   installationTasks      InstallationTask[]
   workOrders             InstallationWorkOrder[]
+  referrers              Referrer[]
   contractorBonuses      ContractorBonus[]
   bonusPolicy            BonusPolicy?
   integrationTokens      IntegrationToken[]
@@ -1493,6 +1494,30 @@ enum CommercialInteractionType {
   OTHER
 }
 
+/// Indicador da venda (arquiteto, designer, corretor, parceiro): recebe a
+/// reserva técnica (RT) quando o cliente fecha.
+model Referrer {
+  id                String                      @id @default(cuid())
+  organizationId    String
+  organization      Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name              String
+  kind              String                      @default("ARQUITETO") // ARQUITETO | DESIGNER | CORRETOR | CONSTRUTORA | PARCEIRO | OUTRO
+  document          String?
+  phone             String?
+  email             String?
+  pixKey            String?
+  defaultRtPercent  Decimal                     @default(0) @db.Decimal(5, 2)
+  notes             String?                     @db.Text
+  active            Boolean                     @default(true)
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  quotes            CommercialQuote[]
+  quoteCommissions  CommercialQuoteCommission[]
+  financeEntries    FinanceTransaction[]
+
+  @@index([organizationId, active])
+}
+
 enum QuoteApproval {
   NOT_REQUIRED
   PENDING
@@ -1510,6 +1535,9 @@ model CommercialQuoteCommission {
   quote   CommercialQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   userId  String?
   user    User?           @relation("QuoteCommissionUser", fields: [userId], references: [id], onDelete: SetNull)
+  // indicador (arquiteto/parceiro) quando a linha é a reserva técnica
+  referrerId String?
+  referrer   Referrer?    @relation(fields: [referrerId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
   @@index([userId])
@@ -1765,6 +1793,8 @@ model CommercialQuote {
   sellerId       String
   seller         User                   @relation("QuoteSeller", fields: [sellerId], references: [id])
   commissions    CommercialQuoteCommission[]
+  referrerId     String?
+  referrer       Referrer?              @relation(fields: [referrerId], references: [id], onDelete: SetNull)
   financeTransactions FinanceTransaction[]
   parentId       String?
   parent         CommercialQuote?       @relation("QuoteVersions", fields: [parentId], references: [id], onDelete: SetNull)
@@ -2406,6 +2436,9 @@ model FinanceTransaction {
   // gerado pelo aceite de um orçamento (parcelas, taxas e comissões)
   originQuoteId       String?
   originQuote         CommercialQuote?       @relation(fields: [originQuoteId], references: [id], onDelete: SetNull)
+  // reserva técnica a pagar ao indicador
+  referrerId          String?
+  referrer            Referrer?              @relation(fields: [referrerId], references: [id], onDelete: SetNull)
 
   projectId     String?
   project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -2456,6 +2489,7 @@ model FinanceTransaction {
   @@index([projectId])
   @@index([supplierId])
   @@index([clientId])
+  @@index([referrerId])
   @@index([originQuoteId])
 }
 

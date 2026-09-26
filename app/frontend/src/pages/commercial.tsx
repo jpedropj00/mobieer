@@ -20,6 +20,7 @@ import { apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { QuotesTab } from "@/pages/quotes";
+import { ReferrersTab } from "@/components/referrers-tab";
 import { errorMessage, formatCurrency } from "@/lib/utils";
 import type { CommercialLead, Opportunity, PipelineSummary, SalesStage } from "@/types";
 
@@ -149,6 +150,7 @@ export function CommercialPage() {
         <TabsList>
           <TabsTrigger value="funil">Funil ({oppList.length})</TabsTrigger>
           <TabsTrigger value="orcamentos">Orçamentos</TabsTrigger>
+          <TabsTrigger value="indicadores">Indicadores e RT</TabsTrigger>
           <TabsTrigger value="leads">Leads ({leadList.filter((l) => l.status !== "CONVERTED").length})</TabsTrigger>
           <TabsTrigger value="conversao">Conversão</TabsTrigger>
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
@@ -202,6 +204,9 @@ export function CommercialPage() {
 
         <TabsContent value="orcamentos">
           <QuotesTab />
+        </TabsContent>
+        <TabsContent value="indicadores">
+          <ReferrersTab />
         </TabsContent>
 
         {/* ---- Leads ---- */}

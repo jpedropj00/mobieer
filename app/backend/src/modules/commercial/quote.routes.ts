@@ -43,7 +43,7 @@ const calcSchema = z.object({
     .max(200),
   markup: z.coerce.number().positive().max(20),
   commissions: z
-    .array(z.object({ userId: z.string().optional().nullable(), name: z.string().trim().min(1).max(120), role: z.string().trim().min(1).max(40), percent: z.coerce.number().min(0).max(50) }))
+    .array(z.object({ userId: z.string().optional().nullable(), referrerId: z.string().optional().nullable(), name: z.string().trim().min(1).max(120), role: z.string().trim().min(1).max(40), percent: z.coerce.number().min(0).max(50) }))
     .max(10)
     .default([]),
   discount: money.optional(),
@@ -62,6 +62,7 @@ const quoteSchema = calcSchema.extend({
   clientId: z.string().min(1, "Escolha o cliente"),
   opportunityId: z.string().optional().nullable(),
   projectId: z.string().optional().nullable(),
+  referrerId: z.string().optional().nullable(),
   validUntil: z.coerce.date().optional().nullable(),
   paymentTerms: text(500),
   notes: text(4000),
@@ -88,7 +89,11 @@ async function findQuote(req: Request, id: string) {
 }
 
 /** Cliente, oportunidade e projeto precisam ser da organização (e o projeto, do cliente). */
-async function checkRefs(orgId: string, input: { clientId: string; opportunityId?: string | null; projectId?: string | null }) {
+async function checkRefs(orgId: string, input: { clientId: string; opportunityId?: string | null; projectId?: string | null; referrerId?: string | null; commissions?: { referrerId?: string | null }[] }) {
+  const refIds = [...new Set([input.referrerId, ...(input.commissions ?? []).map((c) => c.referrerId)].filter((x): x is string => Boolean(x)))];
+  if (refIds.length && (await prisma.referrer.count({ where: { id: { in: refIds }, organizationId: orgId } })) !== refIds.length) {
+    throw new BadRequestError("Indicador inválido");
+  }
   const [client, opp, project] = await Promise.all([
     prisma.client.findFirst({ where: { id: input.clientId, organizationId: orgId }, select: { id: true } }),
     input.opportunityId ? prisma.commercialOpportunity.findFirst({ where: { id: input.opportunityId, organizationId: orgId }, select: { id: true, clientId: true } }) : null,
@@ -259,6 +264,7 @@ router.post(
         clientId: input.clientId,
         opportunityId: input.opportunityId || null,
         projectId: input.projectId || null,
+        referrerId: input.referrerId || null,
         sellerId: req.user!.id,
         validUntil: input.validUntil ?? new Date(now.getTime() + config.validityDays * DAY),
         paymentTerms: input.paymentTerms || null,
@@ -300,6 +306,7 @@ router.put(
           clientId: input.clientId,
           opportunityId: input.opportunityId || null,
           projectId: input.projectId || null,
+          referrerId: input.referrerId || null,
           validUntil: input.validUntil ?? cur.validUntil,
           paymentTerms: input.paymentTerms || null,
           notes: input.notes || null,
@@ -345,6 +352,7 @@ router.post(
         clientId: cur.clientId,
         opportunityId: cur.opportunityId,
         projectId: cur.projectId,
+        referrerId: cur.referrerId,
         sellerId: cur.sellerId,
         validUntil: new Date(Date.now() + config.validityDays * DAY),
         paymentTerms: cur.paymentTerms,
@@ -470,6 +478,7 @@ async function generateFinance(tx: Tx, q: ReturnType<typeof serializeQuote> & { 
       installmentNumber: e.installmentNumber,
       installmentTotal: e.installmentTotal,
       originQuoteId: q.id,
+      referrerId: e.referrerId ?? null,
       originOpportunityId: q.opportunity?.id ?? null,
       clientId: q.client.id,
       projectId: q.project?.id ?? null,

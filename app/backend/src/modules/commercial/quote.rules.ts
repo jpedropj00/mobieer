@@ -57,7 +57,10 @@ export const DEFAULT_PRICING: PricingConfig = {
 export const MAX_COMMISSION_PERCENT = 50;
 
 export type QuoteItemInput = { room?: string | null; description: string; quantity?: number; unitCost: number };
-export type CommissionInput = { userId?: string | null; name: string; role: string; percent: number };
+/** Papel da linha de comissão que é a reserva técnica do indicador (arquiteto/parceiro). */
+export const REFERRER_ROLE = "INDICADOR";
+
+export type CommissionInput = { userId?: string | null; referrerId?: string | null; name: string; role: string; percent: number };
 export type PaymentInput = {
   method: PaymentMethod;
   planId?: string | null;
@@ -103,7 +106,7 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
 
   const commissions = input.commissions
     .filter((c) => pos(c.percent) > 0)
-    .map((c) => ({ userId: c.userId ?? null, name: c.name.trim(), role: c.role, percent: r2(c.percent), amount: r2((total * c.percent) / 100) }));
+    .map((c) => ({ userId: c.userId ?? null, referrerId: c.referrerId ?? null, name: c.name.trim(), role: c.role, percent: r2(c.percent), amount: r2((total * c.percent) / 100) }));
   const commissionTotal = r2(commissions.reduce((s, c) => s + c.amount, 0));
 
   // Pagamento: entrada + o restante no plano escolhido.
