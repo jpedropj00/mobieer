@@ -41,6 +41,11 @@ export function serializeQuote(q: QuoteRow) {
     validUntil: q.validUntil,
     sentAt: q.sentAt,
     approvedAt: q.approvedAt,
+    kind: q.kind,
+    parentId: q.parentId,
+    competenceDate: q.competenceDate,
+    cancelledAt: q.cancelledAt,
+    cancelReason: q.cancelReason,
     notes: q.notes,
     paymentTerms: q.paymentTerms,
     client: q.client,
@@ -133,7 +138,8 @@ export function calcToData(c: QuoteCalc) {
 /** Próximo número ORC-00001 da organização (as versões repetem o número). */
 export async function nextQuoteNumber(organizationId: string) {
   const last = await prisma.commercialQuote.findFirst({
-    where: { organizationId, number: { startsWith: "ORC-" } },
+    // adendo reaproveita o número do contrato (ORC-00001-A1): não entra na sequência
+    where: { organizationId, number: { startsWith: "ORC-" }, kind: "PADRAO" },
     orderBy: { number: "desc" },
     select: { number: true },
   });

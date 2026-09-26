@@ -57,6 +57,10 @@ type Quote = {
   score: number | null;
   approval: { status: Approval; decidedBy: { name: string } | null; decidedAt: string | null; note: string | null };
   finance?: FinanceEntry[];
+  kind?: "PADRAO" | "ADENDO";
+  parentId?: string | null;
+  competenceDate?: string | null;
+  cancelReason?: string | null;
 };
 type FinanceEntry = { id: string; type: "RECEITA" | "DESPESA"; category: string; amount: number; dueDate: string; status: string; description: string | null };
 type PlannedEntry = { type: "RECEITA" | "DESPESA"; category: string; amount: number; dueDay: string; description: string };
@@ -171,6 +175,7 @@ export function QuotesTab() {
                       <Link to={`/comercial/orcamentos/${r.id}`} className="font-medium hover:underline">
                         {r.number}{r.version > 1 ? ` v${r.version}` : ""}
                       </Link>
+                      {r.kind === "ADENDO" && <Badge variant="muted" className="ml-2">adendo</Badge>}
                     </TableCell>
                     <TableCell>{r.client.name}</TableCell>
                     <TableCell className="text-right">{formatCurrency(r.total)}</TableCell>
@@ -245,8 +250,9 @@ function fromQuote(q: Quote): Form {
   };
 }
 
-function toPayload(f: Form, roleLabel: (role: string) => string) {
+function toPayload(f: Form, roleLabel: (role: string) => string, addendumOf?: string | null) {
   return {
+    addendumOf: addendumOf || null,
     clientId: f.clientId,
     opportunityId: f.opportunityId || null,
     projectId: f.projectId || null,
@@ -355,8 +361,8 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
 
   // cálculo ao vivo pelo backend (a regra fica num lugar só)
   const payload = useMemo(
-    () => toPayload(form, (role) => config.commissionRoles.find((r) => r.role === role)?.label ?? role),
-    [form, config.commissionRoles]
+    () => toPayload(form, (role) => config.commissionRoles.find((r) => r.role === role)?.label ?? role, quote ? null : params.get("addendumOf")),
+    [form, config.commissionRoles, quote, params]
   );
   const calcBody = useDebounced(
     { items: payload.items, markup: payload.markup, commissions: payload.commissions, discount: payload.discount, freight: payload.freight, otherCosts: payload.otherCosts, payment: payload.payment },
@@ -405,9 +411,21 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
         </div>
       </div>
 
+      {!quote && params.get("addendumOf") && (
+        <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+          Adendo de contrato: inclua só o que foi acrescentado. Ao ser aceito, lança no financeiro apenas o valor do adendo.
+        </p>
+      )}
+      {quote?.status === "CANCELLED" && quote.cancelReason && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">Cancelado: {quote.cancelReason}</p>
+      )}
       {quote && (
         <div className="flex flex-wrap items-center gap-2">
+          {quote.kind === "ADENDO" && <Badge variant="muted">Adendo</Badge>}
           <Badge variant="secondary">{STATUS_LABEL[quote.status]}</Badge>
+          {quote.status === "APPROVED" && quote.competenceDate && (
+            <span className="text-xs text-muted-foreground">competência {dayBR(quote.competenceDate)}</span>
+          )}
           <ApprovalBadge status={quote.approval.status} />
           {quote.approval.decidedBy && (
             <span className="text-xs text-muted-foreground">
@@ -713,13 +731,14 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
   const navigate = useNavigate();
   const [deciding, setDeciding] = useState<"APPROVE" | "REJECT" | null>(null);
   const [accepting, setAccepting] = useState(false);
+  const [competence, setCompetence] = useState<string | null>(null);
   const [withFinance, setWithFinance] = useState(true);
   const [note, setNote] = useState("");
   const released = quote.approval.status === "NOT_REQUIRED" || quote.approval.status === "APPROVED";
   const manage = can("commercial.quotes.manage");
 
   const run = useMutation({
-    mutationFn: async (action: "pdf" | "sent" | "accepted" | "rejected" | "version" | "delete" | "decide") => {
+    mutationFn: async (action: "pdf" | "sent" | "accepted" | "rejected" | "version" | "delete" | "decide" | "cancelContract" | "reactivate" | "competence") => {
       const base = `/commercial/quotes/${quote.id}`;
       if (action === "pdf") {
         const r = await apiPost<{ data: { downloadUrl: string }; message: string }>(`${base}/pdf`);
@@ -733,6 +752,17 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
         return r.message;
       }
       if (action === "rejected") return (await apiPatch<{ message: string }>(`${base}/status`, { status: "REJECTED" })).message;
+      if (action === "cancelContract") {
+        const reason = prompt("Motivo do cancelamento do contrato:");
+        if (!reason?.trim()) throw new Error("Cancelamento não feito: informe o motivo");
+        return (await apiPatch<{ message: string }>(`${base}/status`, { status: "CANCELLED", reason: reason.trim() })).message;
+      }
+      if (action === "reactivate") return (await apiPatch<{ message: string }>(`${base}/status`, { status: "DRAFT" })).message;
+      if (action === "competence") {
+        const r = await apiPost<{ message: string }>(`${base}/competence`, { date: competence });
+        setCompetence(null);
+        return r.message;
+      }
       if (action === "version") {
         const r = await apiPost<{ data: Quote; message: string }>(`${base}/version`);
         navigate(`/comercial/orcamentos/${r.data.id}`);
@@ -780,7 +810,23 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
                 <Button size="sm" variant="outline" className="text-destructive" disabled={run.isPending} onClick={() => run.mutate("rejected")}>Cliente recusou</Button>
               </div>
             )}
-            <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate("version")}><Copy className="mr-1 h-4 w-4" /> Nova versão</Button>
+            <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate("version")}>
+              <Copy className="mr-1 h-4 w-4" /> {quote.status === "APPROVED" ? "Alterar contrato (nova versão)" : "Nova versão"}
+            </Button>
+            {quote.status === "APPROVED" && quote.kind !== "ADENDO" && (
+              <Button size="sm" variant="outline" onClick={() => navigate(`/comercial/orcamentos/novo?clientId=${quote.client.id}&addendumOf=${quote.id}${quote.opportunity ? `&opportunityId=${quote.opportunity.id}` : ""}`)}>
+                <Plus className="mr-1 h-4 w-4" /> Adendo
+              </Button>
+            )}
+            {quote.status === "APPROVED" && can("commercial.manage") && (
+              <Button size="sm" variant="outline" onClick={() => setCompetence((quote.competenceDate ?? new Date().toISOString()).slice(0, 10))}>Transferir competência</Button>
+            )}
+            {quote.status === "APPROVED" && (
+              <Button size="sm" variant="ghost" className="text-destructive" disabled={run.isPending} onClick={() => run.mutate("cancelContract")}>Cancelar contrato</Button>
+            )}
+            {quote.status === "CANCELLED" && (
+              <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate("reactivate")}>Reativar (volta a rascunho)</Button>
+            )}
             {quote.status === "DRAFT" && (
               <Button size="sm" variant="ghost" className="text-destructive" disabled={run.isPending} onClick={() => confirm("Excluir este rascunho?") && run.mutate("delete")}>
                 <Trash2 className="mr-1 h-4 w-4" /> Excluir rascunho
@@ -790,6 +836,19 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
         )}
       </CardContent>
 
+      {competence !== null && (
+        <Dialog open onOpenChange={(v) => !v && setCompetence(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader><DialogTitle>Transferir competência</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">Muda o mês da venda para comissões e DRE. Os vencimentos não mudam.</p>
+            <Input type="date" value={competence} onChange={(e) => setCompetence(e.target.value)} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCompetence(null)}>Cancelar</Button>
+              <Button disabled={!competence || run.isPending} onClick={() => run.mutate("competence")}>Transferir</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       {accepting && (
         <AcceptDialog quoteId={quote.id} withFinance={withFinance} setWithFinance={setWithFinance} pending={run.isPending} onConfirm={() => run.mutate("accepted")} onClose={() => setAccepting(false)} />
       )}

@@ -1757,6 +1757,12 @@ model CommercialQuote {
   notes          String?                @db.Text
   sentAt         DateTime?
   approvedAt     DateTime?
+  // contrato: PADRAO ou ADENDO (acréscimo a um contrato aceito, via parentId)
+  kind           String                 @default("PADRAO")
+  // mês da venda para comissão/DRE; nasce no aceite e pode ser transferido
+  competenceDate DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
   // Formação do preço (quote.rules.ts). Custos e comissões nunca saem no PDF.
   costTotal           Decimal       @default(0) @db.Decimal(14, 2)
   markup              Decimal       @default(1) @db.Decimal(8, 4)

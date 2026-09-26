@@ -63,6 +63,8 @@ const quoteSchema = calcSchema.extend({
   opportunityId: z.string().optional().nullable(),
   projectId: z.string().optional().nullable(),
   referrerId: z.string().optional().nullable(),
+  /** cria um adendo do contrato (orçamento aceito) informado */
+  addendumOf: z.string().optional().nullable(),
   validUntil: z.coerce.date().optional().nullable(),
   paymentTerms: text(500),
   notes: text(4000),
@@ -255,12 +257,24 @@ router.post(
     await checkRefs(req.user!.organizationId, input);
     const config = await loadPricing();
     const c = calc(input, config);
-    const number = await nextQuoteNumber(req.user!.organizationId);
+    // Adendo: acréscimo a um contrato aceito, do mesmo cliente, numerado ORC-xxxxx-A1, A2...
+    let parent: { id: string; number: string } | null = null;
+    if (input.addendumOf) {
+      const p = await findQuote(req, input.addendumOf);
+      if (p.status !== "APPROVED" || p.kind !== "PADRAO") throw new BadRequestError("Adendo só de contrato aceito pelo cliente");
+      if (p.clientId !== input.clientId) throw new BadRequestError("O adendo precisa ser do mesmo cliente do contrato");
+      parent = { id: p.id, number: p.number };
+    }
+    const number = parent
+      ? `${parent.number}-A${(await prisma.commercialQuote.count({ where: { organizationId: req.user!.organizationId, parentId: parent.id, kind: "ADENDO" } })) + 1}`
+      : await nextQuoteNumber(req.user!.organizationId);
     const now = new Date();
     const created = await prisma.commercialQuote.create({
       data: {
         organizationId: req.user!.organizationId,
         number,
+        kind: parent ? "ADENDO" : "PADRAO",
+        parentId: parent?.id ?? null,
         clientId: input.clientId,
         opportunityId: input.opportunityId || null,
         projectId: input.projectId || null,
@@ -348,7 +362,9 @@ router.post(
         organizationId: cur.organizationId,
         number: cur.number,
         version: (last?.version ?? cur.version) + 1,
-        parentId: cur.id,
+        kind: cur.kind,
+        // versão de adendo continua apontando para o contrato; a de contrato, para a versão anterior
+        parentId: cur.kind === "ADENDO" ? cur.parentId : cur.id,
         clientId: cur.clientId,
         opportunityId: cur.opportunityId,
         projectId: cur.projectId,
@@ -505,20 +521,47 @@ router.patch(
   "/:id/status",
   requirePermission("commercial.quotes.manage"),
   asyncHandler(async (req, res) => {
-    const { status, generateFinance: wantsFinance } = z
-      .object({ status: z.enum(["DRAFT", "SENT", "NEGOTIATION", "APPROVED", "REJECTED", "CANCELLED"]), generateFinance: z.boolean().default(true) })
+    const { status, generateFinance: wantsFinance, reason } = z
+      .object({
+        status: z.enum(["DRAFT", "SENT", "NEGOTIATION", "APPROVED", "REJECTED", "CANCELLED"]),
+        generateFinance: z.boolean().default(true),
+        reason: z.string().trim().max(500).optional().nullable(),
+      })
       .parse(req.body);
     const cur = await findQuote(req, req.params.id);
     if (status === "SENT" || status === "APPROVED") assertReleased(cur);
-    const data: Prisma.CommercialQuoteUpdateInput = { status };
-    if (status === "SENT" && !cur.sentAt) data.sentAt = new Date();
-    if (status === "APPROVED") data.approvedAt = new Date();
     const accepting = status === "APPROVED" && cur.status !== "APPROVED";
     const leaving = cur.status === "APPROVED" && status !== "APPROVED";
+    if (leaving && status === "CANCELLED" && !reason) throw new BadRequestError("Diga o motivo do cancelamento do contrato");
+    const data: Prisma.CommercialQuoteUpdateInput = { status };
+    if (status === "SENT" && !cur.sentAt) data.sentAt = new Date();
+    if (accepting) {
+      data.approvedAt = new Date();
+      data.competenceDate = new Date();
+      data.cancelledAt = null;
+      data.cancelReason = null;
+    }
+    if (status === "CANCELLED") {
+      data.cancelledAt = new Date();
+      data.cancelReason = reason || null;
+    }
     let finance: FinanceResult | null = null;
     let removed = 0;
+    let superseded: string[] = [];
     const updated = await prisma.$transaction(async (tx) => {
       if (leaving) removed = await removeFinance(tx, cur.id);
+      // Alteração de contrato = nova versão aceita: a versão aceita anterior sai de cena
+      if (accepting && cur.kind === "PADRAO") {
+        const older = await tx.commercialQuote.findMany({
+          where: { organizationId: cur.organizationId, number: cur.number, kind: "PADRAO", status: "APPROVED", id: { not: cur.id } },
+          select: { id: true, version: true },
+        });
+        for (const o of older) {
+          removed += await removeFinance(tx, o.id);
+          await tx.commercialQuote.update({ where: { id: o.id }, data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: `Substituída pela versão ${cur.version}` } });
+        }
+        superseded = older.map((o) => `v${o.version}`);
+      }
       const q = await tx.commercialQuote.update({ where: { id: cur.id }, data, include: quoteInclude });
       if (accepting) {
         // Cliente aceitou: a oportunidade passa a valer o total fechado.
@@ -527,16 +570,35 @@ router.patch(
       }
       return q;
     });
-    await audit(req.user!.id, "QUOTE_STATUS_CHANGED", cur.id, { from: cur.status, to: status, finance, removed });
+    await audit(req.user!.id, "QUOTE_STATUS_CHANGED", cur.id, { from: cur.status, to: status, finance, removed, superseded, reason });
     const f = finance as FinanceResult | null;
     const message = f
       ? f.skipped
         ? `Aceite registrado; financeiro não gerado: ${f.skipped}`
-        : `Aceite registrado — ${f.created} lançamento(s) no financeiro (${brl(f.receivable)} a receber)${f.replacedOpportunityEntry ? ", no lugar do recebível único da oportunidade" : ""}`
+        : `Aceite registrado — ${f.created} lançamento(s) no financeiro (${brl(f.receivable)} a receber)${f.replacedOpportunityEntry ? ", no lugar do recebível único da oportunidade" : ""}${superseded.length ? `; ${superseded.join(", ")} substituída(s)` : ""}`
       : removed
         ? `Situação atualizada — ${removed} lançamento(s) do aceite removidos do financeiro`
         : "Situação do orçamento atualizada";
     return ok(res, { ...serializeQuote(updated), finance: f }, message);
+  })
+);
+
+// POST /api/commercial/quotes/:id/competence { date } — transfere o mês da venda (comissões/DRE)
+router.post(
+  "/:id/competence",
+  requirePermission("commercial.manage"),
+  asyncHandler(async (req, res) => {
+    const { date } = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data no formato AAAA-MM-DD") }).parse(req.body);
+    const cur = await findQuote(req, req.params.id);
+    if (cur.status !== "APPROVED") throw new BadRequestError("Só contrato aceito tem competência");
+    const when = new Date(`${date}T12:00:00.000Z`);
+    const [, moved] = await prisma.$transaction([
+      prisma.commercialQuote.update({ where: { id: cur.id }, data: { competenceDate: when } }),
+      // competência (date) dos lançamentos do contrato; o vencimento não muda
+      prisma.financeTransaction.updateMany({ where: { originQuoteId: cur.id }, data: { date: when } }),
+    ]);
+    await audit(req.user!.id, "QUOTE_COMPETENCE_TRANSFERRED", cur.id, { from: cur.competenceDate ?? cur.approvedAt, to: date });
+    return ok(res, { competenceDate: when, moved: moved.count }, `Venda transferida para ${date.split("-").reverse().join("/")} — ${moved.count} lançamento(s) na nova competência`);
   })
 );
 
