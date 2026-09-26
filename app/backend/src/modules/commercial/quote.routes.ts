@@ -3,6 +3,7 @@
  * pontuação com liberação abaixo do mínimo e PDF com a assinatura de quem
  * vendeu. Quem não tem commercial.read.all vê só os próprios orçamentos.
  */
+import crypto from "node:crypto";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { Prisma, QuoteStatus } from "@prisma/client";
@@ -16,12 +17,15 @@ import { notifyUser, notifyUsersWithPermission } from "../../lib/notify";
 import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { brl } from "../templates/contract.service";
 import { PAYMENT_METHODS, QuoteRuleError, computeQuote, normalizePricing, type PricingConfig } from "./quote.rules";
+import { CATEGORY_SALE, planFinance } from "./quote.finance";
 import { PRICING_SETTING, calcToData, loadPricing, nextQuoteNumber, quoteInclude, quotePdf, serializeQuote } from "./quote.service";
 
 const router = Router();
 router.use(authenticate);
 
 const DAY = 86400000;
+/** Hoje no fuso da loja, como data de calendário. */
+const todayDay = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Fortaleza" });
 const money = z.coerce.number().min(0).max(100_000_000);
 const text = (max: number) => z.string().trim().max(max).optional().nullable();
 
@@ -216,7 +220,25 @@ router.get(
 router.get(
   "/:id",
   requirePermission("commercial.read"),
-  asyncHandler(async (req, res) => ok(res, serializeQuote(await findQuote(req, req.params.id))))
+  asyncHandler(async (req, res) => {
+    const q = await findQuote(req, req.params.id);
+    const finance = await prisma.financeTransaction.findMany({
+      where: { originQuoteId: q.id },
+      select: { id: true, type: true, category: true, amount: true, dueDate: true, status: true, description: true },
+      orderBy: [{ dueDate: "asc" }, { type: "desc" }],
+    });
+    return ok(res, { ...serializeQuote(q), finance: finance.map((f) => ({ ...f, amount: Number(f.amount) })) });
+  })
+);
+
+// GET /api/commercial/quotes/:id/finance-preview — o que o aceite vai lançar no financeiro
+router.get(
+  "/:id/finance-preview",
+  requirePermission("commercial.quotes.manage"),
+  asyncHandler(async (req, res) => {
+    const q = await findQuote(req, req.params.id);
+    return ok(res, planFinance(serializeQuote(q), todayDay()));
+  })
 );
 
 // POST /api/commercial/quotes
@@ -402,27 +424,110 @@ router.post(
   })
 );
 
-// PATCH /api/commercial/quotes/:id/status { status }
+const dayToDate = (day: string) => new Date(`${day}T00:00:00.000Z`);
+const D2 = (n: number) => new Prisma.Decimal(n.toFixed(2));
+
+type Tx = Prisma.TransactionClient;
+type FinanceResult = { created: number; receivable: number; replacedOpportunityEntry: boolean; skipped?: string };
+
+/**
+ * Aceite do cliente: gera parcelas, taxas e comissões no financeiro. Uma vez
+ * por orçamento. O recebível único criado quando a oportunidade foi ganha é
+ * trocado pelas parcelas se ainda não teve pagamento.
+ */
+async function generateFinance(tx: Tx, q: ReturnType<typeof serializeQuote> & { organizationId: string }, userId: string): Promise<FinanceResult> {
+  if (await tx.financeTransaction.findFirst({ where: { originQuoteId: q.id }, select: { id: true } })) {
+    return { created: 0, receivable: 0, replacedOpportunityEntry: false, skipped: "o financeiro deste orçamento já foi gerado" };
+  }
+  let replaced = false;
+  if (q.opportunity) {
+    const oppEntries = await tx.financeTransaction.findMany({
+      where: { originOpportunityId: q.opportunity.id, originQuoteId: null, type: "RECEITA" },
+      select: { id: true, status: true, paidAmount: true },
+    });
+    if (oppEntries.some((e) => e.status === "PAGO" || Number(e.paidAmount) > 0)) {
+      return { created: 0, receivable: 0, replacedOpportunityEntry: false, skipped: "a oportunidade já tem recebível com pagamento registrado — ajuste no financeiro" };
+    }
+    if (oppEntries.length) {
+      await tx.financeTransaction.deleteMany({ where: { id: { in: oppEntries.map((e) => e.id) } } });
+      replaced = true;
+    }
+  }
+  const plan = planFinance(q, todayDay());
+  const group = plan.filter((e) => e.installmentTotal).length ? crypto.randomUUID() : null;
+  await tx.financeTransaction.createMany({
+    data: plan.map((e) => ({
+      organizationId: q.organizationId,
+      type: e.type,
+      category: e.category,
+      amount: D2(e.amount),
+      date: dayToDate(todayDay()),
+      dueDate: dayToDate(e.dueDay),
+      description: e.description,
+      status: "PENDENTE" as const,
+      method: e.method,
+      installmentGroup: e.installmentTotal ? group : null,
+      installmentNumber: e.installmentNumber,
+      installmentTotal: e.installmentTotal,
+      originQuoteId: q.id,
+      originOpportunityId: q.opportunity?.id ?? null,
+      clientId: q.client.id,
+      projectId: q.project?.id ?? null,
+      purchaseRef: `${q.number}${q.version > 1 ? ` v${q.version}` : ""}`,
+      createdById: userId,
+    })),
+  });
+  const receivable = plan.filter((e) => e.type === "RECEITA" && e.category === CATEGORY_SALE).reduce((s, e) => s + e.amount, 0);
+  return { created: plan.length, receivable: Math.round(receivable * 100) / 100, replacedOpportunityEntry: replaced };
+}
+
+/** Desfaz o aceite: some com o que foi gerado, desde que nada tenha sido pago. */
+async function removeFinance(tx: Tx, quoteId: string) {
+  const rows = await tx.financeTransaction.findMany({ where: { originQuoteId: quoteId }, select: { id: true, status: true, paidAmount: true } });
+  if (rows.some((r) => r.status === "PAGO" || Number(r.paidAmount) > 0)) {
+    throw new BadRequestError("Há parcela com pagamento registrado no financeiro — estorne lá antes de desfazer o aceite");
+  }
+  await tx.financeTransaction.deleteMany({ where: { originQuoteId: quoteId } });
+  return rows.length;
+}
+
+// PATCH /api/commercial/quotes/:id/status { status, generateFinance? }
 router.patch(
   "/:id/status",
   requirePermission("commercial.quotes.manage"),
   asyncHandler(async (req, res) => {
-    const { status } = z.object({ status: z.enum(["DRAFT", "SENT", "NEGOTIATION", "APPROVED", "REJECTED", "CANCELLED"]) }).parse(req.body);
+    const { status, generateFinance: wantsFinance } = z
+      .object({ status: z.enum(["DRAFT", "SENT", "NEGOTIATION", "APPROVED", "REJECTED", "CANCELLED"]), generateFinance: z.boolean().default(true) })
+      .parse(req.body);
     const cur = await findQuote(req, req.params.id);
     if (status === "SENT" || status === "APPROVED") assertReleased(cur);
     const data: Prisma.CommercialQuoteUpdateInput = { status };
     if (status === "SENT" && !cur.sentAt) data.sentAt = new Date();
     if (status === "APPROVED") data.approvedAt = new Date();
+    const accepting = status === "APPROVED" && cur.status !== "APPROVED";
+    const leaving = cur.status === "APPROVED" && status !== "APPROVED";
+    let finance: FinanceResult | null = null;
+    let removed = 0;
     const updated = await prisma.$transaction(async (tx) => {
+      if (leaving) removed = await removeFinance(tx, cur.id);
       const q = await tx.commercialQuote.update({ where: { id: cur.id }, data, include: quoteInclude });
-      // Cliente aceitou: a oportunidade passa a valer o total fechado.
-      if (status === "APPROVED" && cur.opportunityId) {
-        await tx.commercialOpportunity.update({ where: { id: cur.opportunityId }, data: { estimatedValue: cur.total } });
+      if (accepting) {
+        // Cliente aceitou: a oportunidade passa a valer o total fechado.
+        if (cur.opportunityId) await tx.commercialOpportunity.update({ where: { id: cur.opportunityId }, data: { estimatedValue: cur.total } });
+        if (wantsFinance) finance = await generateFinance(tx, { ...serializeQuote(q), organizationId: cur.organizationId }, req.user!.id);
       }
       return q;
     });
-    await audit(req.user!.id, "QUOTE_STATUS_CHANGED", cur.id, { from: cur.status, to: status });
-    return ok(res, serializeQuote(updated), "Situação do orçamento atualizada");
+    await audit(req.user!.id, "QUOTE_STATUS_CHANGED", cur.id, { from: cur.status, to: status, finance, removed });
+    const f = finance as FinanceResult | null;
+    const message = f
+      ? f.skipped
+        ? `Aceite registrado; financeiro não gerado: ${f.skipped}`
+        : `Aceite registrado — ${f.created} lançamento(s) no financeiro (${brl(f.receivable)} a receber)${f.replacedOpportunityEntry ? ", no lugar do recebível único da oportunidade" : ""}`
+      : removed
+        ? `Situação atualizada — ${removed} lançamento(s) do aceite removidos do financeiro`
+        : "Situação do orçamento atualizada";
+    return ok(res, { ...serializeQuote(updated), finance: f }, message);
   })
 );
 

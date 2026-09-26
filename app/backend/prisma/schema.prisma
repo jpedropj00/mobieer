@@ -1757,6 +1757,7 @@ model CommercialQuote {
   sellerId       String
   seller         User                   @relation("QuoteSeller", fields: [sellerId], references: [id])
   commissions    CommercialQuoteCommission[]
+  financeTransactions FinanceTransaction[]
   parentId       String?
   parent         CommercialQuote?       @relation("QuoteVersions", fields: [parentId], references: [id], onDelete: SetNull)
   versions       CommercialQuote[]      @relation("QuoteVersions")
@@ -2390,6 +2391,9 @@ model FinanceTransaction {
   // origem automática (contrato/oportunidade ganha)
   originOpportunityId String?
   originOpportunity   CommercialOpportunity? @relation(fields: [originOpportunityId], references: [id], onDelete: SetNull)
+  // gerado pelo aceite de um orçamento (parcelas, taxas e comissões)
+  originQuoteId       String?
+  originQuote         CommercialQuote?       @relation(fields: [originQuoteId], references: [id], onDelete: SetNull)
 
   projectId     String?
   project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -2440,6 +2444,7 @@ model FinanceTransaction {
   @@index([projectId])
   @@index([supplierId])
   @@index([clientId])
+  @@index([originQuoteId])
 }
 
 // ---- Cartão de crédito (análise de gastos + fatura) ----

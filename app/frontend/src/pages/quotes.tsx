@@ -55,7 +55,12 @@ type Quote = {
   marginPercent: number | null;
   score: number | null;
   approval: { status: Approval; decidedBy: { name: string } | null; decidedAt: string | null; note: string | null };
+  finance?: FinanceEntry[];
 };
+type FinanceEntry = { id: string; type: "RECEITA" | "DESPESA"; category: string; amount: number; dueDate: string; status: string; description: string | null };
+type PlannedEntry = { type: "RECEITA" | "DESPESA"; category: string; amount: number; dueDay: string; description: string };
+// vencimento é data de calendário (meia-noite UTC): mostra o dia sem converter fuso
+const dayBR = (iso: string) => iso.slice(0, 10).split("-").reverse().join("/");
 
 type Calc = {
   items: { total: number; unitPrice: number }[];
@@ -566,6 +571,17 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
             </Button>
           )}
           {quote && <QuoteActions quote={quote} onChanged={invalidate} />}
+          {quote?.finance && quote.finance.length > 0 && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between py-3">
+                <CardTitle className="text-base">No financeiro</CardTitle>
+                {can("finance.read") && <Link to="/financeiro" className="text-xs text-primary hover:underline">abrir</Link>}
+              </CardHeader>
+              <CardContent>
+                <FinanceList rows={quote.finance.map((f) => ({ key: f.id, type: f.type, description: f.description, day: f.dueDate, amount: f.amount, status: f.status }))} />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
@@ -662,6 +678,8 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
   const { can } = useAuth();
   const navigate = useNavigate();
   const [deciding, setDeciding] = useState<"APPROVE" | "REJECT" | null>(null);
+  const [accepting, setAccepting] = useState(false);
+  const [withFinance, setWithFinance] = useState(true);
   const [note, setNote] = useState("");
   const released = quote.approval.status === "NOT_REQUIRED" || quote.approval.status === "APPROVED";
   const manage = can("commercial.quotes.manage");
@@ -675,7 +693,11 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
         return r.message;
       }
       if (action === "sent") return (await apiPatch<{ message: string }>(`${base}/status`, { status: "SENT" })).message;
-      if (action === "accepted") return (await apiPatch<{ message: string }>(`${base}/status`, { status: "APPROVED" })).message;
+      if (action === "accepted") {
+        const r = await apiPatch<{ message: string }>(`${base}/status`, { status: "APPROVED", generateFinance: withFinance });
+        setAccepting(false);
+        return r.message;
+      }
       if (action === "rejected") return (await apiPatch<{ message: string }>(`${base}/status`, { status: "REJECTED" })).message;
       if (action === "version") {
         const r = await apiPost<{ data: Quote; message: string }>(`${base}/version`);
@@ -720,7 +742,7 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
             )}
             {!["APPROVED", "REJECTED", "CANCELLED"].includes(quote.status) && (
               <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" variant="outline" className="text-success" disabled={!released || run.isPending} onClick={() => run.mutate("accepted")}>Cliente aceitou</Button>
+                <Button size="sm" variant="outline" className="text-success" disabled={!released || run.isPending} onClick={() => setAccepting(true)}>Cliente aceitou</Button>
                 <Button size="sm" variant="outline" className="text-destructive" disabled={run.isPending} onClick={() => run.mutate("rejected")}>Cliente recusou</Button>
               </div>
             )}
@@ -734,6 +756,10 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
         )}
       </CardContent>
 
+      {accepting && (
+        <AcceptDialog quoteId={quote.id} withFinance={withFinance} setWithFinance={setWithFinance} pending={run.isPending} onConfirm={() => run.mutate("accepted")} onClose={() => setAccepting(false)} />
+      )}
+
       <Dialog open={deciding !== null} onOpenChange={(o) => !o && setDeciding(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>{deciding === "APPROVE" ? "Liberar pontuação" : "Recusar liberação"}</DialogTitle></DialogHeader>
@@ -746,6 +772,47 @@ function QuoteActions({ quote, onChanged }: { quote: Quote; onChanged: () => voi
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+function AcceptDialog(props: { quoteId: string; withFinance: boolean; setWithFinance: (v: boolean) => void; pending: boolean; onConfirm: () => void; onClose: () => void }) {
+  const plan = useQuery({ queryKey: ["quote-finance-preview", props.quoteId], queryFn: () => apiGet<{ data: PlannedEntry[] }>(`/commercial/quotes/${props.quoteId}/finance-preview`) });
+  const rows = plan.data?.data ?? [];
+  return (
+    <Dialog open onOpenChange={(o) => !o && props.onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader><DialogTitle>Cliente aceitou o orçamento</DialogTitle></DialogHeader>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={props.withFinance} onChange={(e) => props.setWithFinance(e.target.checked)} />
+          Lançar parcelas, taxas e comissões no financeiro
+        </label>
+        {props.withFinance && (plan.isLoading ? <p className="text-sm text-muted-foreground">Calculando…</p> : <FinanceList rows={rows.map((r, i) => ({ key: String(i), type: r.type, description: r.description, day: r.dueDay, amount: r.amount }))} />)}
+        <p className="text-xs text-muted-foreground">Se a oportunidade já tinha o recebível único de quando foi ganha, ele é trocado por estas parcelas.</p>
+        <DialogFooter>
+          <Button variant="outline" onClick={props.onClose}>Cancelar</Button>
+          <Button disabled={props.pending} onClick={props.onConfirm}>Confirmar aceite</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FinanceList({ rows }: { rows: { key: string; type: "RECEITA" | "DESPESA"; description: string | null; day: string; amount: number; status?: string }[] }) {
+  if (!rows.length) return <p className="text-sm text-muted-foreground">Nada a lançar.</p>;
+  return (
+    <ul className="divide-y text-sm">
+      {rows.map((r) => (
+        <li key={r.key} className="flex items-center justify-between gap-3 py-1.5">
+          <span className="min-w-0">
+            <span className="block truncate">{r.description}</span>
+            <span className="text-xs text-muted-foreground">vence {dayBR(r.day)}{r.status ? ` · ${r.status === "PAGO" ? "pago" : "pendente"}` : ""}</span>
+          </span>
+          <span className={`shrink-0 font-medium ${r.type === "RECEITA" ? "text-success" : "text-destructive"}`}>
+            {r.type === "RECEITA" ? "+" : "-"} {formatCurrency(r.amount)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
