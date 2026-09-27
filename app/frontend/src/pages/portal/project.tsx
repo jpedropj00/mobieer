@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignaturePad } from "@/components/signature-pad";
+import { Project3DViewer } from "@/components/project-3d-viewer";
 import { errorMessage } from "@/lib/utils";
 import { portalApi, portalDownload, portalGet, portalObjectUrl, portalPost } from "@/services/portal-api";
 import { PortalApplianceSheet } from "./appliance-sheet";
@@ -48,6 +49,7 @@ type ProjectDetail = {
   dueAt: string | null;
   completedAt: string | null;
   feedbackFormUrl: string | null;
+  link3dUrl?: string | null;
   manager: { name: string } | null;
   technicalApproval: { status: string; approvedAt: string | null } | null;
   production: { stage: string; estimatedDeliveryAt: string | null; deliveredAt: string | null } | null;
@@ -227,6 +229,7 @@ export function PortalProjectPage() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
+          {p.link3dUrl && <TabsTrigger value="3d">Projeto 3D</TabsTrigger>}
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
@@ -295,6 +298,12 @@ export function PortalProjectPage() {
             }
           />
         </TabsContent>
+
+        {p.link3dUrl && (
+          <TabsContent value="3d" className="space-y-3">
+            <Project3DViewer url={p.link3dUrl} height="h-[70vh]" />
+          </TabsContent>
+        )}
 
         <TabsContent value="avaliacao" className="space-y-3">
           {p.feedbackFormUrl ? (

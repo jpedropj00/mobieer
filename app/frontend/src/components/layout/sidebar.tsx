@@ -12,6 +12,7 @@ import {
   Timer,
   Gauge,
   HandCoins,
+  MonitorPlay,
   HardHat,
   CalendarDays,
   ClipboardCheck,
@@ -68,6 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Dashboard", to: "/", icon: LayoutDashboard, permission: "dashboard.read", end: true },
       { label: "Painel da loja", to: "/painel-loja", icon: PieChart, anyPermission: ["finance.read", "commercial.read"] },
+      { label: "Central de operações", to: "/painel-operacao", icon: MonitorPlay, anyPermission: ["dashboard.read", "reports.read", "commercial.read.all"] },
       { label: "Pipeline da loja", to: "/pipeline", icon: GanttChartSquare, permission: "organization.read", hideForRoles: ["MONTADOR"] },
       { label: "Minha montagem", to: "/montador", icon: Timer, roles: ["MONTADOR"] },
       { label: "Chat", to: "/chat", icon: MessagesSquare, permission: "chat.use", badge: "chat" },

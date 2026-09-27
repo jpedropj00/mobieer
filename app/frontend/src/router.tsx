@@ -13,6 +13,7 @@ const CategoriesPage = lazy(() => import("@/pages/categories").then((m) => ({ de
 const SuppliersPage = lazy(() => import("@/pages/suppliers").then((m) => ({ default: m.SuppliersPage })));
 const PurchasesPage = lazy(() => import("@/pages/purchases").then((m) => ({ default: m.PurchasesPage })));
 const FinanceRequestsPage = lazy(() => import("@/components/finance-recurring").then((m) => ({ default: () => <m.FinanceRequestsPanel standalone /> })));
+const OperationPanelPage = lazy(() => import("@/pages/operation-panel").then((m) => ({ default: m.OperationPanelPage })));
 const QuoteEditorPage = lazy(() => import("@/pages/quotes").then((m) => ({ default: m.QuoteEditorPage })));
 const ProductivityPage = lazy(() => import("@/pages/productivity").then((m) => ({ default: m.ProductivityPage })));
 const AftersalesPage = lazy(() => import("@/pages/aftersales").then((m) => ({ default: m.AftersalesPage })));
@@ -113,6 +114,7 @@ export const router = createBrowserRouter([
           { path: "/fornecedores", element: <PermissionGate permission="suppliers.read"><SuppliersPage /></PermissionGate> },
           { path: "/compras", element: <PermissionGate permission="purchases.read"><PurchasesPage /></PermissionGate> },
           { path: "/produtividade", element: <ProductivityPage /> },
+          { path: "/painel-operacao", element: <OperationPanelPage /> },
           { path: "/solicitacoes-financeiras", element: <PermissionGate permission="finance.request"><FinanceRequestsPage /></PermissionGate> },
           { path: "/pos-venda", element: <PermissionGate permission="organization.read"><AftersalesPage /></PermissionGate> },
           { path: "/inventario", element: <PermissionGate permission="inventory.read"><InventoryPage /></PermissionGate> },

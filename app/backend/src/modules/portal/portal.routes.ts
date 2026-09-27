@@ -339,6 +339,7 @@ router.get(
         dueAt: true,
         completedAt: true,
         feedbackFormUrl: true,
+        link3dUrl: true,
         manager: { select: { name: true } },
         technicalApproval: { select: { status: true, approvedAt: true } },
         productionOrder: { select: { stage: true, estimatedDeliveryAt: true, deliveredAt: true } },

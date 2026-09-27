@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 import { useAuth } from "@/hooks/use-auth";
+import { Project3DViewer, canEmbed3d } from "@/components/project-3d-viewer";
 
 type Room = { id: string; name: string; roomType: string | null; notes: string | null; position: number };
 type ProjectInfo = {
@@ -199,6 +200,11 @@ function ProjectPeople({ project }: { project: ProjectInfo }) {
               </dd>
             </div>
           </dl>
+        )}
+        {!editando && project.link3dUrl && canEmbed3d(project.link3dUrl) && (
+          <div className="mt-4">
+            <Project3DViewer url={project.link3dUrl} height="h-[50vh]" />
+          </div>
         )}
       </CardContent>
     </Card>
