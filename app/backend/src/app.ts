@@ -84,7 +84,8 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: [...env.frontendUrls, "https://mobieer.vercel.app", /^http:\/\/localhost:\d+$/],
+      // domínio oficial fixo aqui também: se FRONTEND_URLS ficar desatualizado, o site não perde a API
+      origin: [...env.frontendUrls, "https://mobieerprojetos.com.br", "https://www.mobieerprojetos.com.br", "https://mobieer.vercel.app", /^http:\/\/localhost:\d+$/],
       credentials: true,
     })
   );
