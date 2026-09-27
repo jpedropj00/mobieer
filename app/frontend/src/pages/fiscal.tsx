@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, FileText, Loader2, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, Ban, FileCode2, FileText, FileUp, Loader2, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
-import { apiDelete, apiGet, apiPost } from "@/services/api";
+import { apiDelete, apiDownload, apiGet, apiPost } from "@/services/api";
+import { FiscalImportDialog, FiscalManualDialog } from "@/components/fiscal-import";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage } from "@/lib/utils";
 
@@ -31,6 +32,10 @@ type Invoice = {
   createdAt: string;
   project: { id: string; code: string; name: string } | null;
   client: { id: string; name: string } | null;
+  source: "EMITIDA" | "CONTABILIDADE";
+  direction: "SAIDA" | "ENTRADA";
+  series: string | null;
+  counterpartName: string | null;
 };
 type FiscalConfig = { configured: boolean; provider: string; environment: string };
 type ProjectLite = { id: string; code: string; name: string; client?: { id: string; name: string } | null };
@@ -61,6 +66,7 @@ export function FiscalPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["fiscal", "list"] });
 
   const [open, setOpen] = useState(false);
+  const [importing, setImporting] = useState<"xml" | "pdf" | null>(null);
   const [form, setForm] = useState({ projectId: "", amount: "", description: "" });
 
   const create = useMutation({
@@ -83,6 +89,13 @@ export function FiscalPage() {
     onSuccess: () => invalidate(),
     onError: (e) => toast.error(errorMessage(e, "Falha ao atualizar")),
   });
+  const markCancelled = useMutation({
+    mutationFn: ({ id, why }: { id: string; why: string }) => apiPost(`/fiscal/${id}/cancel`, { justificativa: why }),
+    onSuccess: () => { toast.success("Nota marcada como cancelada"); invalidate(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao cancelar")),
+  });
+  const download = (inv: Invoice, kind: "xml" | "pdf") =>
+    apiDownload(`/fiscal/${inv.id}/file/${kind}`, `nota-${inv.number ?? inv.ref}.${kind}`).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")));
   const remove = useMutation({
     mutationFn: (id: string) => apiDelete(`/fiscal/${id}`),
     onSuccess: () => { toast.success("Removida"); invalidate(); },
@@ -95,11 +108,17 @@ export function FiscalPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Notas fiscais" description="Emissão de NF-e via provedor homologado.">
+      <PageHeader title="Notas fiscais" description="Emissão de NF-e via provedor homologado e registro das notas enviadas pela contabilidade.">
         {canManage && (
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nova nota
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setImporting("xml")}>
+              <FileUp className="mr-2 h-4 w-4" /> Notas da contabilidade
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setImporting("pdf")}>Só PDF</Button>
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nova nota
+            </Button>
+          </div>
         )}
       </PageHeader>
 
@@ -129,23 +148,45 @@ export function FiscalPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium">
-                      {inv.number ? `NF ${inv.number}` : inv.ref}
+                      {inv.number ? `${inv.kind === "NFSE" ? "NFS-e" : "NF"} ${inv.number}` : inv.ref}
+                      {inv.series ? ` · série ${inv.series}` : ""}
                       {inv.project ? ` · ${inv.project.code}` : ""}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {brl(inv.amount)}
-                      {inv.client ? ` · ${inv.client.name}` : ""} · {fmtDate(inv.createdAt)}
+                      {inv.client ? ` · ${inv.client.name}` : inv.counterpartName ? ` · ${inv.counterpartName}` : ""} · {fmtDate(inv.issuedAt ?? inv.createdAt)}
                     </p>
+                    {inv.source === "CONTABILIDADE" && (
+                      <div className="mt-1 flex gap-1">
+                        <Badge variant="secondary">contabilidade</Badge>
+                        <Badge variant="muted">{inv.direction === "SAIDA" ? "saída" : "entrada"}</Badge>
+                      </div>
+                    )}
                     {inv.description && <p className="mt-1 text-xs text-muted-foreground">{inv.description}</p>}
                     {inv.errorMessage && <p className="mt-1 text-xs text-destructive">{inv.errorMessage}</p>}
                   </div>
-                  <Badge variant={STATUS[inv.status].variant}>{STATUS[inv.status].label}</Badge>
+                  <Badge variant={STATUS[inv.status].variant}>{inv.source === "CONTABILIDADE" && inv.status === "ISSUED" ? "Registrada" : STATUS[inv.status].label}</Badge>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {inv.pdfUrl && (
-                    <a href={inv.pdfUrl} target="_blank" rel="noreferrer">
-                      <Button size="sm" variant="outline"><FileText className="mr-1 h-4 w-4" /> DANFE</Button>
-                    </a>
+                    <Button size="sm" variant="outline" onClick={() => void download(inv, "pdf")}><FileText className="mr-1 h-4 w-4" /> PDF</Button>
+                  )}
+                  {inv.xmlUrl && (
+                    <Button size="sm" variant="outline" onClick={() => void download(inv, "xml")}><FileCode2 className="mr-1 h-4 w-4" /> XML</Button>
+                  )}
+                  {canManage && inv.source === "CONTABILIDADE" && inv.status === "ISSUED" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={markCancelled.isPending}
+                      onClick={() => {
+                        const why = prompt("Motivo do cancelamento (mínimo 15 letras):");
+                        if (why && why.trim().length >= 15) markCancelled.mutate({ id: inv.id, why: why.trim() });
+                        else if (why) toast.error("Escreva pelo menos 15 caracteres");
+                      }}
+                    >
+                      <Ban className="mr-1 h-4 w-4" /> Marcar cancelada
+                    </Button>
                   )}
                   {canManage && (inv.status === "DRAFT" || inv.status === "ERROR") && (
                     <Button size="sm" disabled={issue.isPending} onClick={() => issue.mutate(inv.id)}>
@@ -157,8 +198,8 @@ export function FiscalPage() {
                       <RefreshCw className="mr-1 h-4 w-4" /> Atualizar
                     </Button>
                   )}
-                  {canManage && ["DRAFT", "ERROR", "REJECTED", "CANCELLED"].includes(inv.status) && (
-                    <Button size="sm" variant="ghost" className="text-destructive" disabled={remove.isPending} onClick={() => remove.mutate(inv.id)}>
+                  {canManage && (inv.source === "CONTABILIDADE" || ["DRAFT", "ERROR", "REJECTED", "CANCELLED"].includes(inv.status)) && (
+                    <Button size="sm" variant="ghost" className="text-destructive" disabled={remove.isPending} onClick={() => confirm("Remover esta nota do sistema?") && remove.mutate(inv.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
@@ -202,6 +243,8 @@ export function FiscalPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {importing === "xml" && <FiscalImportDialog onClose={() => setImporting(null)} onDone={invalidate} />}
+      {importing === "pdf" && <FiscalManualDialog onClose={() => setImporting(null)} onDone={invalidate} />}
     </div>
   );
 }

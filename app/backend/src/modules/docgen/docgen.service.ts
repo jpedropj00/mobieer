@@ -92,12 +92,15 @@ export async function storeGeneratedPdf(opts: {
   generatedFrom: string;
   title: string;
   fileName: string;
-  built: BuiltDocument;
+  /** Texto que vira PDF de contrato; ou o PDF já pronto em `buffer`. */
+  built?: BuiltDocument;
+  buffer?: Buffer;
   visibleToClient: boolean;
   uploadedById: string | null;
   replacesId?: string | null;
 }) {
-  const buffer = await contractPdf(opts.built);
+  if (!opts.buffer && !opts.built) throw new Error("storeGeneratedPdf: informe built ou buffer");
+  const buffer = opts.buffer ?? (await contractPdf(opts.built!));
   const checksum = sha256(buffer);
   const key = buildStorageKey(opts.projectId ? `projects/${opts.projectId}/generated` : `clients/${opts.clientId}/generated`, opts.fileName);
   await storage.put(key, buffer, "application/pdf");

@@ -20,13 +20,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, localIsoDate } from "@/lib/utils";
 import type { Contractor, ContractorShift, ContractorSummary } from "@/types";
 import { AccessDialog, BonusTab, InstallationsTab, ProductivityTab } from "@/components/contractors-management";
+import { ContractorDocumentsTab } from "@/components/contractor-documents";
+import { WorkOrdersTab } from "@/components/work-orders";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDateTime = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const hhmm = (min: number) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
 const isoDay = (d: Date) => localIsoDate(d);
 
-type ProjectRow = { id: string; name: string };
+type ProjectRow = { id: string; name: string; code?: string };
 
 const EMPTY_FORM = { name: "", document: "", phone: "", address: "", specialty: "", dailyRate: "", notes: "" };
 
@@ -192,8 +194,10 @@ export function ContractorsPage() {
           <TabsTrigger value="equipe">Equipe ({list.length})</TabsTrigger>
           <TabsTrigger value="turnos">Turnos ({shiftList.length})</TabsTrigger>
           <TabsTrigger value="comodos">Cômodos</TabsTrigger>
+          <TabsTrigger value="requisicoes">Requisições</TabsTrigger>
           <TabsTrigger value="produtividade">Produtividade</TabsTrigger>
           <TabsTrigger value="bonificacao">Bonificação</TabsTrigger>
+          <TabsTrigger value="documentos">Documentos</TabsTrigger>
           <TabsTrigger value="fechamento">Fechamento</TabsTrigger>
         </TabsList>
 
@@ -317,6 +321,14 @@ export function ContractorsPage() {
         <TabsContent value="bonificacao" className="space-y-4 pt-4">
           <PeriodPicker range={range} setRange={setRange} />
           <BonusTab canManage={canManage} range={range} />
+        </TabsContent>
+
+        <TabsContent value="documentos" className="space-y-4 pt-4">
+          <ContractorDocumentsTab contractors={list} canManage={canManage} />
+        </TabsContent>
+
+        <TabsContent value="requisicoes" className="pt-4">
+          <WorkOrdersTab contractors={list} projects={projects.data?.data ?? []} />
         </TabsContent>
 
         <TabsContent value="fechamento" className="space-y-4 pt-4">

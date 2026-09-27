@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
-import { Building2, KeyRound, Loader2, ShieldCheck, UserCircle } from "lucide-react";
+import { Building2, KeyRound, Loader2, PenLine, ShieldCheck, UserCircle } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiPut } from "@/services/api";
 import { initials } from "@/lib/utils";
@@ -18,6 +18,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/hooks/use-auth";
 import { AutomationsSettings } from "@/components/settings-automations";
+import { SignaturePad } from "@/components/signature-pad";
+import { SecuritySettings } from "@/components/settings-security";
 import { IntegrationsSettings } from "@/components/settings-integrations";
 
 const passwordSchema = z.object({
@@ -41,7 +43,7 @@ const settingsSchema = z.object({
 type SettingsValues = z.infer<typeof settingsSchema>;
 
 function AccountTab() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
 
   const form = useForm<PasswordValues>({ resolver: zodResolver(passwordSchema), defaultValues: { currentPassword: "", newPassword: "", confirmPassword: "" } });
 
@@ -89,6 +91,8 @@ function AccountTab() {
           </div>
         </CardContent>
       </Card>
+
+      {can("commercial.quotes.manage") && <SignatureCard />}
 
       <Card>
         <CardHeader>
@@ -211,6 +215,53 @@ function SystemTab() {
   );
 }
 
+/** Assinatura que sai no PDF do orçamento, acima do nome de quem vendeu. */
+function SignatureCard() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["me", "signature"], queryFn: () => apiGet<{ data: { signatureImage: string | null } }>("/auth/me/signature") });
+  const [drawing, setDrawing] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const saved = q.data?.data.signatureImage ?? null;
+  const save = useMutation({
+    mutationFn: (signatureImage: string | null) => apiPut<{ message: string }>("/auth/me/signature", { signatureImage }),
+    onSuccess: (r) => {
+      toast.success(r.message);
+      setEditing(false);
+      setDrawing(null);
+      qc.invalidateQueries({ queryKey: ["me", "signature"] });
+    },
+    onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao salvar a assinatura"),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <PenLine className="h-5 w-5 text-primary" /> Assinatura nos orçamentos
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p className="text-muted-foreground">Sai no PDF do orçamento, acima do seu nome.</p>
+        {saved && !editing ? (
+          <div className="flex flex-wrap items-center gap-4">
+            <img src={saved} alt="Sua assinatura" className="h-20 rounded border border-border bg-white p-1" />
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Refazer</Button>
+            <Button variant="ghost" size="sm" className="text-destructive" disabled={save.isPending} onClick={() => save.mutate(null)}>Remover</Button>
+          </div>
+        ) : (
+          <div className="max-w-md space-y-2">
+            <SignaturePad onChange={setDrawing} height={150} />
+            <div className="flex gap-2">
+              <Button size="sm" disabled={!drawing || save.isPending} onClick={() => save.mutate(drawing)}>Salvar assinatura</Button>
+              {saved && <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancelar</Button>}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const { can } = useAuth();
 
@@ -224,6 +275,7 @@ export function SettingsPage() {
           {can("settings.manage") && <TabsTrigger value="system">Sistema</TabsTrigger>}
           {can("settings.manage") && <TabsTrigger value="mensagens">Mensagens automáticas</TabsTrigger>}
           {can("settings.manage") && <TabsTrigger value="integracoes">Integrações</TabsTrigger>}
+          {can("settings.manage") && <TabsTrigger value="seguranca">Segurança</TabsTrigger>}
         </TabsList>
         <TabsContent value="account">
           <AccountTab />
@@ -235,6 +287,9 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="integracoes">
               <IntegrationsSettings />
+            </TabsContent>
+            <TabsContent value="seguranca">
+              <SecuritySettings />
             </TabsContent>
             <TabsContent value="system">
               <SystemTab />

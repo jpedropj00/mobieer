@@ -38,8 +38,12 @@ import {
 import { deliveryEstimateFor } from "../production/leadtime.service";
 import { briefingAnswersSchema, briefingForLead, saveBriefing } from "../briefing/briefing.service";
 import { isValidCpf, onlyDigits } from "../../utils/document";
-import { rateLimit } from "../../utils/rate-limit";
+import { LIMITS, rateLimit } from "../../utils/rate-limit";
 import { ConflictError, ForbiddenError } from "../../utils/ApiError";
+import { ensureTimeline } from "../timeline/timeline.routes";
+import { STAGE_LABEL as TIMELINE_LABEL } from "../timeline/timeline.service";
+import { clientTimeline } from "../timeline/timeline.portal";
+import { coverageState, type CoverageItem } from "../aftersales/aftersales.rules";
 
 const router = Router();
 
@@ -131,6 +135,7 @@ router.post(
 
 router.post(
   "/auth/forgot",
+  rateLimit({ name: "portal-forgot", ...LIMITS.passwordReset }),
   asyncHandler(async (req, res) => {
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const account = await prisma.clientAccount.findUnique({ where: { email: email.toLowerCase() } });
@@ -154,6 +159,7 @@ router.post(
 
 router.post(
   "/auth/reset",
+  rateLimit({ name: "portal-reset", ...LIMITS.passwordReset }),
   asyncHandler(async (req, res) => {
     const { token, password } = z.object({ token: z.string().min(10), password: passwordSchema }).parse(req.body);
     const account = await prisma.clientAccount.findUnique({ where: { resetToken: token } });
@@ -333,6 +339,7 @@ router.get(
         dueAt: true,
         completedAt: true,
         feedbackFormUrl: true,
+        link3dUrl: true,
         manager: { select: { name: true } },
         technicalApproval: { select: { status: true, approvedAt: true } },
         productionOrder: { select: { stage: true, estimatedDeliveryAt: true, deliveredAt: true } },
@@ -364,6 +371,7 @@ router.get(
         id: true, type: true, title: true, description: true, fileName: true, mimeType: true, sizeBytes: true,
         version: true, createdAt: true, requiresSignature: true, signerRoles: true, signatureStatus: true,
         signatures: { select: { role: true, signerName: true, signedAt: true } },
+        signedStorageKey: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -390,9 +398,10 @@ router.get(
         attachments: a.attachments.map((att) => ({ ...att, downloadUrl: `/api/portal/assistances/${a.id}/attachments/${att.id}/download` })),
         schedule: serializeSchedule(a),
       })),
-      documents: docs.map((d) => ({
+      documents: docs.map(({ signedStorageKey, ...d }) => ({
         ...d,
         downloadUrl: `/api/portal/documents/${d.id}/download`,
+        signedDownloadUrl: signedStorageKey ? `/api/portal/documents/${d.id}/download?signed=1` : null,
         clientSigned: d.signatures.some((s) => s.role === "CLIENTE"),
         canClientSign: d.requiresSignature && d.signerRoles.includes("CLIENTE") && !d.signatures.some((s) => s.role === "CLIENTE"),
       })),
@@ -436,11 +445,14 @@ router.get(
       where: { id: req.params.id, clientId: req.portal!.clientId, visibleToClient: true },
     });
     if (!doc) throw new NotFoundError("Documento não encontrado");
-    const signed = await storage.getSignedUrl(doc.storageKey, doc.fileName);
+    const wantsSigned = req.query.signed === "1" && Boolean(doc.signedStorageKey);
+    const key = wantsSigned ? doc.signedStorageKey! : doc.storageKey;
+    const name = wantsSigned ? doc.fileName.replace(/\.[^.]+$/, "") + "-assinado.pdf" : doc.fileName;
+    const signed = await storage.getSignedUrl(key, name);
     if (signed) return res.redirect(signed);
-    const stream = await storage.getStream(doc.storageKey);
-    res.setHeader("Content-Type", doc.mimeType);
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.fileName)}"`);
+    const stream = await storage.getStream(key);
+    res.setHeader("Content-Type", wantsSigned ? "application/pdf" : doc.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(name)}"`);
     return pipeToResponse(stream, res);
   })
 );
@@ -887,6 +899,69 @@ router.get(
     if (!order) return ok(res, null);
     const deliveryEstimate = await deliveryEstimateFor(order);
     return ok(res, { ...serializeProductionOrder(order), deliveryEstimate });
+  })
+);
+
+// GET /api/portal/projects/:id/timeline — §12: o fluxo do projeto visto pelo cliente
+router.get(
+  "/projects/:id/timeline",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    await ensureTimeline(project.id, project.organizationId);
+    const stages = await prisma.projectStage.findMany({
+      where: { projectId: project.id },
+      select: { key: true, status: true, plannedAt: true, startedAt: true, completedAt: true },
+    });
+    return ok(res, clientTimeline(stages, TIMELINE_LABEL));
+  })
+);
+
+// GET /api/portal/projects/:id/warranty — §35/§36/§38: garantia, certificado e revisões
+router.get(
+  "/projects/:id/warranty",
+  asyncHandler(async (req, res) => {
+    const project = await portalProject(req.params.id, req.portal!.clientId);
+    const [w, maintenances, inspection] = await Promise.all([
+      prisma.warranty.findUnique({ where: { projectId: project.id } }),
+      prisma.preventiveMaintenance.findMany({
+        where: { projectId: project.id, status: { not: "CANCELLED" } },
+        select: { id: true, label: true, dueAt: true, status: true, doneAt: true },
+        orderBy: { dueAt: "asc" },
+      }),
+      prisma.siteInspection.findFirst({
+        where: { projectId: project.id, status: "COMPLETED" },
+        orderBy: { completedAt: "desc" },
+        select: { inspectedAt: true, result: true, pendencias: true, reportDocumentId: true },
+      }),
+    ]);
+    const now = new Date();
+    // documento só aparece se estiver liberado ao cliente
+    const docs = await prisma.projectDocument.findMany({
+      where: { id: { in: [w?.certificateDocumentId, inspection?.reportDocumentId].filter((x): x is string => !!x) }, visibleToClient: true },
+      select: { id: true },
+    });
+    const visible = new Set(docs.map((d) => d.id));
+    return ok(res, {
+      inspection: inspection
+        ? {
+            inspectedAt: inspection.inspectedAt,
+            result: inspection.result,
+            pendencias: inspection.pendencias,
+            reportDocumentId: inspection.reportDocumentId && visible.has(inspection.reportDocumentId) ? inspection.reportDocumentId : null,
+          }
+        : null,
+      warranty: w
+        ? {
+            startsAt: w.startsAt,
+            endsAt: w.endsAt,
+            coverage: (w.coverage as unknown as CoverageItem[]).map((c) => coverageState(c, now)),
+            conditions: w.conditions,
+            exclusions: w.exclusions.split("\n"),
+            certificateDocumentId: w.certificateDocumentId && visible.has(w.certificateDocumentId) ? w.certificateDocumentId : null,
+          }
+        : null,
+      maintenances,
+    });
   })
 );
 

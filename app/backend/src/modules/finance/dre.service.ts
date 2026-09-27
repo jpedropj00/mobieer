@@ -86,7 +86,7 @@ export function classifyDreLine(type: "RECEITA" | "DESPESA" | string, category: 
     )
   )
     return "CUSTO";
-  if (has(c, "marketing", "publicidade", "propaganda", "comiss", "anuncio", "brinde", "evento", "feira", "frete de entrega", "frete de venda", "entrega", "montagem"))
+  if (has(c, "marketing", "publicidade", "propaganda", "comiss", "reserva tecnica", "anuncio", "brinde", "evento", "feira", "frete de entrega", "frete de venda", "entrega", "montagem"))
     return "DESPESA_VENDAS";
   if (
     has(

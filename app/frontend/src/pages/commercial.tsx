@@ -18,6 +18,10 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiGet, apiPatch, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { QuotesTab } from "@/pages/quotes";
+import { ReferrersTab } from "@/components/referrers-tab";
+import { TeamsTab } from "@/components/teams-tab";
 import { errorMessage, formatCurrency } from "@/lib/utils";
 import type { CommercialLead, Opportunity, PipelineSummary, SalesStage } from "@/types";
 
@@ -41,6 +45,8 @@ export function CommercialPage() {
   const { can } = useAuth();
   const canManage = can("commercial.manage");
   const canLeads = can("commercial.leads.manage");
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
 
   const stages = useQuery({ queryKey: ["commercial", "stages"], queryFn: () => apiGet<{ data: SalesStage[] }>("/commercial/stages") });
   const opps = useQuery({ queryKey: ["commercial", "opportunities"], queryFn: () => apiGet<{ data: Opportunity[] }>("/commercial/opportunities") });
@@ -141,9 +147,12 @@ export function CommercialPage() {
         </div>
       )}
 
-      <Tabs defaultValue="funil">
+      <Tabs value={params.get("aba") ?? "funil"} onValueChange={(v) => setParams(v === "funil" ? {} : { aba: v }, { replace: true })}>
         <TabsList>
           <TabsTrigger value="funil">Funil ({oppList.length})</TabsTrigger>
+          <TabsTrigger value="orcamentos">Orçamentos</TabsTrigger>
+          <TabsTrigger value="indicadores">Indicadores e RT</TabsTrigger>
+          <TabsTrigger value="equipes">Equipes e carteira</TabsTrigger>
           <TabsTrigger value="leads">Leads ({leadList.filter((l) => l.status !== "CONVERTED").length})</TabsTrigger>
           <TabsTrigger value="conversao">Conversão</TabsTrigger>
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
@@ -193,6 +202,16 @@ export function CommercialPage() {
               })}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="orcamentos">
+          <QuotesTab />
+        </TabsContent>
+        <TabsContent value="indicadores">
+          <ReferrersTab />
+        </TabsContent>
+        <TabsContent value="equipes">
+          <TeamsTab />
         </TabsContent>
 
         {/* ---- Leads ---- */}
@@ -475,6 +494,9 @@ export function CommercialPage() {
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" disabled={patchOpp.isPending || moveStage === active.stage.id} onClick={() => patchOpp.mutate({ stageId: moveStage })}>Mover</Button>
                     <Button size="sm" variant="outline" onClick={() => setDialog("interaction")}>Registrar interação</Button>
+                    {can("commercial.quotes.manage") && active.client && (
+                      <Button size="sm" variant="outline" onClick={() => navigate(`/comercial/orcamentos/novo?clientId=${active.client!.id}&opportunityId=${active.id}`)}>Novo orçamento</Button>
+                    )}
                     <Button size="sm" variant="outline" className="text-success" onClick={() => patchOpp.mutate({ action: "win" })}>Marcar ganho</Button>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { setLoseForm({ code: "SEM_RESPOSTA", note: "" }); setDialog("lose"); }}>Marcar perdido</Button>
                   </div>

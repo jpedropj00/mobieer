@@ -11,6 +11,12 @@ const ProductsPage = lazy(() => import("@/pages/products").then((m) => ({ defaul
 const ProductDetailPage = lazy(() => import("@/pages/product-detail").then((m) => ({ default: m.ProductDetailPage })));
 const CategoriesPage = lazy(() => import("@/pages/categories").then((m) => ({ default: m.CategoriesPage })));
 const SuppliersPage = lazy(() => import("@/pages/suppliers").then((m) => ({ default: m.SuppliersPage })));
+const PurchasesPage = lazy(() => import("@/pages/purchases").then((m) => ({ default: m.PurchasesPage })));
+const FinanceRequestsPage = lazy(() => import("@/components/finance-recurring").then((m) => ({ default: () => <m.FinanceRequestsPanel standalone /> })));
+const OperationPanelPage = lazy(() => import("@/pages/operation-panel").then((m) => ({ default: m.OperationPanelPage })));
+const QuoteEditorPage = lazy(() => import("@/pages/quotes").then((m) => ({ default: m.QuoteEditorPage })));
+const ProductivityPage = lazy(() => import("@/pages/productivity").then((m) => ({ default: m.ProductivityPage })));
+const AftersalesPage = lazy(() => import("@/pages/aftersales").then((m) => ({ default: m.AftersalesPage })));
 const StockEntryPage = lazy(() => import("@/pages/stock-entry").then((m) => ({ default: m.StockEntryPage })));
 const StockExitPage = lazy(() => import("@/pages/stock-exit").then((m) => ({ default: m.StockExitPage })));
 const MovementsPage = lazy(() => import("@/pages/movements").then((m) => ({ default: m.MovementsPage })));
@@ -42,6 +48,10 @@ const ProductionPage = lazy(() => import("@/pages/production").then((m) => ({ de
 const FactoryBoardPage = lazy(() => import("@/pages/production-items").then((m) => ({ default: m.FactoryBoardPage })));
 const HrPage = lazy(() => import("@/pages/hr").then((m) => ({ default: m.HrPage })));
 const CommercialPage = lazy(() => import("@/pages/commercial").then((m) => ({ default: m.CommercialPage })));
+const ForcePasswordChangePage = lazy(() => import("@/pages/password-pages").then((m) => ({ default: m.ForcePasswordChangePage })));
+const ForgotPasswordPage = lazy(() => import("@/pages/password-pages").then((m) => ({ default: m.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import("@/pages/password-pages").then((m) => ({ default: m.ResetPasswordPage })));
+const WorkOrderPublicPage = lazy(() => import("@/pages/work-order-public").then((m) => ({ default: m.WorkOrderPublicPage })));
 const ConfirmVisitPage = lazy(() => import("@/pages/confirm-visit").then((m) => ({ default: m.ConfirmVisitPage })));
 const PortalSignupPage = lazy(() => import("@/pages/portal/signup").then((m) => ({ default: m.PortalSignupPage })));
 const PortalBriefingPage = lazy(() => import("@/pages/portal/briefing").then((m) => ({ default: m.PortalBriefingPage })));
@@ -69,15 +79,21 @@ export const router = createBrowserRouter([
   // o briefing agora começa pelo cadastro curto no portal
   { path: "/briefing", element: <Navigate to="/portal/cadastro" replace /> },
   { path: "/confirmar-visita/:token", element: <LazyBoundary><ConfirmVisitPage /></LazyBoundary>, errorElement: <RouteError /> },
+  { path: "/os/:token", element: <LazyBoundary><WorkOrderPublicPage /></LazyBoundary>, errorElement: <RouteError /> },
   {
     element: <GuestRoute />,
     errorElement: <RouteError />,
-    children: [{ path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> }],
+    children: [
+      { path: "/login", element: <LazyBoundary><LoginPage /></LazyBoundary> },
+      { path: "/esqueci-senha", element: <LazyBoundary><ForgotPasswordPage /></LazyBoundary> },
+      { path: "/redefinir-senha", element: <LazyBoundary><ResetPasswordPage /></LazyBoundary> },
+    ],
   },
   {
     element: <ProtectedRoute />,
     errorElement: <RouteError />,
     children: [
+      { path: "/trocar-senha", element: <LazyBoundary><ForcePasswordChangePage /></LazyBoundary> },
       {
         element: <LazyBoundary><AppShell /></LazyBoundary>,
         children: [
@@ -96,6 +112,11 @@ export const router = createBrowserRouter([
           { path: "/produtos/:id", element: <PermissionGate permission="products.read"><ProductDetailPage /></PermissionGate> },
           { path: "/categorias", element: <PermissionGate permission="categories.read"><CategoriesPage /></PermissionGate> },
           { path: "/fornecedores", element: <PermissionGate permission="suppliers.read"><SuppliersPage /></PermissionGate> },
+          { path: "/compras", element: <PermissionGate permission="purchases.read"><PurchasesPage /></PermissionGate> },
+          { path: "/produtividade", element: <ProductivityPage /> },
+          { path: "/painel-operacao", element: <OperationPanelPage /> },
+          { path: "/solicitacoes-financeiras", element: <PermissionGate permission="finance.request"><FinanceRequestsPage /></PermissionGate> },
+          { path: "/pos-venda", element: <PermissionGate permission="organization.read"><AftersalesPage /></PermissionGate> },
           { path: "/inventario", element: <PermissionGate permission="inventory.read"><InventoryPage /></PermissionGate> },
           { path: "/inventario/:id", element: <PermissionGate permission="inventory.read"><InventoryDetailPage /></PermissionGate> },
           { path: "/requisicoes", element: <PermissionGate permission="requisitions.read"><RequisitionsPage /></PermissionGate> },
@@ -120,6 +141,7 @@ export const router = createBrowserRouter([
           { path: "/alertas", element: <PermissionGate permission="stock.read"><AlertsPage /></PermissionGate> },
           { path: "/rh", element: <PermissionGate permission="hr.read"><HrPage /></PermissionGate> },
           { path: "/comercial", element: <PermissionGate permission="commercial.read"><CommercialPage /></PermissionGate> },
+          { path: "/comercial/orcamentos/:id", element: <PermissionGate permission="commercial.read"><QuoteEditorPage /></PermissionGate> },
           { path: "/financeiro", element: <PermissionGate permission="finance.read"><FinancePage /></PermissionGate> },
           { path: "/notas-fiscais", element: <PermissionGate permission="finance.read"><FiscalPage /></PermissionGate> },
           { path: "/relatorios", element: <ReportsPage /> },

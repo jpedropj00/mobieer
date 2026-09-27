@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AftersalesPanel } from "@/components/aftersales-panel";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignaturePad } from "@/components/signature-pad";
 import { EmptyState, PageSkeleton } from "@/components/ui/states";
@@ -56,6 +57,7 @@ type Doc = {
   signatureProviderUrl?: string | null;
   signatureProviderStatus?: string | null;
   signatures: { id: string; role: string; signerName: string; signedAt: string }[];
+  signedDownloadUrl?: string | null;
   version: number;
   createdAt: string;
   uploadedBy: { id: string; name: string } | null;
@@ -235,6 +237,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="campo">Campo</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="promob">Promob</TabsTrigger>
+          <TabsTrigger value="posvenda">Pós-venda</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
         </TabsList>
 
@@ -321,7 +324,12 @@ export function ProjectDetailPage() {
                           {d.signatureProviderStatus ?? "enviado"} ↗
                         </a>
                       )}
-                      <Button size="sm" variant="outline" onClick={() => apiDownload(`/documents/${d.id}/download`, d.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
+                      {d.signedDownloadUrl && (
+                        <Button size="sm" variant="outline" title="PDF com carimbo e página de assinaturas" onClick={() => apiDownload(`/documents/${d.id}/download?signed=1`, `${d.fileName.replace(/\.[^.]+$/, "")}-assinado.pdf`).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
+                          <Download className="mr-1 h-4 w-4" /> Assinado
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" title="Arquivo original" onClick={() => apiDownload(`/documents/${d.id}/download`, d.fileName).catch((e) => toast.error(errorMessage(e, "Falha ao baixar")))}>
                         <Download className="h-4 w-4" />
                       </Button>
                       {canManage && (
@@ -371,6 +379,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="promob">
           <PromobPanel projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="posvenda">
+          <AftersalesPanel projectId={projectId} />
         </TabsContent>
 
         <TabsContent value="portal" className="space-y-4">

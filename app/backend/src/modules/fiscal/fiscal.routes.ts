@@ -213,6 +213,7 @@ router.post(
   requirePermission("finance.read"),
   asyncHandler(async (req, res) => {
     const inv = await ensureInvoice(req.params.id, req.user!.organizationId);
+    if (inv.source === "CONTABILIDADE") throw new BadRequestError("Nota registrada a partir da contabilidade: não passa pelo provedor");
     if (!nfeEnabled()) throw new BadRequestError(new NfeNotConfiguredError().message);
     const result = await getInvoice(inv.ref);
     const statusMap: Record<string, string> = {
@@ -245,6 +246,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const inv = await ensureInvoice(req.params.id, req.user!.organizationId);
     const { justificativa } = z.object({ justificativa: z.string().trim().min(15).max(255) }).parse(req.body);
+    // Nota da contabilidade: o cancelamento já aconteceu fora; aqui só se registra.
+    if (inv.source === "CONTABILIDADE") {
+      const updated = await prisma.fiscalInvoice.update({
+        where: { id: inv.id },
+        data: { status: "CANCELLED", cancelledAt: new Date(), errorMessage: `Cancelada: ${justificativa}` },
+        include: fiscalInclude,
+      });
+      return ok(res, serializeInvoice(updated), "Nota marcada como cancelada");
+    }
     if (inv.status === "DRAFT" || inv.status === "ERROR") {
       const updated = await prisma.fiscalInvoice.update({
         where: { id: inv.id },
@@ -275,10 +285,14 @@ router.delete(
   requirePermission("finance.manage"),
   asyncHandler(async (req, res) => {
     const inv = await ensureInvoice(req.params.id, req.user!.organizationId);
-    if (!["DRAFT", "ERROR", "REJECTED", "CANCELLED"].includes(inv.status)) {
+    // registro da contabilidade feito por engano pode sair a qualquer momento
+    if (inv.source !== "CONTABILIDADE" && !["DRAFT", "ERROR", "REJECTED", "CANCELLED"].includes(inv.status)) {
       throw new BadRequestError("Só é possível remover notas em rascunho, com erro ou canceladas");
     }
     await prisma.fiscalInvoice.delete({ where: { id: inv.id } });
+    if (inv.source === "CONTABILIDADE") {
+      await Promise.all([inv.xmlKey, inv.pdfKey].filter((k): k is string => Boolean(k)).map((k) => storage.remove(k).catch(() => undefined)));
+    }
     return ok(res, { id: inv.id }, "Nota removida");
   })
 );

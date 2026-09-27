@@ -23,6 +23,11 @@ type InvoiceRow = {
   errorMessage: string | null;
   issuedAt: Date | null;
   cancelledAt: Date | null;
+  source?: string;
+  direction?: string;
+  accessKey?: string | null;
+  counterpartName?: string | null;
+  counterpartDocument?: string | null;
   createdAt: Date;
   updatedAt: Date;
   project?: { id: string; code: string; name: string } | null;
@@ -47,6 +52,11 @@ export function serializeInvoice(i: InvoiceRow) {
     errorMessage: i.errorMessage,
     issuedAt: i.issuedAt,
     cancelledAt: i.cancelledAt,
+    source: i.source ?? "EMITIDA",
+    direction: i.direction ?? "SAIDA",
+    accessKey: i.accessKey ?? null,
+    counterpartName: i.counterpartName ?? null,
+    counterpartDocument: i.counterpartDocument ?? null,
     createdAt: i.createdAt,
     updatedAt: i.updatedAt,
     project: i.project ?? null,

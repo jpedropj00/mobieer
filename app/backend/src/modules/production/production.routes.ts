@@ -72,6 +72,22 @@ router.get(
   })
 );
 
+// POST /api/production/projects/:projectId/future-release — venda futura: nova medição feita, pode produzir
+router.post(
+  "/projects/:projectId/future-release",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const project = await ensureProject(req.params.projectId, req.user!.organizationId);
+    const cur = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { futureSale: true, futureReleasedAt: true, code: true } });
+    if (!cur.futureSale) throw new BadRequestError("Este projeto não é venda futura");
+    if (cur.futureReleasedAt) throw new BadRequestError("Venda futura já liberada");
+    await prisma.project.update({ where: { id: project.id }, data: { futureReleasedAt: new Date() } });
+    await prisma.auditLog.create({ data: { userId: req.user!.id, action: "FUTURE_SALE_RELEASED", entity: "Project", entityId: project.id } });
+    const order = await getOrCreateOrder(project.id, req.user!.organizationId, req.user!.id);
+    return ok(res, serializeOrder(order), `Venda futura ${cur.code} liberada para produção`);
+  })
+);
+
 // PATCH /api/production/projects/:projectId  -> previsão de entrega / observações
 router.patch(
   "/projects/:projectId",

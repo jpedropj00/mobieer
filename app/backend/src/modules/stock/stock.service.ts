@@ -36,63 +36,70 @@ async function checkLowStock(productId: string) {
 export async function createEntry(input: EntryInput, actorId: string, actorName: string) {
   if (!input.items.length) throw new BadRequestError("Adicione ao menos um produto");
 
-  const movements = await prisma.$transaction(async (tx) => {
-    const created: { id: string; productId: string; productName: string; quantity: number }[] = [];
+  const movements = await prisma.$transaction((tx) => registerEntry(tx, input, actorId));
 
-    for (const item of input.items) {
-      const product = await tx.product.findUnique({ where: { id: item.productId } });
-      if (!product) throw new NotFoundError("Produto não encontrado");
+  return { movements, count: movements.reduce((acc, m) => acc + m.quantity, 0), actor: actorName };
+}
 
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { increment: item.quantity } },
+/**
+ * Entrada de estoque dentro de uma transação já aberta. É o caminho único de
+ * entrada: a tela de entrada e o recebimento de compras (§30) passam por aqui,
+ * então saldo por almoxarifado, auditoria e alerta de mínimo ficam iguais.
+ */
+export async function registerEntry(tx: Tx, input: EntryInput, actorId: string) {
+  const created: { id: string; productId: string; productName: string; quantity: number }[] = [];
+
+  for (const item of input.items) {
+    const product = await tx.product.findUnique({ where: { id: item.productId } });
+    if (!product) throw new NotFoundError("Produto não encontrado");
+
+    await tx.product.update({
+      where: { id: item.productId },
+      data: { stock: { increment: item.quantity } },
+    });
+    const warehouseId = item.warehouseId ?? product.warehouseId;
+    if (warehouseId) {
+      await tx.productWarehouseStock.upsert({
+        where: { productId_warehouseId: { productId: item.productId, warehouseId } },
+        create: { productId: item.productId, warehouseId, quantity: item.quantity },
+        update: { quantity: { increment: item.quantity } },
       });
-      const warehouseId = item.warehouseId ?? product.warehouseId;
-      if (warehouseId) {
-        await tx.productWarehouseStock.upsert({
-          where: { productId_warehouseId: { productId: item.productId, warehouseId } },
-          create: { productId: item.productId, warehouseId, quantity: item.quantity },
-          update: { quantity: { increment: item.quantity } },
-        });
-      }
-
-      const movement = await tx.stockMovement.create({
-        data: {
-          type: "ENTRY",
-          productId: item.productId,
-          quantity: item.quantity,
-          unitValue: toDecimal(item.unitValue),
-          date: input.date ? new Date(input.date) : new Date(),
-          note: input.note ?? null,
-          supplierId: input.supplierId ?? null,
-          invoiceNumber: input.invoiceNumber ?? null,
-          batch: item.batch ?? null,
-          destinationWarehouseId: warehouseId,
-          responsibleId: actorId,
-        },
-      });
-
-      created.push({ id: movement.id, productId: item.productId, productName: product.name, quantity: item.quantity });
     }
 
-    await tx.auditLog.create({
+    const movement = await tx.stockMovement.create({
       data: {
-        userId: actorId,
-        action: "STOCK_ENTRY",
-        entity: "StockMovement",
-        entityId: created.map((c) => c.id).join(","),
-        details: { items: created, invoiceNumber: input.invoiceNumber, supplierId: input.supplierId },
+        type: "ENTRY",
+        productId: item.productId,
+        quantity: item.quantity,
+        unitValue: toDecimal(item.unitValue),
+        date: input.date ? new Date(input.date) : new Date(),
+        note: input.note ?? null,
+        supplierId: input.supplierId ?? null,
+        invoiceNumber: input.invoiceNumber ?? null,
+        batch: item.batch ?? null,
+        destinationWarehouseId: warehouseId,
+        responsibleId: actorId,
       },
     });
 
-    for (const c of created) {
-      await checkLowStockWith(tx, c.productId);
-    }
+    created.push({ id: movement.id, productId: item.productId, productName: product.name, quantity: item.quantity });
+  }
 
-    return created;
+  await tx.auditLog.create({
+    data: {
+      userId: actorId,
+      action: "STOCK_ENTRY",
+      entity: "StockMovement",
+      entityId: created.map((c) => c.id).join(","),
+      details: { items: created, invoiceNumber: input.invoiceNumber, supplierId: input.supplierId },
+    },
   });
 
-  return { movements, count: movements.reduce((acc, m) => acc + m.quantity, 0), actor: actorName };
+  for (const c of created) {
+    await checkLowStockWith(tx, c.productId);
+  }
+
+  return created;
 }
 
 type Tx = Prisma.TransactionClient;

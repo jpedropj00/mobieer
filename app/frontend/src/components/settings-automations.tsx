@@ -314,10 +314,12 @@ function WhatsAppStatusCard({ status, loading }: { status?: WhatsAppStatus; load
         <p className="text-xs text-muted-foreground">
           Token de acesso:{" "}
           {status.token.expiresAt
-            ? `temporário, vence em ${new Date(status.token.expiresAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
+            ? `temporário, ${status.token.expired ? "venceu em" : "vence em"} ${new Date(status.token.expiresAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
             : status.token.valid
               ? "permanente (System User)"
-              : "revogado na Meta"}
+              : status.token.expired
+                ? "recusado pela Meta (vencido)"
+                : "revogado na Meta"}
         </p>
         <p className="text-xs text-muted-foreground">
           Webhook de respostas: <span className="font-mono">{status.webhook.url}</span> ·{" "}

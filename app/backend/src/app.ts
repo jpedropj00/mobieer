@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { env } from "./config/env";
 import authRoutes from "./modules/auth/auth.routes";
 import usersRoutes from "./modules/users/users.routes";
@@ -37,15 +38,26 @@ import techProjectRoutes from "./modules/techproject/techproject.routes";
 import productionRoutes from "./modules/production/production.routes";
 import shopFloorRoutes from "./modules/production/shopfloor.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
+import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
+import financeRecurringRoutes from "./modules/finance/recurring.routes";
 import promobRoutes from "./modules/promob/promob.routes";
 import workspaceRoutes from "./modules/workspace/workspace.routes";
+import purchasesRoutes from "./modules/purchases/purchases.routes";
+import productionStepsRoutes from "./modules/production/steps.routes";
+import filesRoutes from "./modules/files/files.routes";
+import aftersalesRoutes from "./modules/aftersales/aftersales.routes";
+import productivityRoutes from "./modules/productivity/productivity.routes";
 import assistanceRoutes from "./modules/assistance/assistance.routes";
 import publicConfirmRoutes from "./modules/assistance/public-confirm.routes";
+import { publicWorkOrderRoutes, workOrderRoutes } from "./modules/contractors/workorder.routes";
 import cronRoutes from "./modules/cron/cron.routes";
 import storeRoutes from "./modules/store/store.routes";
 import partsRoutes from "./modules/parts/parts.routes";
 import timelineRoutes from "./modules/timeline/timeline.routes";
 import goalsRoutes from "./modules/commercial/goals.routes";
+import quoteRoutes from "./modules/commercial/quote.routes";
+import referrerRoutes from "./modules/commercial/referrers.routes";
+import teamsRoutes from "./modules/commercial/teams.routes";
 import portalFinanceRoutes from "./modules/portal/portal-finance.routes";
 import agendaResponseRoutes from "./modules/agenda/response.routes";
 import fieldworkRoutes from "./modules/fieldwork/fieldwork.routes";
@@ -59,6 +71,16 @@ import { errorHandler, notFound } from "./middlewares/errorHandler";
 
 export function createApp() {
   const app = express();
+
+  // Atrás da Vercel o IP real vem no X-Forwarded-For. Sem isto, `req.ip` é o do
+  // proxy e o limite de tentativas contaria o mundo inteiro na mesma chave.
+  // Um salto só: confiar em toda a cadeia deixaria o cliente forjar o próprio IP.
+  app.set("trust proxy", 1);
+
+  // Cabeçalhos de segurança. A CSP fica de fora: a API serve JSON e os uploads,
+  // e o frontend é outro deploy — ligá-la aqui daria falsa sensação sem proteger
+  // a página que realmente executa script.
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
   app.use(
     cors({
@@ -109,6 +131,7 @@ export function createApp() {
   app.use("/api/hr", hrRoutes);
   app.use("/api/contractors", contractorsRoutes);
   app.use("/api/assistance", assistanceRoutes);
+  app.use("/api/public/os", publicWorkOrderRoutes);
   app.use("/api/public", publicConfirmRoutes);
   app.use("/api/cron", cronRoutes);
   app.use("/api/automations", automationsRoutes);
@@ -124,6 +147,9 @@ export function createApp() {
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial/goals", goalsRoutes);
+  app.use("/api/commercial/quotes", quoteRoutes);
+  app.use("/api/referrers", referrerRoutes);
+  app.use("/api/commercial", teamsRoutes);
   app.use("/api/commercial", commercialRoutes);
   app.use("/api/briefing", briefingRoutes);
   app.use("/api/appliances", appliancesRoutes);
@@ -131,9 +157,17 @@ export function createApp() {
   app.use("/api/tech-approval", techProjectRoutes);
   app.use("/api/production", productionRoutes);
   app.use("/api/production", shopFloorRoutes);
+  app.use("/api/production", productionStepsRoutes);
+  app.use("/api/fiscal/import", fiscalImportRoutes);
   app.use("/api/fiscal", fiscalRoutes);
   app.use("/api/promob", promobRoutes);
   app.use("/api/workspace", workspaceRoutes);
+  app.use("/api/purchases", purchasesRoutes);
+  app.use("/api/files", filesRoutes);
+  app.use("/api/aftersales", aftersalesRoutes);
+  app.use("/api/productivity", productivityRoutes);
+  app.use("/api/work-orders", workOrderRoutes);
+  app.use("/api/finance", financeRecurringRoutes);
 
   const frontendDist = path.resolve(__dirname, "../../frontend/dist");
   if (fs.existsSync(frontendDist)) {

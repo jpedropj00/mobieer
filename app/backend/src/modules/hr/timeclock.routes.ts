@@ -7,7 +7,7 @@ import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
-import { buildMirror, computeHourBank, inferKinds, monthsBetween, parseTimeClockFile } from "./timeclock.service";
+import { buildMirror, computeHourBank, fortalezaDay, inferKinds, looksLikeSamePerson, monthsBetween, parseTimeClockFile } from "./timeclock.service";
 
 const router = Router();
 router.use(authenticate);
@@ -207,6 +207,80 @@ router.delete(
   })
 );
 
+/**
+ * Lê o arquivo e monta o mapa "matrícula do relógio -> colaborador".
+ * Usado pela conferência e pelo import, para os dois enxergarem a mesma coisa.
+ */
+async function mapPunches(buffer: Buffer, organizationId: string) {
+  const parsed = parseTimeClockFile(buffer);
+  const employees = await prisma.employee.findMany({ where: { organizationId }, select: { id: true, registration: true, fullName: true, status: true } });
+  // Casa por matrícula exata OU pela parte numérica (ex.: "EMP-0002" <-> "0002" <-> "2").
+  const digitsOf = (s: string) => s.replace(/\D/g, "").replace(/^0+/, "");
+  const byReg = new Map<string, (typeof employees)[number]>();
+  for (const e of employees) {
+    byReg.set(e.registration.toUpperCase(), e);
+    const d = digitsOf(e.registration);
+    if (d) byReg.set(d, e);
+  }
+  const lookup = (reg: string) => byReg.get(reg.toUpperCase()) ?? byReg.get(digitsOf(reg));
+
+  const porMatricula = new Map<string, { registration: string; fileName: string | null; punches: typeof parsed.punches }>();
+  for (const p of parsed.punches) {
+    const cur = porMatricula.get(p.registration) ?? { registration: p.registration, fileName: p.name ?? null, punches: [] };
+    if (!cur.fileName && p.name) cur.fileName = p.name;
+    cur.punches.push(p);
+    porMatricula.set(p.registration, cur);
+  }
+
+  const rows = [...porMatricula.values()]
+    .map((g) => {
+      const emp = lookup(g.registration);
+      const times = g.punches.map((p) => p.timestamp.getTime());
+      return {
+        registration: g.registration,
+        fileName: g.fileName,
+        employee: emp ? { id: emp.id, registration: emp.registration, fullName: emp.fullName, status: emp.status } : null,
+        punches: g.punches.length,
+        from: new Date(Math.min(...times)),
+        to: new Date(Math.max(...times)),
+        // avisos que uma pessoa precisa olhar antes de gravar
+        nameMismatch: Boolean(emp) && !looksLikeSamePerson(g.fileName, emp!.fullName),
+        inactive: emp?.status !== undefined && emp.status !== "ACTIVE",
+      };
+    })
+    .sort((a, b) => Number(a.registration) - Number(b.registration) || a.registration.localeCompare(b.registration));
+
+  return { parsed, rows };
+}
+
+// POST /api/hr/timeclock/import/preview -> confere antes de gravar
+router.post(
+  "/import/preview",
+  requirePermission("hr.timeclock.manage"),
+  uploadDataFile.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new BadRequestError("Envie o arquivo exportado do relógio de ponto");
+    const { parsed, rows } = await mapPunches(req.file.buffer, req.user!.organizationId);
+    if (parsed.punches.length === 0) {
+      throw new BadRequestError("Nenhuma marcação reconhecida no arquivo. Formatos aceitos: exportação com cabeçalho (EnNo/DateTime) ou matrícula; data; hora.");
+    }
+    const naoEncontrados = rows.filter((r) => !r.employee);
+    const divergentes = rows.filter((r) => r.nameMismatch);
+    return ok(res, {
+      fileName: req.file.originalname,
+      totalPunches: parsed.punches.length,
+      rowsError: parsed.errors,
+      rows,
+      warnings: {
+        unmatched: naoEncontrados.map((r) => ({ registration: r.registration, fileName: r.fileName, punches: r.punches })),
+        nameMismatch: divergentes.map((r) => ({ registration: r.registration, fileName: r.fileName, employee: r.employee!.fullName })),
+      },
+      // o import só grava com confirmarDivergencias quando há nome diferente
+      requiresConfirmation: divergentes.length > 0,
+    });
+  })
+);
+
 // POST /api/hr/timeclock/import  (multipart: file exportado do aparelho)
 router.post(
   "/import",
@@ -214,24 +288,24 @@ router.post(
   uploadDataFile.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) throw new BadRequestError("Envie o arquivo exportado do relógio de ponto");
-    const parsed = parseTimeClockFile(req.file.buffer);
+    const confirmarDivergencias = String(req.body?.confirmarDivergencias ?? "") === "true";
+    const { parsed, rows } = await mapPunches(req.file.buffer, req.user!.organizationId);
     if (parsed.punches.length === 0) {
-      throw new BadRequestError("Nenhuma marcação reconhecida no arquivo. Layout esperado: matrícula; data; hora.");
+      throw new BadRequestError("Nenhuma marcação reconhecida no arquivo. Formatos aceitos: exportação com cabeçalho (EnNo/DateTime) ou matrícula; data; hora.");
+    }
+    // Nome do relógio diferente do cadastro: quase sempre é matrícula reaproveitada.
+    // Gravar ponto na pessoa errada é grave, então isso exige confirmação explícita.
+    const divergentes = rows.filter((r) => r.nameMismatch);
+    if (divergentes.length && !confirmarDivergencias) {
+      throw new BadRequestError(
+        `O nome no relógio não bate com o cadastro em ${divergentes.length} matrícula(s): ` +
+          divergentes.map((d) => `${d.registration} "${d.fileName}" -> "${d.employee!.fullName}"`).join("; ") +
+          ". Confira em Conferir arquivo antes de importar."
+      );
     }
 
-    const employees = await prisma.employee.findMany({
-      where: { organizationId: req.user!.organizationId },
-      select: { id: true, registration: true },
-    });
-    // Casa por matrícula exata OU pela parte numérica (ex.: "EMP-0002" <-> "0002" <-> "2").
-    const digitsOf = (s: string) => s.replace(/\D/g, "").replace(/^0+/, "");
-    const byReg = new Map<string, string>();
-    for (const e of employees) {
-      byReg.set(e.registration.toUpperCase(), e.id);
-      const d = digitsOf(e.registration);
-      if (d) byReg.set(d, e.id);
-    }
-    const lookup = (reg: string) => byReg.get(reg.toUpperCase()) ?? byReg.get(digitsOf(reg));
+    const byRegistration = new Map(rows.filter((r) => r.employee).map((r) => [r.registration, r.employee!.id]));
+    const lookup = (reg: string) => byRegistration.get(reg);
 
     const timestamps = parsed.punches.map((p) => p.timestamp.getTime());
     const periodFrom = new Date(Math.min(...timestamps));
@@ -250,7 +324,7 @@ router.post(
     });
 
     // agrupa por colaborador+dia para inferir o tipo de marcação
-    const groups = new Map<string, { employeeId: string; day: string; times: Date[] }>();
+    const groups = new Map<string, { employeeId: string; day: string; punches: { at: Date; label?: string | null }[] }>();
     let unmatched = 0;
     for (const p of parsed.punches) {
       const empId = lookup(p.registration);
@@ -258,19 +332,21 @@ router.post(
         unmatched++;
         continue;
       }
-      const day = p.timestamp.toISOString().slice(0, 10);
+      // dia da loja: uma batida às 22h pertence ao dia dela, não ao seguinte em UTC
+      const day = fortalezaDay(p.timestamp);
       const gkey = `${empId}|${day}`;
-      const g = groups.get(gkey) ?? { employeeId: empId, day, times: [] };
-      g.times.push(p.timestamp);
+      const g = groups.get(gkey) ?? { employeeId: empId, day, punches: [] };
+      g.punches.push({ at: p.timestamp, label: p.label });
       groups.set(gkey, g);
     }
 
-    const data: { organizationId: string; employeeId: string; timestamp: Date; kind: "IN" | "OUT" | "BREAK_OUT" | "BREAK_IN"; source: "DEVICE_IMPORT"; importId: string }[] = [];
+    const data: { organizationId: string; employeeId: string; timestamp: Date; kind: "IN" | "OUT" | "BREAK_OUT" | "BREAK_IN"; source: "DEVICE_IMPORT"; importId: string; note: string | null }[] = [];
     for (const g of groups.values()) {
-      const sorted = g.times.slice().sort((a, b) => a.getTime() - b.getTime());
-      const kinds = inferKinds(sorted);
-      sorted.forEach((t, i) => {
-        data.push({ organizationId: req.user!.organizationId, employeeId: g.employeeId, timestamp: t, kind: kinds[i], source: "DEVICE_IMPORT", importId: imp.id });
+      const sorted = g.punches.slice().sort((a, b) => a.at.getTime() - b.at.getTime());
+      // o tipo vem da ordem do dia; o rótulo do aparelho fica só como registro
+      const kinds = inferKinds(sorted.map((s) => s.at));
+      sorted.forEach((s2, i) => {
+        data.push({ organizationId: req.user!.organizationId, employeeId: g.employeeId, timestamp: s2.at, kind: kinds[i], source: "DEVICE_IMPORT", importId: imp.id, note: s2.label ?? null });
       });
     }
 

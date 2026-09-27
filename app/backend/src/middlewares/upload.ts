@@ -74,8 +74,8 @@ export const uploadPromob = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (/\.(xml|pdf|json|txt|promob)$/i.test(file.originalname)) cb(null, true);
-    else cb(new UnsupportedFileTypeError("Envie o arquivo exportado do Promob (.xml ou .pdf)"));
+    if (/\.(xml|csv|tsv|pdf|json|txt|promob)$/i.test(file.originalname)) cb(null, true);
+    else cb(new UnsupportedFileTypeError("Envie o arquivo exportado do Promob (.xml, .csv ou .pdf)"));
   },
 });
 

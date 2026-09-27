@@ -7,6 +7,7 @@ import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
+import { csvFileName, toCsv, type CsvColumn } from "../../utils/csv";
 import taxRoutes from "./tax.routes";
 import extrasRoutes from "./extras.routes";
 import documentsRoutes from "./documents.routes";
@@ -30,6 +31,7 @@ const txSchema = z.object({
   projectId: z.string().min(1).optional().nullable(),
   clientId: z.string().min(1).optional().nullable(),
   supplierId: z.string().min(1).optional().nullable(),
+  costCenterId: z.string().min(1).optional().nullable(),
 });
 
 const money = (d: Prisma.Decimal | number | null | undefined) => (d == null ? 0 : Number(d));
@@ -39,6 +41,7 @@ const include = {
   project: { select: { id: true, code: true, name: true } },
   client: { select: { id: true, name: true } },
   supplier: { select: { id: true, name: true } },
+  costCenter: { select: { id: true, code: true, name: true } },
   createdBy: { select: { id: true, name: true } },
 } as const;
 
@@ -48,6 +51,7 @@ const serialize = (t: {
   project: { id: string; code: string; name: string } | null;
   client: { id: string; name: string } | null;
   supplier: { id: string; name: string } | null;
+  costCenter: { id: string; code: string; name: string } | null;
   createdBy: { id: string; name: string } | null;
 }) => ({
   id: t.id,
@@ -64,10 +68,14 @@ const serialize = (t: {
   project: t.project,
   client: t.client,
   supplier: t.supplier,
+  costCenter: t.costCenter,
   createdBy: t.createdBy,
 });
 
-async function validateLinks(input: { projectId?: string | null; clientId?: string | null; supplierId?: string | null }, organizationId: string) {
+async function validateLinks(
+  input: { projectId?: string | null; clientId?: string | null; supplierId?: string | null; costCenterId?: string | null },
+  organizationId: string
+) {
   if (input.projectId) {
     const p = await prisma.project.findFirst({ where: { id: input.projectId, organizationId }, select: { id: true } });
     if (!p) throw new BadRequestError("Projeto inválido");
@@ -80,11 +88,176 @@ async function validateLinks(input: { projectId?: string | null; clientId?: stri
     const s = await prisma.supplier.findUnique({ where: { id: input.supplierId }, select: { id: true } });
     if (!s) throw new BadRequestError("Fornecedor inválido");
   }
+  if (input.costCenterId) {
+    // centro inativo continua válido em lançamento antigo, mas não entra em um novo
+    const cc = await prisma.costCenter.findFirst({
+      where: { id: input.costCenterId, organizationId, active: true },
+      select: { id: true },
+    });
+    if (!cc) throw new BadRequestError("Centro de custo inválido ou inativo");
+  }
 }
 
 async function audit(userId: string, action: string, entityId: string, details?: object) {
   await prisma.auditLog.create({ data: { userId, action, entity: "FinanceTransaction", entityId, details } });
 }
+
+// ============================================================
+// §31 — CENTROS DE CUSTO
+//
+// Terceira dimensão do lançamento, ao lado de `category` (a natureza do gasto)
+// e `projectId` (a obra). Responde "quanto cada setor gastou".
+// ============================================================
+
+const costCenterSchema = z.object({
+  code: z.string().trim().min(2).max(20).toUpperCase(),
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(2000).optional().nullable(),
+  active: z.boolean().default(true),
+});
+
+// GET /api/finance/cost-centers?all=1
+router.get(
+  "/cost-centers",
+  requirePermission("finance.read"),
+  asyncHandler(async (req, res) => {
+    // por padrão só os ativos: o formulário não deve oferecer centro desativado
+    const todos = String(req.query.all ?? "") === "1";
+    const rows = await prisma.costCenter.findMany({
+      where: { organizationId: req.user!.organizationId, ...(todos ? {} : { active: true }) },
+      orderBy: { name: "asc" },
+    });
+    return ok(res, rows);
+  })
+);
+
+// POST /api/finance/cost-centers
+router.post(
+  "/cost-centers",
+  requirePermission("finance.manage"),
+  asyncHandler(async (req, res) => {
+    const input = costCenterSchema.parse(req.body);
+    const existe = await prisma.costCenter.findFirst({
+      where: { organizationId: req.user!.organizationId, code: input.code },
+      select: { id: true, name: true },
+    });
+    if (existe) throw new BadRequestError(`Já existe um centro com o código ${input.code} (${existe.name})`);
+    const cc = await prisma.costCenter.create({
+      data: {
+        organizationId: req.user!.organizationId,
+        code: input.code,
+        name: input.name,
+        description: input.description || null,
+        active: input.active,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { userId: req.user!.id, action: "COST_CENTER_CREATED", entity: "CostCenter", entityId: cc.id, details: { code: cc.code } },
+    });
+    return ok(res, cc, "Centro de custo criado");
+  })
+);
+
+// PATCH /api/finance/cost-centers/:id
+router.patch(
+  "/cost-centers/:id",
+  requirePermission("finance.manage"),
+  asyncHandler(async (req, res) => {
+    const atual = await prisma.costCenter.findFirst({
+      where: { id: req.params.id, organizationId: req.user!.organizationId },
+    });
+    if (!atual) throw new NotFoundError("Centro de custo não encontrado");
+    const input = costCenterSchema.partial().parse(req.body);
+    if (input.code && input.code !== atual.code) {
+      const conflito = await prisma.costCenter.findFirst({
+        where: { organizationId: req.user!.organizationId, code: input.code, id: { not: atual.id } },
+        select: { id: true },
+      });
+      if (conflito) throw new BadRequestError(`Já existe um centro com o código ${input.code}`);
+    }
+    const cc = await prisma.costCenter.update({
+      where: { id: atual.id },
+      data: {
+        code: input.code,
+        name: input.name,
+        description: input.description === undefined ? undefined : input.description || null,
+        active: input.active,
+      },
+    });
+    await prisma.auditLog.create({
+      data: { userId: req.user!.id, action: "COST_CENTER_UPDATED", entity: "CostCenter", entityId: cc.id },
+    });
+    return ok(res, cc, "Centro de custo atualizado");
+  })
+);
+
+// DELETE /api/finance/cost-centers/:id — desativa; não apaga histórico
+router.delete(
+  "/cost-centers/:id",
+  requirePermission("finance.manage"),
+  asyncHandler(async (req, res) => {
+    const atual = await prisma.costCenter.findFirst({
+      where: { id: req.params.id, organizationId: req.user!.organizationId },
+      select: { id: true, code: true, _count: { select: { transactions: true } } },
+    });
+    if (!atual) throw new NotFoundError("Centro de custo não encontrado");
+
+    // Com lançamentos, apagar tiraria a classificação de tudo que já passou.
+    if (atual._count.transactions > 0) {
+      const cc = await prisma.costCenter.update({ where: { id: atual.id }, data: { active: false } });
+      return ok(res, cc, `Centro desativado (${atual._count.transactions} lançamento(s) mantêm o histórico)`);
+    }
+    await prisma.costCenter.delete({ where: { id: atual.id } });
+    await prisma.auditLog.create({
+      data: { userId: req.user!.id, action: "COST_CENTER_DELETED", entity: "CostCenter", entityId: atual.id, details: { code: atual.code } },
+    });
+    return ok(res, { deleted: true }, "Centro de custo excluído");
+  })
+);
+
+// GET /api/finance/transactions.csv — mesmos filtros da listagem (§59)
+router.get(
+  "/transactions.csv",
+  requirePermission("reports.export"),
+  asyncHandler(async (req, res) => {
+    const q = req.query;
+    const where: Prisma.FinanceTransactionWhereInput = { organizationId: req.user!.organizationId };
+    if (q.type === "RECEITA" || q.type === "DESPESA") where.type = q.type;
+    if (q.status === "PENDENTE" || q.status === "PAGO") where.status = q.status;
+    if (q.projectId) where.projectId = String(q.projectId);
+    if (q.costCenterId) where.costCenterId = String(q.costCenterId);
+    if (q.from || q.to) {
+      where.date = {};
+      if (q.from) (where.date as Prisma.DateTimeFilter).gte = new Date(String(q.from));
+      if (q.to) (where.date as Prisma.DateTimeFilter).lte = new Date(String(q.to));
+    }
+
+    const rows = await prisma.financeTransaction.findMany({ where, include, orderBy: [{ date: "desc" }, { createdAt: "desc" }] });
+    type Row = (typeof rows)[number];
+
+    const colunas: CsvColumn<Row>[] = [
+      { header: "Data", value: (r) => r.date },
+      { header: "Vencimento", value: (r) => r.dueDate },
+      { header: "Tipo", value: (r) => (r.type === "RECEITA" ? "Receita" : "Despesa") },
+      { header: "Categoria", value: (r) => r.category },
+      { header: "Descrição", value: (r) => r.description },
+      // sinal negativo na despesa: somar a coluna no Excel já dá o saldo
+      { header: "Valor", value: (r) => (r.type === "DESPESA" ? -money(r.amount) : money(r.amount)) },
+      { header: "Status", value: (r) => (r.status === "PAGO" ? "Pago" : "Pendente") },
+      { header: "Pago em", value: (r) => r.paidAt },
+      { header: "Forma", value: (r) => r.method },
+      { header: "Centro de custo", value: (r) => (r.costCenter ? `${r.costCenter.code} - ${r.costCenter.name}` : null) },
+      { header: "Projeto", value: (r) => (r.project ? `${r.project.code} - ${r.project.name}` : null) },
+      { header: "Cliente", value: (r) => r.client?.name },
+      { header: "Fornecedor", value: (r) => r.supplier?.name },
+      { header: "Lançado por", value: (r) => r.createdBy?.name },
+    ];
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${csvFileName("lancamentos-financeiros")}"`);
+    return res.send(toCsv(rows, colunas));
+  })
+);
 
 // GET /api/finance/transactions
 router.get(
@@ -96,6 +269,7 @@ router.get(
     if (q.type === "RECEITA" || q.type === "DESPESA") where.type = q.type;
     if (q.status === "PENDENTE" || q.status === "PAGO") where.status = q.status;
     if (q.projectId) where.projectId = String(q.projectId);
+    if (q.costCenterId) where.costCenterId = String(q.costCenterId);
     if (q.from || q.to) {
       where.date = {};
       if (q.from) (where.date as Prisma.DateTimeFilter).gte = new Date(String(q.from));
@@ -119,7 +293,10 @@ router.get(
 
     const rows = await prisma.financeTransaction.findMany({
       where: { organizationId, ...dateWhere },
-      select: { type: true, status: true, amount: true, category: true, date: true },
+      select: {
+        type: true, status: true, amount: true, category: true, date: true,
+        costCenter: { select: { id: true, code: true, name: true } },
+      },
     });
 
     let totalReceitas = 0;
@@ -128,6 +305,9 @@ router.get(
     let aPagar = 0;
     const byCategory = new Map<string, { category: string; type: string; total: number }>();
     const byMonth = new Map<string, { month: string; receitas: number; despesas: number }>();
+    // §31: quanto cada setor consumiu. "(sem centro)" evita esconder o que
+    // ninguém classificou — é justamente o que precisa ser revisado.
+    const byCostCenter = new Map<string, { id: string | null; code: string; name: string; receitas: number; despesas: number }>();
 
     for (const r of rows) {
       const value = money(r.amount);
@@ -144,6 +324,18 @@ router.get(
       cat.total += value;
       byCategory.set(catKey, cat);
 
+      const ccKey = r.costCenter?.id ?? "";
+      const cc = byCostCenter.get(ccKey) ?? {
+        id: r.costCenter?.id ?? null,
+        code: r.costCenter?.code ?? "—",
+        name: r.costCenter?.name ?? "(sem centro de custo)",
+        receitas: 0,
+        despesas: 0,
+      };
+      if (isReceita) cc.receitas += value;
+      else cc.despesas += value;
+      byCostCenter.set(ccKey, cc);
+
       const m = r.date.toISOString().slice(0, 7);
       const mo = byMonth.get(m) ?? { month: m, receitas: 0, despesas: 0 };
       if (isReceita) mo.receitas += value;
@@ -159,6 +351,9 @@ router.get(
       aPagar: round2(aPagar),
       totalLancamentos: rows.length,
       porCategoria: [...byCategory.values()].map((c) => ({ ...c, total: round2(c.total) })).sort((a, b) => b.total - a.total),
+      porCentroDeCusto: [...byCostCenter.values()]
+        .map((c) => ({ ...c, receitas: round2(c.receitas), despesas: round2(c.despesas) }))
+        .sort((a, b) => b.despesas - a.despesas),
       porMes: [...byMonth.values()]
         .map((m) => ({ ...m, receitas: round2(m.receitas), despesas: round2(m.despesas) }))
         .sort((a, b) => a.month.localeCompare(b.month))
@@ -321,6 +516,7 @@ router.post(
         projectId: input.projectId ?? null,
         clientId: input.clientId ?? null,
         supplierId: input.supplierId ?? null,
+        costCenterId: input.costCenterId ?? null,
         createdById: req.user!.id,
       },
       include,
@@ -358,6 +554,7 @@ router.patch(
         projectId: input.projectId === undefined ? undefined : input.projectId,
         clientId: input.clientId === undefined ? undefined : input.clientId,
         supplierId: input.supplierId === undefined ? undefined : input.supplierId,
+        costCenterId: input.costCenterId === undefined ? undefined : input.costCenterId,
       },
       include,
     });

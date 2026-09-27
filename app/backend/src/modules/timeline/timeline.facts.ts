@@ -21,6 +21,8 @@ export async function loadTimelineFacts(projectId: string): Promise<TimelineFact
       },
       installationTasks: { select: { status: true, startedAt: true, finishedAt: true } },
       assistances: { select: { status: true, createdAt: true } },
+      siteInspections: { where: { status: "COMPLETED" }, orderBy: { completedAt: "desc" }, take: 1, select: { inspectedAt: true } },
+      warranty: { select: { endsAt: true } },
       // o pedido ligado ao projeto é o elo mais direto com o comercial
       salesOrders: {
         orderBy: { orderedAt: "asc" },
@@ -100,8 +102,8 @@ export async function loadTimelineFacts(projectId: string): Promise<TimelineFact
     techApproval: project.technicalApproval,
     production: project.productionOrder,
     installation: tasks.length ? { startedAt: started, finishedAt: finished, allDone: tasks.every((t) => t.status === "DONE") } : null,
-    inspectionDoneAt: null, // vistoria entra na fase 5
-    warrantyEndsAt: null, // garantia entra na fase 5
+    inspectionDoneAt: project.siteInspections[0]?.inspectedAt ?? null,
+    warrantyEndsAt: project.warranty?.endsAt ?? null,
     assistance: project.assistances.length
       ? { open: openAssistance.length, total: project.assistances.length, lastOpenedAt: lastOpened }
       : null,

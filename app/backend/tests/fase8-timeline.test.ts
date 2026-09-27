@@ -188,6 +188,18 @@ test("sincronização não mexe no que uma pessoa editou", () => {
   assert.deepEqual(syncPlan([persisted(K.MEDICAO, S.EM_ANDAMENTO, true)], derived), []);
 });
 
+test("garantia 'não se aplica' automática começa quando a vistoria acontece", () => {
+  const derived = deriveTimeline({ ...base, inspectionDoneAt: d("2026-05-01"), warrantyEndsAt: d("2031-05-01") });
+  const plan = syncPlan([persisted(K.GARANTIA, S.NAO_APLICAVEL)], derived);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].status, S.EM_ANDAMENTO);
+});
+
+test("'não se aplica' marcado à mão continua valendo", () => {
+  const derived = deriveTimeline({ ...base, inspectionDoneAt: d("2026-05-01"), warrantyEndsAt: d("2031-05-01") });
+  assert.deepEqual(syncPlan([persisted(K.GARANTIA, S.NAO_APLICAVEL, true)], derived), []);
+});
+
 test("etapa bloqueada só sai do bloqueio por uma pessoa", () => {
   const derived = deriveTimeline({ ...base, measurement: { status: "DONE", createdAt: d("2026-02-01"), doneAt: d("2026-02-05") } });
   assert.deepEqual(syncPlan([persisted(K.MEDICAO, S.BLOQUEADA)], derived), []);

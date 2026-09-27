@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Loader2, LockKeyhole, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -84,8 +84,13 @@ export function LoginPage() {
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Entrando..." : "Entrar"}
           </Button>
+          <Link to="/esqueci-senha" className="block text-center text-xs text-muted-foreground hover:underline">
+            Esqueci minha senha
+          </Link>
         </form>
 
+        {/* contas de demonstração só em desenvolvimento: em produção seria entregar as senhas */}
+        {import.meta.env.DEV && (
         <div className="mt-6 rounded-2xl border border-sidebar-border bg-sidebar-muted/20 p-4">
           <p className="mb-2 text-center text-xs font-medium uppercase tracking-wide text-white/40">Acessos de demonstração</p>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -105,6 +110,7 @@ export function LoginPage() {
             ))}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

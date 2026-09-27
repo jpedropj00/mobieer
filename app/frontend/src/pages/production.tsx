@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
 import { ProductionItemsPanel } from "./production-items";
 import { LeadTimesCard } from "@/components/lead-times";
+import { FactoryStepsOverview, ProductionStepsCard } from "@/components/production-steps";
 
 export const PRODUCTION_STAGES = ["RELEASED", "IN_PRODUCTION", "PRE_ASSEMBLY", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
 export type ProductionStage = (typeof PRODUCTION_STAGES)[number];
@@ -197,8 +198,31 @@ function CutPlanCard({
 
 /* ============================ per-project panel ============================ */
 
+/** Venda futura segurada: sem ordem de produção até a nova medição e a liberação. */
+function FutureSaleHold({ projectId, message, canRelease, onReleased }: { projectId: string; message: string; canRelease: boolean; onReleased: () => void }) {
+  const release = useMutation({
+    mutationFn: () => apiPost<{ message: string }>(`/production/projects/${projectId}/future-release`),
+    onSuccess: (r) => { toast.success(r.message); onReleased(); },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao liberar")),
+  });
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-5 text-sm">
+        <p className="flex items-center gap-2 font-medium"><CalendarRange className="h-4 w-4 text-warning" /> Venda futura</p>
+        <p className="text-muted-foreground">{message}</p>
+        {canRelease && (
+          <Button size="sm" disabled={release.isPending} onClick={() => confirm("A nova medição foi feita e o projeto está ajustado? Liberar para produção?") && release.mutate()}>
+            Liberar para produção
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ProductionProjectPanel({ projectId, canManage }: { projectId: string; canManage: boolean }) {
   const qc = useQueryClient();
+  const { can } = useAuth();
   const key = ["production", "project", projectId];
   const q = useQuery({ queryKey: key, queryFn: () => apiGet<{ data: ProductionOrder }>(`/production/projects/${projectId}`) });
   const invalidate = () => {
@@ -215,7 +239,11 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
 
   if (q.isLoading) return <PageSkeleton />;
   const o = q.data?.data;
-  if (!o) return <p className="py-8 text-center text-sm text-muted-foreground">Indisponível.</p>;
+  const holdMsg = q.isError ? errorMessage(q.error, "") : "";
+  if (!o && holdMsg.startsWith("Venda futura")) {
+    return <FutureSaleHold projectId={projectId} message={holdMsg} canRelease={canManage} onReleased={invalidate} />;
+  }
+  if (!o) return <p className="py-8 text-center text-sm text-muted-foreground">{holdMsg || "Indisponível."}</p>;
 
   const etaValue = eta ?? toDateInput(o.estimatedDeliveryAt);
   const notesValue = notes ?? o.notes ?? "";
@@ -348,6 +376,8 @@ export function ProductionProjectPanel({ projectId, canManage }: { projectId: st
         </CardContent>
       </Card>
 
+      <ProductionStepsCard projectId={projectId} canEdit={canManage || can("production.steps")} />
+
       <CutPlanCard projectId={projectId} canManage={canManage} cutPlan={o.cutPlan} onChange={(id) => patch.mutate({ cutPlanImportId: id })} saving={patch.isPending} />
 
       <ProductionItemsPanel projectId={projectId} canManage={canManage} />
@@ -471,6 +501,7 @@ export function ProductionPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Produção" description="Esteira dos pedidos: liberado → produção → pré-montagem → entrega." />
+      <FactoryStepsOverview />
       <LeadTimesCard />
       {total === 0 ? (
         <EmptyState title="Nenhum pedido em produção" description="Quando o cliente aprovar o projeto técnico, o pedido entra aqui." />

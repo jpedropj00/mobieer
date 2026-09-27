@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SignaturePad } from "@/components/signature-pad";
+import { Project3DViewer } from "@/components/project-3d-viewer";
 import { errorMessage } from "@/lib/utils";
 import { portalApi, portalDownload, portalGet, portalObjectUrl, portalPost } from "@/services/portal-api";
 import { PortalApplianceSheet } from "./appliance-sheet";
@@ -19,6 +20,8 @@ import { PortalMeasurement } from "./measurement";
 import { PortalTechApproval } from "./tech-approval";
 import { PortalProduction } from "./production";
 import { PortalAssistanceTab, type PortalAssistance } from "./assistance";
+import { PortalTimeline } from "./timeline";
+import { PortalWarranty } from "./warranty";
 
 type Doc = {
   id: string;
@@ -30,6 +33,7 @@ type Doc = {
   version: number;
   createdAt: string;
   downloadUrl: string;
+  signedDownloadUrl?: string | null;
   requiresSignature: boolean;
   signatureStatus: "NOT_REQUIRED" | "PENDING" | "SIGNED";
   clientSigned: boolean;
@@ -45,6 +49,7 @@ type ProjectDetail = {
   dueAt: string | null;
   completedAt: string | null;
   feedbackFormUrl: string | null;
+  link3dUrl?: string | null;
   manager: { name: string } | null;
   technicalApproval: { status: string; approvedAt: string | null } | null;
   production: { stage: string; estimatedDeliveryAt: string | null; deliveredAt: string | null } | null;
@@ -110,6 +115,15 @@ function DocRow({ doc, projectId }: { doc: Doc; projectId: string }) {
         </p>
       </div>
       <div className="flex items-center gap-2">
+        {doc.signedDownloadUrl && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => portalDownload(doc.signedDownloadUrl!.replace("/api/portal", ""), `${doc.fileName.replace(/\.[^.]+$/, "")}-assinado.pdf`).catch((err) => toast.error(errorMessage(err, "Falha ao baixar")))}
+          >
+            <Download className="mr-1 h-4 w-4" /> Assinado
+          </Button>
+        )}
         {doc.canClientSign && (
           <Button size="sm" variant="outline" onClick={() => setSigning(true)}>
             <FileSignature className="mr-1 h-4 w-4" /> Assinar
@@ -215,6 +229,7 @@ export function PortalProjectPage() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
+          {p.link3dUrl && <TabsTrigger value="3d">Projeto 3D</TabsTrigger>}
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
@@ -226,6 +241,7 @@ export function PortalProjectPage() {
         </TabsList>
 
         <TabsContent value="cronograma" className="space-y-4">
+          <PortalTimeline projectId={p.id} />
           <Card>
             <CardContent className="grid grid-cols-2 gap-4 p-5 text-sm sm:grid-cols-3">
               <div><p className="text-xs text-muted-foreground">Início</p><p className="font-medium">{fmtDate(p.startAt)}</p></div>
@@ -263,17 +279,31 @@ export function PortalProjectPage() {
         </TabsContent>
 
         <TabsContent value="garantia" className="space-y-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Resumo da garantia</CardTitle></CardHeader>
-            <CardContent className="space-y-1 text-sm text-muted-foreground">
-              <p>Estrutura e montagem: <strong className="text-foreground">5 anos</strong></p>
-              <p>Ferragens (dobradiças, corrediças, roldanas, pistões): <strong className="text-foreground">5 anos</strong></p>
-              <p>Puxadores: <strong className="text-foreground">2 anos</strong> · Aramados: <strong className="text-foreground">1 ano</strong></p>
-              <p className="pt-1 text-xs">Consulte o documento completo para condições e exclusões.</p>
-            </CardContent>
-          </Card>
-          <DocList docs={byType("MANUAL_GARANTIA")} empty="Certificado de garantia ainda não disponível." projectId={p.id} />
+          <PortalWarranty
+            projectId={p.id}
+            extra={byType("MANUAL_GARANTIA").length ? <DocList docs={byType("MANUAL_GARANTIA")} empty="" projectId={p.id} /> : null}
+            fallback={
+              <>
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Resumo da garantia</CardTitle></CardHeader>
+                  <CardContent className="space-y-1 text-sm text-muted-foreground">
+                    <p>Estrutura e montagem: <strong className="text-foreground">5 anos</strong></p>
+                    <p>Ferragens (dobradiças, corrediças, roldanas, pistões): <strong className="text-foreground">5 anos</strong></p>
+                    <p>Puxadores: <strong className="text-foreground">2 anos</strong> · Aramados: <strong className="text-foreground">1 ano</strong></p>
+                    <p className="pt-1 text-xs">Consulte o documento completo para condições e exclusões.</p>
+                  </CardContent>
+                </Card>
+                <DocList docs={[...byType("CERTIFICADO_GARANTIA"), ...byType("MANUAL_GARANTIA")]} empty="Certificado de garantia ainda não disponível." projectId={p.id} />
+              </>
+            }
+          />
         </TabsContent>
+
+        {p.link3dUrl && (
+          <TabsContent value="3d" className="space-y-3">
+            <Project3DViewer url={p.link3dUrl} height="h-[70vh]" />
+          </TabsContent>
+        )}
 
         <TabsContent value="avaliacao" className="space-y-3">
           {p.feedbackFormUrl ? (

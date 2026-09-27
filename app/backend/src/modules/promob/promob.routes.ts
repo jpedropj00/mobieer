@@ -9,7 +9,10 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storage } from "../../lib/storage";
 import { createPromobImport } from "./promob.import";
+import { readPromobFile } from "./promob.adapters";
 import { pipeToResponse } from "../../utils/stream";
+
+import { diffParts, partsFromParsed } from "./promob.diff";
 
 const router = Router();
 router.use(authenticate);
@@ -73,6 +76,22 @@ router.get(
   })
 );
 
+// POST /api/promob/projects/:projectId/imports/preview   (multipart: file)
+// §20 — lê o arquivo e devolve o que seria importado, SEM gravar nada. A tela
+// mostra peças, materiais, colunas reconhecidas e avisos; só depois de
+// confirmar o arquivo é enviado para a rota de importação abaixo.
+router.post(
+  "/projects/:projectId/imports/preview",
+  requirePermission("organization.manage"),
+  uploadPromob.single("file"),
+  asyncHandler(async (req, res) => {
+    await ensureProject(req.params.projectId, req.user!.organizationId);
+    if (!req.file) throw new BadRequestError("Envie o arquivo exportado do Promob");
+    const read = readPromobFile(req.file);
+    return ok(res, { fileName: req.file.originalname, sizeBytes: req.file.size, ...read });
+  })
+);
+
 // POST /api/promob/projects/:projectId/imports   (multipart: file)
 router.post(
   "/projects/:projectId/imports",
@@ -90,6 +109,27 @@ router.post(
       source: "MANUAL",
     });
     return ok(res, serialize(row), row.status === "PARSED" ? `Importado: ${row.itemCount} item(ns)` : "Arquivo importado");
+  })
+);
+
+// GET /api/promob/imports/:id/compare/:otherId — lista de peças: iguais, alteradas, excluídas, novas
+// (:id é a versão anterior; :otherId, a nova)
+router.get(
+  "/imports/:id/compare/:otherId",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const [a, b] = await Promise.all(
+      [req.params.id, req.params.otherId].map((id) =>
+        prisma.promobImport.findFirst({ where: { id, organizationId: req.user!.organizationId }, select: { id: true, projectId: true, fileName: true, createdAt: true, parsedJson: true } })
+      )
+    );
+    if (!a || !b) throw new NotFoundError("Importação não encontrada");
+    if (a.projectId !== b.projectId) throw new BadRequestError("Compare importações do mesmo projeto");
+    const before = partsFromParsed(a.parsedJson);
+    const after = partsFromParsed(b.parsedJson);
+    if (!before.length || !after.length) throw new BadRequestError("Uma das importações não tem lista de peças lida");
+    const d = diffParts(before, after);
+    return ok(res, { before: { id: a.id, fileName: a.fileName, createdAt: a.createdAt }, after: { id: b.id, fileName: b.fileName, createdAt: b.createdAt }, ...d });
   })
 );
 

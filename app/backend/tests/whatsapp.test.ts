@@ -579,6 +579,66 @@ test("token revogado (sem data de expiração) também avisa", async (t) => {
   assert.match(s.warnings.join(" "), /revogado/i);
 });
 
+test("token vencido derruba o próprio debug_token — e mesmo assim o aviso aparece", async (t) => {
+  // Caso real: o debug_token se autentica com o token que está sendo conferido.
+  // Vencido o token, as DUAS chamadas falham com 190, e antes disso a tela
+  // dizia "token válido, nenhum aviso" com nada sendo entregue.
+  t.after(restore);
+  configure({ appSecret: "s", webhookVerifyToken: "v" });
+  const recusa = {
+    ok: false,
+    status: 401,
+    body: { error: { message: "Error validating access token: Session has expired on Thursday, 17-Sep-26 19:00:00 PDT.", code: 190, type: "OAuthException" } },
+  };
+  stubFetch([recusa, recusa]);
+
+  const s = await whatsappStatus();
+
+  assert.equal(s.token.valid, false, "não pode dizer que o token está bom");
+  assert.equal(s.token.expired, true);
+  assert.equal(s.token.daysLeft, 0);
+  assert.equal(s.warnings.length > 0, true, "a tela precisa avisar");
+  assert.match(s.warnings.join(" "), /System User/i, "precisa dizer como resolver");
+});
+
+test("recusa da Meta sem código, só com a mensagem, também é reconhecida", async (t) => {
+  t.after(restore);
+  configure({ appSecret: "s", webhookVerifyToken: "v" });
+  const recusa = { ok: false, status: 401, body: { error: { message: "Error validating access token: Session has expired" } } };
+  stubFetch([recusa, recusa]);
+
+  const s = await whatsappStatus();
+
+  assert.equal(s.token.expired, true);
+  assert.match(s.warnings.join(" "), /token/i);
+});
+
+test("falha ao consultar o número não engole os avisos de webhook", async (t) => {
+  // O retorno antecipado pulava as checagens de WHATSAPP_VERIFY_TOKEN e
+  // WHATSAPP_APP_SECRET: quem estava com a Meta fora do ar não via nem isso.
+  t.after(restore);
+  configure({ accountId: "", webhookVerifyToken: "", appSecret: "" });
+  stubFetch([permanentToken, { ok: false, status: 500, body: { error: { message: "Meta indisponível" } } }]);
+
+  const s = await whatsappStatus();
+
+  assert.equal(s.number, null);
+  assert.match(s.warnings.join(" "), /WHATSAPP_VERIFY_TOKEN/);
+  assert.match(s.warnings.join(" "), /WHATSAPP_APP_SECRET/);
+  assert.match(s.error ?? "", /Meta indisponível/);
+});
+
+test("os avisos de webhook não saem repetidos quando tudo responde", async (t) => {
+  t.after(restore);
+  configure({ accountId: "", webhookVerifyToken: "", appSecret: "" });
+  stubFetch([permanentToken, { body: { display_phone_number: "+55 85 99999-8888", verified_name: "Mobieer" } }]);
+
+  const s = await whatsappStatus();
+
+  assert.equal(s.warnings.filter((w) => /WHATSAPP_APP_SECRET/.test(w)).length, 1);
+  assert.equal(s.warnings.filter((w) => /WHATSAPP_VERIFY_TOKEN/.test(w)).length, 1);
+});
+
 test("quando a Meta não informa a validade, a tela não inventa alarme", async (t) => {
   t.after(restore);
   configure({ accountId: "", appSecret: "s", webhookVerifyToken: "v" });

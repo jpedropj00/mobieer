@@ -10,6 +10,9 @@ import {
   MessagesSquare,
   PieChart,
   Timer,
+  Gauge,
+  HandCoins,
+  MonitorPlay,
   HardHat,
   CalendarDays,
   ClipboardCheck,
@@ -26,6 +29,8 @@ import {
   ScrollText,
   Scissors,
   Settings,
+  ShoppingCart,
+  ShieldCheck,
   Wallet,
   Target,
   Tags,
@@ -64,6 +69,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Dashboard", to: "/", icon: LayoutDashboard, permission: "dashboard.read", end: true },
       { label: "Painel da loja", to: "/painel-loja", icon: PieChart, anyPermission: ["finance.read", "commercial.read"] },
+      { label: "Central de operações", to: "/painel-operacao", icon: MonitorPlay, anyPermission: ["dashboard.read", "reports.read", "commercial.read.all"] },
       { label: "Pipeline da loja", to: "/pipeline", icon: GanttChartSquare, permission: "organization.read", hideForRoles: ["MONTADOR"] },
       { label: "Minha montagem", to: "/montador", icon: Timer, roles: ["MONTADOR"] },
       { label: "Chat", to: "/chat", icon: MessagesSquare, permission: "chat.use", badge: "chat" },
@@ -78,6 +84,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Produtos", to: "/produtos", icon: Package, permission: "products.read" },
       { label: "Categorias", to: "/categorias", icon: Tags, permission: "categories.read" },
       { label: "Fornecedores", to: "/fornecedores", icon: Truck, permission: "suppliers.read" },
+      { label: "Compras", to: "/compras", icon: ShoppingCart, permission: "purchases.read" },
     ],
   },
   {
@@ -94,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Requisições de Peças", to: "/requisicoes", icon: Scissors, permission: "requisitions.read" },
       { label: "Atividades", to: "/atividades", icon: FileClock, permission: "activities.read" },
       { label: "Agenda", to: "/agenda", icon: CalendarDays, permission: "agenda.read" },
+      { label: "Pós-venda", to: "/pos-venda", icon: ShieldCheck, permission: "organization.read" },
     ],
   },
   {
@@ -109,6 +117,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "RH — Férias", to: "/rh", icon: CalendarClock, permission: "hr.read" },
       { label: "Montadores externos", to: "/montadores", icon: HardHat, permission: "hr.read" },
       { label: "Solicitação de peças", to: "/solicitacao-pecas", icon: Package, permission: "parts.read" },
+      { label: "Produtividade", to: "/produtividade", icon: Gauge, hideForRoles: ["MONTADOR"] },
     ],
   },
   {
@@ -120,6 +129,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Financeiro", to: "/financeiro", icon: Wallet, permission: "finance.read" },
       { label: "Notas fiscais", to: "/notas-fiscais", icon: ScrollText, permission: "finance.read" },
+      { label: "Solicitar ao financeiro", to: "/solicitacoes-financeiras", icon: HandCoins, permission: "finance.request" },
     ],
   },
   {

@@ -16,6 +16,8 @@ router.get("/:id", requirePermission("users.read"), usersController.getUser);
 router.post("/", requirePermission("users.manage"), usersController.createUser);
 router.put("/:id", requirePermission("users.manage"), usersController.updateUser);
 router.patch("/:id/status", requirePermission("users.manage"), usersController.updateUserStatus);
+router.post("/:id/unlock", requirePermission("users.manage"), usersController.unlockUser);
+router.post("/:id/reset-password", requirePermission("users.manage"), usersController.resetUserPassword);
 router.delete("/:id", requirePermission("users.manage"), usersController.deleteUser);
 
 export default router;
