@@ -6,6 +6,8 @@ import { Prisma } from "@prisma/client";
 import { storage, buildStorageKey } from "../../lib/storage";
 import { prisma } from "../../prisma";
 import { readPromobFile } from "./promob.adapters";
+import { syncQuoteFromImport } from "../commercial/quote.promob";
+import { fixUploadName } from "../../utils/upload-name";
 
 export type PromobFile = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 
@@ -16,13 +18,13 @@ export async function createPromobImport(opts: {
   createdById: string | null;
   source: "MANUAL" | "SYNC";
 }) {
-  const { file } = opts;
+  const file = { ...opts.file, originalname: fixUploadName(opts.file.originalname) };
   const read = await readPromobFile(file);
   const key = buildStorageKey(opts.projectId, `promob-${file.originalname}`);
   await storage.put(key, file.buffer, file.mimetype || "application/octet-stream");
   const { format, status, itemCount, totalValue, parsed, notes } = read;
 
-  return prisma.promobImport.create({
+  const row = await prisma.promobImport.create({
     data: {
       organizationId: opts.organizationId,
       projectId: opts.projectId,
@@ -41,6 +43,18 @@ export async function createPromobImport(opts: {
     },
     include: { createdBy: { select: { id: true, name: true } } },
   });
+
+  // Promob → comercial: importação com valores vira (ou atualiza) o rascunho de orçamento do projeto.
+  // Falha aqui não desfaz a importação: o arquivo fica salvo e o motivo vai no retorno.
+  let quote: Awaited<ReturnType<typeof syncQuoteFromImport>> | null = null;
+  if (row.status === "PARSED") {
+    try {
+      quote = await syncQuoteFromImport(row.id, opts.createdById);
+    } catch (e) {
+      quote = { skipped: e instanceof Error ? e.message : "falha ao gerar o orçamento" };
+    }
+  }
+  return { ...row, quote };
 }
 
 /**

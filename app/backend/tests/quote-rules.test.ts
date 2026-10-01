@@ -108,3 +108,24 @@ test("configuração gravada incompleta é completada com o padrão", () => {
   assert.deepEqual(c.financingPlans, []);
   assert.equal(normalizePricing(null).validityDays, 10);
 });
+
+test("Promob → orçamento: ambientes com o subtotal do arquivo e a contagem de itens sem preço", async () => {
+  const { hasBudgetValues, roomsFromParsed } = await import("../src/modules/commercial/quote.promob");
+  const rooms = roomsFromParsed({
+    itens: [
+      { ambiente: "Cozinhas", valorTotal: 48.52 },
+      { ambiente: "Cozinhas", valorTotal: 0 },
+      { ambiente: "Ferragens", valorTotal: 0 },
+      { ambiente: null, valorTotal: 10 },
+    ],
+    valoresPorAmbiente: [{ ambiente: "Cozinhas", valor: 1010.3 }],
+  });
+  assert.deepEqual(rooms, [
+    { room: "Cozinhas", cost: 1010.3, items: 2, unpriced: 1 }, // o subtotal do arquivo manda sobre a soma
+    { room: "Ferragens", cost: 0, items: 1, unpriced: 1 },
+    { room: "Sem ambiente", cost: 10, items: 1, unpriced: 0 },
+  ]);
+  assert.equal(hasBudgetValues(rooms), true);
+  assert.equal(hasBudgetValues(roomsFromParsed({ itens: [{ ambiente: "Cozinha", valorTotal: null }] })), false);
+  assert.deepEqual(roomsFromParsed(null), []);
+});

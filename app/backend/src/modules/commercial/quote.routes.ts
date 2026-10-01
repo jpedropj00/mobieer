@@ -18,6 +18,7 @@ import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { brl } from "../templates/contract.service";
 import { PAYMENT_METHODS, QuoteRuleError, computeQuote, normalizePricing, type PricingConfig } from "./quote.rules";
 import { CATEGORY_SALE, planFinance } from "./quote.finance";
+import { hasBudgetValues, roomsFromParsed } from "./quote.promob";
 import { PRICING_SETTING, calcToData, loadPricing, nextQuoteNumber, quoteInclude, quotePdf, serializeQuote } from "./quote.service";
 
 const router = Router();
@@ -184,14 +185,8 @@ router.get(
       select: { id: true, fileName: true, totalValue: true, parsedJson: true },
     });
     if (!imp) throw new NotFoundError("Importação não encontrada");
-    const itens = ((imp.parsedJson as { itens?: { ambiente?: string | null; valorTotal?: number | null }[] } | null)?.itens ?? []);
-    const byRoom = new Map<string, number>();
-    for (const it of itens) {
-      const k = it.ambiente?.trim() || "Sem ambiente";
-      byRoom.set(k, (byRoom.get(k) ?? 0) + (Number(it.valorTotal) || 0));
-    }
-    const rooms = [...byRoom.entries()].map(([room, cost]) => ({ room, cost: Math.round(cost * 100) / 100 }));
-    const hasValues = rooms.some((r) => r.cost > 0);
+    const rooms = roomsFromParsed(imp.parsedJson);
+    const hasValues = hasBudgetValues(rooms);
     return ok(res, {
       fileName: imp.fileName,
       rooms: hasValues ? rooms : [],

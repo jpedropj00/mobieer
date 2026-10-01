@@ -77,3 +77,10 @@ test("adapter pelo formato; falha de leitura vira PARSE_FAILED com motivo", asyn
   assert.equal(bad.status, "PARSE_FAILED");
   assert.match(bad.notes!, /descrição/);
 });
+
+test("nome de arquivo com acento que o upload quebrou é consertado; nome normal fica igual", async () => {
+  const { fixUploadName } = await import("../src/utils/upload-name");
+  assert.equal(fixUploadName(Buffer.from("orçamento teste.pdf", "utf8").toString("latin1")), "orçamento teste.pdf");
+  assert.equal(fixUploadName("COZINHA_NEILA.csv"), "COZINHA_NEILA.csv");
+  assert.equal(fixUploadName("orçamento.pdf"), "orçamento.pdf");
+});

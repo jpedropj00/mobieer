@@ -1846,6 +1846,9 @@ model CommercialQuote {
   // venda futura: entrega bem depois do prazo normal (fim de obra, entrega do imóvel)
   futureSale        Boolean   @default(false)
   futureReleaseDate DateTime?
+  // gerado/atualizado automaticamente a partir de uma importação do Promob
+  promobImportId    String?
+  promobImport      PromobImport? @relation(fields: [promobImportId], references: [id], onDelete: SetNull)
   // Formação do preço (quote.rules.ts). Custos e comissões nunca saem no PDF.
   costTotal           Decimal       @default(0) @db.Decimal(14, 2)
   markup              Decimal       @default(1) @db.Decimal(8, 4)
@@ -1896,6 +1899,7 @@ model CommercialQuote {
 
   @@unique([organizationId, number, version])
   @@index([organizationId, status, issuedAt])
+  @@index([promobImportId])
   @@index([clientId])
   @@index([sellerId])
 }
@@ -2953,6 +2957,7 @@ model PromobImport {
   itemCount        Int               @default(0)
   totalValue       Decimal?          @db.Decimal(14, 2) // total do orçamento, quando o XML traz valores
   parsedJson       Json? // itens/ambientes extraídos (best-effort)
+  quotes           CommercialQuote[]
   notes            String?           @db.Text
   createdById      String?
   createdBy        User?             @relation("PromobImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
