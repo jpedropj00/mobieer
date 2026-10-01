@@ -21,21 +21,34 @@ export type CsvField =
   | "modulo"
   | "referencia"
   | "borda"
-  | "valor";
+  | "valor"
+  // exportação do plugin de corte (uma linha por canto da peça)
+  | "pecaId"
+  | "temMateria"
+  | "chapaX"
+  | "chapaY"
+  | "pontoX"
+  | "pontoY";
 
 /** Sinônimos já normalizados (minúsculas, sem acento, sem espaço/pontuação). */
 const SYNONYMS: Record<CsvField, string[]> = {
-  descricao: ["descricao", "peca", "nomepeca", "nome", "item", "descricaopeca", "componente", "description", "part"],
-  quantidade: ["quantidade", "qtd", "qtde", "quant", "qt", "repeticoes", "quantity", "qty"],
-  comprimento: ["comprimento", "compr", "comp", "altura", "c", "length", "l1", "dimensao1"],
-  largura: ["largura", "larg", "l", "width", "l2", "dimensao2"],
-  espessura: ["espessura", "esp", "e", "thickness"],
-  material: ["material", "chapa", "cor", "materialchapa", "acabamento", "padrao"],
+  descricao: ["descricao", "peca", "nomepeca", "nome", "item", "descricaopeca", "pecadescricao", "componente", "description", "part"],
+  quantidade: ["quantidade", "qtd", "qtde", "quant", "qt", "repeticoes", "quantidadeitem", "quantity", "qty"],
+  comprimento: ["comprimento", "compr", "comp", "altura", "alturax", "c", "length", "l1", "dimensao1"],
+  largura: ["largura", "larg", "l", "profy", "profundidade", "width", "l2", "dimensao2"],
+  espessura: ["espessura", "esp", "e", "espessuraitem", "thickness"],
+  material: ["material", "chapa", "cor", "materialchapa", "descricaodomaterial", "acabamento", "padrao"],
   ambiente: ["ambiente", "local", "room"],
-  modulo: ["modulo", "movel", "modulos", "module"],
+  modulo: ["modulo", "movel", "modulos", "idmodulo", "module"],
   referencia: ["referencia", "ref", "codigo", "cod", "code", "reference"],
-  borda: ["borda", "fita", "fitas", "bordas", "fitaborda", "edge", "edges"],
+  borda: ["borda", "fita", "fitas", "bordas", "fitaborda", "descricaofitaborda", "edge", "edges"],
   valor: ["valor", "preco", "valortotal", "precototal", "total", "price"],
+  pecaId: ["pecaid", "idpeca", "iddapeca"],
+  temMateria: ["itemtemmateriaprima", "temmateriaprima"],
+  chapaX: ["dimxmaterial"],
+  chapaY: ["dimymaterial"],
+  pontoX: ["pontoxitem"],
+  pontoY: ["pontoyitem"],
 };
 
 const norm = (s: string) =>
@@ -138,16 +151,23 @@ export type CsvPeca = {
   valor: number | null;
   /** Área total em m², com as medidas em mm. */
   areaM2: number | null;
+  /** Metros de fita de borda (lados com fita), quando o arquivo traz os cantos da peça. */
+  fitaM?: number | null;
+  /** Tamanho da chapa do material (mm), quando o arquivo informa. */
+  chapa?: { x: number; y: number } | null;
 };
 
 export type CsvResult = PromobParsed & {
   pecas: CsvPeca[];
-  materiais: { material: string; pecas: number; areaM2: number }[];
+  materiais: { material: string; pecas: number; areaM2: number; chapaM2?: number | null; chapas?: number | null }[];
+  fitas?: { fita: string; metros: number }[];
   columns: { recognized: Partial<Record<CsvField, string>>; unknown: string[]; delimiter: string };
   warnings: string[];
 };
 
 const MAX_ROWS = 5000;
+/** Perda de corte usada na estimativa de chapas. */
+export const CUT_LOSS = 0.1;
 
 export function parsePromobCsv(buf: Buffer): CsvResult {
   const text = decodeText(buf);
@@ -166,10 +186,50 @@ export function parsePromobCsv(buf: Buffer): CsvResult {
   if (map.comprimento === undefined || map.largura === undefined) warnings.push("Sem comprimento e largura: a área por material não pôde ser calculada.");
 
   const get = (r: string[], f: CsvField) => (map[f] === undefined ? undefined : r[map[f]!]?.trim());
+
+  // Exportação do plugin de corte: a peça vem repetida, uma linha por canto
+  // (cada uma com a fita daquele lado), e as linhas sem matéria-prima são só
+  // o agrupamento (módulo/grupo). Junta por ID da peça e descarta o agrupamento.
+  let dataRows = rows.slice(1, MAX_ROWS + 1);
+  const cantos = new Map<string, string[][]>();
+  if (map.temMateria !== undefined) {
+    const antes = dataRows.length;
+    dataRows = dataRows.filter((r) => !/^(0|false|nao|não|n)?$/i.test(get(r, "temMateria") ?? ""));
+    if (antes - dataRows.length) warnings.push(`${antes - dataRows.length} linha(s) de agrupamento (módulo/grupo, sem matéria-prima) não entraram como peça.`);
+  }
+  if (map.pecaId !== undefined) {
+    const primeiras: string[][] = [];
+    for (const r of dataRows) {
+      const id = get(r, "pecaId") || `linha-${primeiras.length}`;
+      if (!cantos.has(id)) {
+        cantos.set(id, []);
+        primeiras.push(r);
+      }
+      cantos.get(id)!.push(r);
+    }
+    if (primeiras.length < dataRows.length) warnings.push(`Arquivo com uma linha por canto da peça: ${dataRows.length} linhas viraram ${primeiras.length} peças.`);
+    dataRows = primeiras;
+  }
+  /** Metros de fita: soma dos lados (canto a canto) cuja linha traz fita. */
+  const fitaDe = (r: string[]) => {
+    if (map.pecaId === undefined || map.pontoX === undefined || map.pontoY === undefined) return null;
+    const pts = cantos.get(get(r, "pecaId") || "") ?? [];
+    if (pts.length < 2) return null;
+    let mm = 0;
+    pts.forEach((pt, i) => {
+      if (!get(pt, "borda")) return;
+      const nx = pts[(i + 1) % pts.length];
+      const dx = (num(get(nx, "pontoX")) ?? 0) - (num(get(pt, "pontoX")) ?? 0);
+      const dy = (num(get(nx, "pontoY")) ?? 0) - (num(get(pt, "pontoY")) ?? 0);
+      mm += Math.hypot(dx, dy);
+    });
+    return Math.round(mm) / 1000;
+  };
+
   const pecas: CsvPeca[] = [];
   let ignoradas = 0;
-  for (const r of rows.slice(1, MAX_ROWS + 1)) {
-    const descricao = get(r, "descricao");
+  for (const r of dataRows) {
+    const descricao = get(r, "descricao")?.replace(/_+$/, "").trim();
     if (!descricao) {
       ignoradas++;
       continue;
@@ -188,21 +248,34 @@ export function parsePromobCsv(buf: Buffer): CsvResult {
       ambiente: get(r, "ambiente") || null,
       modulo: get(r, "modulo") || null,
       referencia: get(r, "referencia") || null,
-      borda: get(r, "borda") || null,
+      // no formato por canto, a fita pode não estar no primeiro canto: vale a primeira que aparecer
+      borda: get(r, "borda") || (cantos.get(get(r, "pecaId") || "") ?? []).map((c) => get(c, "borda")).find(Boolean) || null,
       valor: num(get(r, "valor")),
       areaM2: comprimento != null && largura != null ? Math.round(((comprimento * largura * quantidade) / 1_000_000) * 1000) / 1000 : null,
+      fitaM: (() => {
+        const f = fitaDe(r);
+        return f == null ? null : Math.round(f * quantidade * 1000) / 1000;
+      })(),
+      chapa: (() => {
+        const x = num(get(r, "chapaX"));
+        const y = num(get(r, "chapaY"));
+        return x && y ? { x, y } : null;
+      })(),
     });
   }
   if (rows.length - 1 > MAX_ROWS) warnings.push(`Arquivo com mais de ${MAX_ROWS} linhas: só as primeiras ${MAX_ROWS} foram lidas.`);
   if (ignoradas) warnings.push(`${ignoradas} linha(s) sem descrição foram ignoradas.`);
 
-  const porMaterial = new Map<string, { pecas: number; areaM2: number }>();
+  const porMaterial = new Map<string, { pecas: number; areaM2: number; chapaM2: number | null }>();
+  const porFita = new Map<string, number>();
   for (const p of pecas) {
     const k = p.material ?? "(sem material)";
-    const cur = porMaterial.get(k) ?? { pecas: 0, areaM2: 0 };
+    const cur = porMaterial.get(k) ?? { pecas: 0, areaM2: 0, chapaM2: null };
     cur.pecas += p.quantidade;
     cur.areaM2 += p.areaM2 ?? 0;
+    if (p.chapa) cur.chapaM2 = (p.chapa.x * p.chapa.y) / 1_000_000;
     porMaterial.set(k, cur);
+    if (p.borda && p.fitaM) porFita.set(p.borda, (porFita.get(p.borda) ?? 0) + p.fitaM);
   }
   const ambientes = [...new Set(pecas.map((p) => p.ambiente).filter((x): x is string => !!x))];
   const valor = pecas.some((p) => p.valor != null) ? Math.round(pecas.reduce((s, p) => s + (p.valor ?? 0), 0) * 100) / 100 : null;
@@ -221,8 +294,16 @@ export function parsePromobCsv(buf: Buffer): CsvResult {
     totals: { ambientes: ambientes.length, itens: pecas.length, valor },
     pecas,
     materiais: [...porMaterial.entries()]
-      .map(([material, v]) => ({ material, pecas: v.pecas, areaM2: Math.round(v.areaM2 * 1000) / 1000 }))
+      .map(([material, v]) => ({
+        material,
+        pecas: v.pecas,
+        areaM2: Math.round(v.areaM2 * 1000) / 1000,
+        chapaM2: v.chapaM2 == null ? null : Math.round(v.chapaM2 * 1000) / 1000,
+        // chapas pela área das peças + perda de corte (estimativa: o plano de corte real pode dar outra conta)
+        chapas: v.chapaM2 && v.areaM2 > 0 ? Math.ceil((v.areaM2 * (1 + CUT_LOSS)) / v.chapaM2) : null,
+      }))
       .sort((a, b) => b.areaM2 - a.areaM2),
+    fitas: [...porFita.entries()].map(([fita, metros]) => ({ fita, metros: Math.round(metros * 100) / 100 })).sort((a, b) => b.metros - a.metros),
     columns: {
       recognized: Object.fromEntries(Object.entries(map).map(([f, i]) => [f, header[i!].trim()])) as Partial<Record<CsvField, string>>,
       unknown,

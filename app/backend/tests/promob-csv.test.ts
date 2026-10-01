@@ -65,15 +65,15 @@ test("sem quantidade conta 1 e avisa", () => {
   assert.ok(r.warnings.some((w) => w.includes("quantidade")));
 });
 
-test("adapter pelo formato; falha de leitura vira PARSE_FAILED com motivo", () => {
+test("adapter pelo formato; falha de leitura vira PARSE_FAILED com motivo", async () => {
   assert.equal(detectPromobFormat("plano.CSV", ""), "CSV");
   assert.equal(detectPromobFormat("orc.xml", ""), "XML");
   assert.equal(detectPromobFormat("orc.pdf", ""), "PDF");
   assert.equal(detectPromobFormat("x.bin", ""), "OTHER");
-  const ok = readPromobFile({ buffer: Buffer.from(CSV), originalname: "p.csv", mimetype: "text/csv" });
+  const ok = await readPromobFile({ buffer: Buffer.from(CSV), originalname: "p.csv", mimetype: "text/csv" });
   assert.equal(ok.status, "PARSED");
   assert.equal(ok.itemCount, 3);
-  const bad = readPromobFile({ buffer: Buffer.from("A;B\n1;2"), originalname: "p.csv", mimetype: "text/csv" });
+  const bad = await readPromobFile({ buffer: Buffer.from("A;B\n1;2"), originalname: "p.csv", mimetype: "text/csv" });
   assert.equal(bad.status, "PARSE_FAILED");
   assert.match(bad.notes!, /descrição/);
 });

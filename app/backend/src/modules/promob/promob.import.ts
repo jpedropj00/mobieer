@@ -17,7 +17,7 @@ export async function createPromobImport(opts: {
   source: "MANUAL" | "SYNC";
 }) {
   const { file } = opts;
-  const read = readPromobFile(file);
+  const read = await readPromobFile(file);
   const key = buildStorageKey(opts.projectId, `promob-${file.originalname}`);
   await storage.put(key, file.buffer, file.mimetype || "application/octet-stream");
   const { format, status, itemCount, totalValue, parsed, notes } = read;

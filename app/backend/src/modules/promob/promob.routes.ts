@@ -87,7 +87,7 @@ router.post(
   asyncHandler(async (req, res) => {
     await ensureProject(req.params.projectId, req.user!.organizationId);
     if (!req.file) throw new BadRequestError("Envie o arquivo exportado do Promob");
-    const read = readPromobFile(req.file);
+    const read = await readPromobFile(req.file);
     return ok(res, { fileName: req.file.originalname, sizeBytes: req.file.size, ...read });
   })
 );
