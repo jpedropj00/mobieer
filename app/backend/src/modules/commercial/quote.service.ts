@@ -160,7 +160,6 @@ export async function nextQuoteNumber(organizationId: string) {
   return `ORC-${String(num).padStart(5, "0")}`;
 }
 
-const brDate = (d: Date | null | undefined) => (d ? d.toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza" }) : "—");
 
 /** PDF do orçamento para o cliente, no modelo da loja (quote.pdf.ts). */
 export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizationId: string): Promise<Buffer> {
