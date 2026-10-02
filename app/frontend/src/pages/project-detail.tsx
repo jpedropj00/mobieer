@@ -1,3 +1,4 @@
+import { InstallationSchedulePanel } from "@/components/installation-schedule";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -236,6 +237,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
           <TabsTrigger value="campo">Campo</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
+          <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
           <TabsTrigger value="promob">Promob</TabsTrigger>
           <TabsTrigger value="posvenda">Pós-venda</TabsTrigger>
           <TabsTrigger value="portal">Portal do cliente</TabsTrigger>
@@ -375,6 +377,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="producao">
           <ProductionProjectPanel projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="cronograma">
+          <InstallationSchedulePanel projectId={projectId} canManage={canManageAccounts} />
         </TabsContent>
 
         <TabsContent value="promob">
