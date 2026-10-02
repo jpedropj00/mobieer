@@ -37,6 +37,7 @@ import measurementsRoutes from "./modules/measurements/measurements.routes";
 import techProjectRoutes from "./modules/techproject/techproject.routes";
 import productionRoutes from "./modules/production/production.routes";
 import shopFloorRoutes from "./modules/production/shopfloor.routes";
+import productionLabelRoutes from "./modules/production/labels.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
 import financeRecurringRoutes from "./modules/finance/recurring.routes";
@@ -160,6 +161,7 @@ export function createApp() {
   app.use("/api/tech-approval", techProjectRoutes);
   app.use("/api/production", productionRoutes);
   app.use("/api/production", shopFloorRoutes);
+  app.use("/api/production", productionLabelRoutes);
   app.use("/api/production", productionStepsRoutes);
   app.use("/api/fiscal/import", fiscalImportRoutes);
   app.use("/api/fiscal", fiscalRoutes);

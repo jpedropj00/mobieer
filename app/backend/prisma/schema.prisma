@@ -3006,6 +3006,11 @@ model ProductionItem {
   referencia     String? // referência do Promob, quando veio de um import
   quantidade     Int                   @default(1)
   material       String?
+  // etiqueta: código de barras (único na organização) e o que vai impresso
+  code           String?
+  medidas        String?
+  modulo         String?
+  fita           String?
   status         ProductionItemStatus  @default(PENDING)
   sector         ProductionSector? // setor atual (null se PENDING/DONE/CANCELLED)
   sourceImportId String?
@@ -3019,6 +3024,7 @@ model ProductionItem {
   events         ProductionItemEvent[]
   timeLogs       ProductionTimeLog[]
 
+  @@unique([organizationId, code])
   @@index([organizationId, status, sector])
   @@index([orderId])
 }

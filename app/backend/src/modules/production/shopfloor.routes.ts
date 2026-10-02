@@ -20,6 +20,8 @@ import {
   summarizeItems,
 } from "./shopfloor.service";
 import { enumQuery } from "../../utils/query";
+import { measuresText } from "./labels.rules";
+import { allocateCodes } from "./labels.service";
 
 const router = Router();
 router.use(authenticate);
@@ -112,10 +114,12 @@ router.post(
       })
       .parse(req.body);
     const max = await prisma.productionItem.aggregate({ where: { orderId: order.id }, _max: { position: true } });
+    const [code] = await allocateCodes(req.user!.organizationId, 1);
     const item = await prisma.productionItem.create({
       data: {
         organizationId: req.user!.organizationId,
         orderId: order.id,
+        code,
         descricao: input.descricao,
         ambiente: nn(input.ambiente),
         referencia: nn(input.referencia),
@@ -141,8 +145,12 @@ router.post(
       where: { id: req.params.importId, organizationId: req.user!.organizationId, projectId: project.id },
     });
     if (!imp) throw new NotFoundError("Importação não encontrada");
-    const parsed = imp.parsedJson as { itens?: { descricao?: string; referencia?: string | null; quantidade?: number | null; ambiente?: string | null }[] } | null;
-    const itens = (parsed?.itens ?? []).filter((x) => x.descricao && x.descricao.trim());
+    type Line = { descricao?: string; referencia?: string | null; quantidade?: number | null; ambiente?: string | null; material?: string | null; medidas?: string | null; modulo?: string | null; fita?: string | null };
+    type Peca = Line & { comprimento?: number | null; largura?: number | null; espessura?: number | null; borda?: string | null };
+    const parsed = imp.parsedJson as { itens?: Line[]; pecas?: Peca[] } | null;
+    // lista de corte (CSV): uma etiqueta por peça, com medidas, material e fita; senão, os itens do orçamento
+    const fromPecas: Line[] = (parsed?.pecas ?? []).map((p) => ({ ...p, medidas: measuresText(p), fita: p.borda ?? null }));
+    const itens = (fromPecas.length ? fromPecas : parsed?.itens ?? []).filter((x) => x.descricao && x.descricao.trim());
     if (itens.length === 0) throw new BadRequestError("Este import não tem itens legíveis");
 
     const order = await getOrCreateOrder(project.id, req.user!.organizationId, req.user!.id);
@@ -154,11 +162,17 @@ router.post(
     const base = await prisma.productionItem.aggregate({ where: { orderId: order.id }, _max: { position: true } });
     let pos = base._max.position ?? 0;
 
-    const toCreate = itens
-      .filter((x) => !seen.has(`${x.referencia ?? ""}|${x.descricao!.trim()}`))
-      .map((x) => ({
+    const fresh = itens.filter((x) => !seen.has(`${x.referencia ?? ""}|${x.descricao!.trim()}`));
+    const codes = await allocateCodes(req.user!.organizationId, fresh.length);
+    const toCreate = fresh
+      .map((x, i) => ({
         organizationId: req.user!.organizationId,
         orderId: order.id,
+        code: codes[i],
+        material: x.material?.trim().slice(0, 160) || null,
+        medidas: x.medidas?.slice(0, 60) || null,
+        modulo: x.modulo?.trim().slice(0, 120) || null,
+        fita: x.fita?.trim().slice(0, 120) || null,
         descricao: x.descricao!.trim().slice(0, 300),
         referencia: x.referencia?.trim().slice(0, 120) || null,
         ambiente: x.ambiente?.trim().slice(0, 120) || null,
