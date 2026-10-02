@@ -10,7 +10,8 @@ import { notifyUsersWithPermission } from "../../lib/notify";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { ROOM_LABEL } from "../contractors/productivity.service";
-import { buildInspectionReport, buildWarrantyCertificate } from "./aftersales.docs";
+import { buildInspectionReport } from "./aftersales.docs";
+import { warrantyManualPdf } from "./warranty-manual";
 import {
   WARRANTY_CONDITIONS,
   WARRANTY_EXCLUSIONS,
@@ -206,8 +207,8 @@ export async function issueCertificate(warrantyId: string, actorId: string | nul
     generatedFrom: `Warranty:${w.id}`,
     title: `Certificado de garantia — ${ctx.p.code}`,
     fileName: `certificado-garantia-${ctx.p.code}.pdf`,
-    built: buildWarrantyCertificate({
-      company: ctx.company,
+    // o manual da loja, sem mudança, com a página do certificado preenchida
+    buffer: await warrantyManualPdf({
       client: {
         name: c.name,
         document: c.document,
@@ -217,7 +218,7 @@ export async function issueCertificate(warrantyId: string, actorId: string | nul
         city: c.city ? `${c.city}${c.state ? ` / ${c.state}` : ""}` : null,
         zipCode: c.zipCode,
       },
-      project: { code: ctx.p.code, name: ctx.p.name },
+      project: { code: ctx.p.code },
       designer: null,
       consultant: c.seller?.name ?? null,
       installers: w.inspection?.installerNames ?? ctx.installers,
@@ -225,7 +226,6 @@ export async function issueCertificate(warrantyId: string, actorId: string | nul
       deliveryDate: ctx.p.productionOrder?.deliveredAt ?? null,
       inspectionDate: w.startsAt,
       ambientes: w.inspection?.ambientes ?? ctx.rooms,
-      coverage: w.coverage as unknown as CoverageItem[],
       issuedAt: new Date(),
     }),
     visibleToClient: true,
