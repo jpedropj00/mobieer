@@ -44,7 +44,8 @@ export type PricingConfig = {
 
 export const DEFAULT_PRICING: PricingConfig = {
   defaultMarkup: 1.67, // custo R$ 600 → venda R$ 1.000
-  minScore: 1.5,
+  // mark-up efetivo (o que sobra sobre o custo): de 2 para cima fecha direto, abaixo precisa de liberação
+  minScore: 2,
   validityDays: 10,
   commissionRoles: [
     { role: "VENDEDOR", label: "Vendedor", defaultPercent: 3 },
@@ -126,7 +127,8 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
   const result = r2(netRevenue - costTotal - commissionTotal - freight - otherCosts);
   const marginPercent = total > 0 ? r2((result / total) * 100) : null;
   const score = costTotal > 0 ? r4((netRevenue - commissionTotal - freight - otherCosts) / costTotal) : null;
-  const needsApproval = score != null && score < config.minScore;
+  // folga de meio centésimo: o preço é arredondado em centavos e um mark-up de 2,00 pode dar 1,9999
+  const needsApproval = score != null && score < config.minScore - 0.005;
 
   return {
     items,
@@ -161,6 +163,20 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
 }
 
 export type QuoteCalc = ReturnType<typeof computeQuote>;
+
+/** Cômodos do orçamento, sem repetir e na ordem em que aparecem (item sem cômodo entra pela descrição). */
+export function quoteRooms(items: { room?: string | null; description: string }[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const it of items) {
+    const name = (it.room?.trim() || it.description.trim()).replace(/\s+/g, " ");
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
 
 /** Texto da condição de pagamento para o PDF e o contrato. */
 export function paymentText(p: QuoteCalc["payment"], brl: (n: number) => string): string {

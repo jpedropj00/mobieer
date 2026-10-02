@@ -3,7 +3,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_PRICING, computeQuote, normalizePricing, paymentText, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
+import { DEFAULT_PRICING, computeQuote, normalizePricing, paymentText, quoteRooms, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
 
 const config: PricingConfig = {
   ...DEFAULT_PRICING,
@@ -128,4 +128,30 @@ test("Promob → orçamento: ambientes com o subtotal do arquivo e a contagem de
   assert.equal(hasBudgetValues(rooms), true);
   assert.equal(hasBudgetValues(roomsFromParsed({ itens: [{ ambiente: "Cozinha", valorTotal: null }] })), false);
   assert.deepEqual(roomsFromParsed(null), []);
+});
+
+test("regra da loja: mark-up de 2 para cima fecha direto; abaixo pede liberação", () => {
+  assert.equal(DEFAULT_PRICING.minScore, 2);
+  const at = (markup: number, over: Partial<QuoteInput> = {}) => computeQuote(base({ markup, ...over }), DEFAULT_PRICING).needsApproval;
+  assert.equal(at(2), false);
+  assert.equal(at(2.4), false);
+  assert.equal(at(1.99), true);
+  assert.equal(at(1.67), true);
+  // centavos arredondados não derrubam um mark-up de 2 cravado
+  assert.equal(computeQuote(base({ markup: 2, items: [{ room: "Sala", description: "Painel", unitCost: 333.33 }], commissions: [{ name: "Ana", role: "VENDEDOR", percent: 3 }] }), DEFAULT_PRICING).needsApproval, false);
+  // desconto que derruba o mark-up efetivo para menos de 2 volta a pedir liberação
+  assert.equal(at(2, { discount: 100 }), true);
+});
+
+test("cômodos do orçamento: sem repetir, na ordem, e item sem cômodo entra pela descrição", () => {
+  assert.deepEqual(
+    quoteRooms([
+      { room: "Cozinha", description: "Armários" },
+      { room: " cozinha ", description: "Ilha" },
+      { room: "Dormitório casal", description: "Guarda-roupa" },
+      { room: null, description: "Painel de TV" },
+    ]),
+    ["Cozinha", "Dormitório casal", "Painel de TV"]
+  );
+  assert.deepEqual(quoteRooms([]), []);
 });

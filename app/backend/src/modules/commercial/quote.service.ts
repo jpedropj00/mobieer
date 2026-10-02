@@ -1,8 +1,8 @@
-import { BRAND, PAGE, brandDocument, brandField, brandSection, brandTitle, ensureSpace } from "../../lib/brand-pdf";
+import { BRAND, PAGE, brandDocument, brandSection, brandTitle, ensureSpace } from "../../lib/brand-pdf";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { brl } from "../templates/contract.service";
-import { normalizePricing, paymentText, type PaymentMethod, type PricingConfig, type QuoteCalc } from "./quote.rules";
+import { normalizePricing, quoteRooms, type PaymentMethod, type PricingConfig, type QuoteCalc } from "./quote.rules";
 
 export const PRICING_SETTING = "commercial.pricing";
 
@@ -152,127 +152,41 @@ export async function nextQuoteNumber(organizationId: string) {
 const brDate = (d: Date | null | undefined) => (d ? d.toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza" }) : "—");
 
 /**
- * PDF do orçamento para o cliente: ambientes e valores de venda, condição de
- * pagamento e a assinatura do responsável pela venda. Custo, mark-up,
- * comissões e resultado nunca entram aqui.
+ * PDF do orçamento para o cliente, enxuto: o nome do cliente, os cômodos e o
+ * valor final. Itens, valores por cômodo, condição de pagamento, custo,
+ * mark-up e comissões ficam só na tela do orçamento.
  */
 export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizationId: string): Promise<Buffer> {
-  const [org, seller] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: organizationId }, include: { enterprise: true } }),
-    prisma.user.findUnique({ where: { id: q.seller.id }, select: { name: true, position: true, signatureImage: true } }),
-  ]);
+  const org = await prisma.organization.findUnique({ where: { id: organizationId }, include: { enterprise: true } });
   const ent = org?.enterprise;
-
   const contacts = [ent?.phone, ent?.email].filter((x): x is string => Boolean(x));
   const { doc, done, width: W } = brandDocument({ contacts: contacts.length ? [...contacts, "www.mobieer.com.br"] : undefined });
   const L = PAGE.left;
 
-  brandTitle(
-    doc,
-    `Orçamento ${q.number}${q.version > 1 ? ` · versão ${q.version}` : ""}`,
-    `Emitido em ${brDate(q.issuedAt)}   ·   Válido até ${brDate(q.validUntil)}${ent?.document ? `   ·   ${ent.tradeName ?? ent.legalName} — CNPJ ${ent.document}` : ""}`
-  );
+  brandTitle(doc, `Orçamento ${q.number}${q.version > 1 ? ` · versão ${q.version}` : ""}`, `Emitido em ${brDate(q.issuedAt)}   ·   Válido até ${brDate(q.validUntil)}`);
 
-  brandSection(doc, "Dados do cliente");
-  brandField(doc, "Cliente", q.client.name);
-  if (q.client.document) brandField(doc, "CPF / CNPJ", q.client.document);
-  const cli = [q.client.phone, q.client.email].filter(Boolean).join("   ·   ");
-  if (cli) brandField(doc, "Contato", cli);
-  if (q.client.address) brandField(doc, "Endereço", q.client.address);
-  if (q.project) brandField(doc, "Projeto", `${q.project.code} — ${q.project.name}`);
-  doc.moveDown(0.9);
+  brandSection(doc, "Cliente");
+  doc.font("Helvetica-Bold").fontSize(15).fillColor(BRAND.ink).text(q.client.name, L, doc.y, { width: W });
+  doc.moveDown(1.2);
 
-  // Tabela: ambiente/descrição | qtd | valor
-  brandSection(doc, "Ambientes e itens");
-  const colQ = L + W - 150;
-  const colV = L + W - 96;
-  const header = () => {
+  const rooms = quoteRooms(q.items);
+  brandSection(doc, rooms.length === 1 ? "Cômodo" : "Cômodos");
+  for (const room of rooms) {
+    ensureSpace(doc, 24);
     const y = doc.y;
-    doc.rect(L, y, W, 20).fill(BRAND.band);
-    doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#FFFFFF");
-    doc.text("AMBIENTE / ITEM", L + 8, y + 6, { width: colQ - L - 16, characterSpacing: 0.6, lineBreak: false });
-    doc.text("QTD", colQ, y + 6, { width: 46, align: "right", lineBreak: false });
-    doc.text("VALOR", colV, y + 6, { width: 88, align: "right", lineBreak: false });
-    doc.fillColor(BRAND.ink);
-    doc.y = y + 26;
-  };
-  header();
-  let room = "";
-  for (const it of q.items) {
-    const h = Math.max(doc.heightOfString(it.description, { width: colQ - L - 16 }), 11) + 8;
-    if (doc.y + h + (it.room && it.room !== room ? 18 : 0) > doc.page.height - doc.page.margins.bottom) {
-      doc.addPage();
-      header();
-    }
-    if (it.room && it.room !== room) {
-      room = it.room;
-      doc.font("Helvetica-Bold").fontSize(9.5).fillColor(BRAND.orange).text(room, L + 8, doc.y, { width: W - 16 });
-      doc.fillColor(BRAND.ink);
-      doc.y += 3;
-    }
-    const y = doc.y;
-    doc.font("Helvetica").fontSize(9.5);
-    doc.text(it.description, L + 8, y, { width: colQ - L - 16 });
-    doc.text(String(it.quantity).replace(".", ","), colQ, y, { width: 46, align: "right" });
-    doc.text(brl(it.total), colV, y, { width: 88, align: "right" });
-    doc.y = y + h;
-    doc.moveTo(L, doc.y - 4).lineTo(L + W, doc.y - 4).strokeColor(BRAND.line).lineWidth(0.5).stroke();
+    doc.font("Helvetica").fontSize(11).fillColor(BRAND.orange).text("•", L + 2, y, { lineBreak: false });
+    doc.fillColor(BRAND.ink).text(room, L + 16, y, { width: W - 16, lineGap: 3 });
+    doc.moveDown(0.25);
   }
-
-  // Totais
-  ensureSpace(doc, 70);
-  doc.moveDown(0.4);
-  const line = (k: string, v: string) => {
-    const y = doc.y;
-    doc.font("Helvetica").fontSize(9.5).fillColor(BRAND.muted).text(k, colQ - 110, y, { width: 160, align: "right" });
-    doc.fillColor(BRAND.ink).text(v, colV, y, { width: 88, align: "right" });
-    doc.y = y + 15;
-  };
-  if (q.discount > 0) {
-    line("Subtotal", brl(q.subtotal));
-    line("Desconto", `- ${brl(q.discount)}`);
-  }
-  const ty = doc.y + 2;
-  doc.roundedRect(L + W - 250, ty, 250, 30, 4).fill(BRAND.soft);
-  doc.font("Helvetica-Bold").fontSize(9).fillColor(BRAND.muted).text("VALOR TOTAL", L + W - 238, ty + 11, { characterSpacing: 0.8, lineBreak: false });
-  doc.font("Helvetica-Bold").fontSize(14).fillColor(BRAND.orange).text(brl(q.total), L + W - 150, ty + 8, { width: 142, align: "right", lineBreak: false });
-  doc.fillColor(BRAND.ink);
   doc.x = L;
-  doc.y = ty + 46;
+  doc.moveDown(1.2);
 
-  ensureSpace(doc, 60);
-  brandSection(doc, "Condição de pagamento");
-  const calcPayment = {
-    ...q.payment,
-    financed: Math.max(0, q.total - q.payment.downPayment),
-    installmentValue: q.payment.installments > 0 ? Math.round(((q.total - q.payment.downPayment) / q.payment.installments) * 100) / 100 : 0,
-  };
-  doc.font("Helvetica").fontSize(10).text(q.paymentTerms?.trim() || paymentText(calcPayment, brl), L, doc.y, { width: W, lineGap: 2 });
-  if (q.notes) {
-    doc.moveDown(0.8);
-    ensureSpace(doc, 50);
-    brandSection(doc, "Observações");
-    doc.font("Helvetica").fontSize(10).text(q.notes, L, doc.y, { width: W, lineGap: 2 });
-  }
-  doc.moveDown(0.8);
-  doc.font("Helvetica").fontSize(8.5).fillColor(BRAND.muted).text(`Valores válidos até ${brDate(q.validUntil)}. Após essa data o orçamento precisa ser revisto.`, L, doc.y, { width: W });
+  ensureSpace(doc, 70);
+  const ty = doc.y;
+  doc.roundedRect(L, ty, W, 46, 5).fill(BRAND.soft);
+  doc.font("Helvetica-Bold").fontSize(10).fillColor(BRAND.muted).text("VALOR TOTAL", L + 18, ty + 18, { characterSpacing: 0.8, lineBreak: false });
+  doc.font("Helvetica-Bold").fontSize(20).fillColor(BRAND.orange).text(brl(q.total), L + W / 2, ty + 13, { width: W / 2 - 18, align: "right", lineBreak: false });
   doc.fillColor(BRAND.ink);
-
-  // Assinatura do responsável pela venda
-  ensureSpace(doc, 120);
-  const sy = Math.max(doc.y + 24, doc.page.height - doc.page.margins.bottom - 100);
-  const sx = L + W / 2 - 110;
-  if (seller?.signatureImage?.startsWith("data:image/png;base64,")) {
-    try {
-      doc.image(Buffer.from(seller.signatureImage.split(",")[1], "base64"), sx + 30, sy, { fit: [160, 55] });
-    } catch {
-      /* imagem inválida: fica só a linha */
-    }
-  }
-  const ly = sy + 60;
-  doc.moveTo(sx, ly).lineTo(sx + 220, ly).strokeColor(BRAND.ink).lineWidth(0.7).stroke();
-  doc.font("Helvetica-Bold").fontSize(9.5).text(seller?.name ?? q.seller.name, sx, ly + 5, { width: 220, align: "center" });
-  doc.font("Helvetica").fontSize(8.5).fillColor(BRAND.muted).text(seller?.position || "Responsável pela venda", sx, doc.y, { width: 220, align: "center" });
   doc.end();
   return done;
 }
