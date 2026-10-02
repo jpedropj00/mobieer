@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, CheckSquare, ChevronLeft, CircleUserRound, GripVertical, SquareKanban, MessageSquare, Paperclip, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { apiGet, apiPatch, apiPost, apiUpload } from "@/services/api";
@@ -45,7 +45,7 @@ function Boards() {
   const create = useMutation({ mutationFn: () => apiPost<{ data: Board }>("/organization/boards", form), onSuccess: r => { qc.invalidateQueries({ queryKey: ["kanban-boards"] }); setOpen(false); setForm({ name: "", description: "", team: "", visibility: "TEAM" }); navigate(`/organizacao/${r.data.id}`); }, onError: e => toast.error((e as Error).message) });
   if (query.isLoading) return <PageSkeleton />;
   const boards = query.data?.data ?? [];
-  return <div className="space-y-6"><PageHeader title="Organização interna" description="Quadros para equipes, processos e tarefas internas.">{can("organization.manage") && <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Novo quadro</Button>}</PageHeader>
+  return <div className="space-y-6"><PageHeader title="Organização interna" description="Quadros para equipes, processos e tarefas internas."><Button variant="outline" onClick={() => navigate("/minhas-tarefas")}>Minhas tarefas</Button>{can("organization.manage") && <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Novo quadro</Button>}</PageHeader>
     {boards.length === 0 ? <EmptyState icon={SquareKanban} title="Nenhum quadro disponível" description="Crie o primeiro quadro para organizar o fluxo da equipe." /> : <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{boards.map(b => <Card key={b.id} className="cursor-pointer transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => navigate(`/organizacao/${b.id}`)}><CardHeader><div className="flex items-start justify-between gap-3"><CardTitle>{b.name}</CardTitle><Badge variant="secondary">{b._count.columns} colunas</Badge></div></CardHeader><CardContent className="space-y-3 text-sm"><p className="line-clamp-2 text-muted-foreground">{b.description || "Sem descrição"}</p><div className="flex justify-between text-xs"><span>{b.team || "Toda a organização"}</span><span>Responsável: {b.owner.name}</span></div></CardContent></Card>)}</div>}
     <Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>Novo quadro</DialogTitle></DialogHeader><div className="space-y-4"><Field label="Nome"><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field><Field label="Descrição"><Textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></Field><Field label="Equipe ou setor"><Input value={form.team} onChange={e => setForm({ ...form, team: e.target.value })} /></Field><Field label="Visibilidade"><Select value={form.visibility} onValueChange={visibility => setForm({ ...form, visibility })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PRIVATE">Privado</SelectItem><SelectItem value="TEAM">Equipe</SelectItem><SelectItem value="ORGANIZATION">Organização</SelectItem></SelectContent></Select></Field></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button><Button disabled={create.isPending || form.name.trim().length < 2} onClick={() => create.mutate()}>Criar quadro</Button></DialogFooter></DialogContent></Dialog>
   </div>;
@@ -56,6 +56,15 @@ function KanbanBoard({ boardId }: { boardId: string }) {
   const [taskOpen, setTaskOpen] = useState(false); const [detail, setDetail] = useState<Task | null>(null); const [targetColumn, setTargetColumn] = useState(""); const [columnOpen, setColumnOpen] = useState(false); const [columnName, setColumnName] = useState("");
   const [search, setSearch] = useState(""); const [priority, setPriority] = useState("ALL"); const [form, setForm] = useState(emptyTask);
   const query = useQuery({ queryKey: ["kanban-board", boardId], queryFn: () => apiGet<{ data: Board }>(`/organization/boards/${boardId}`) });
+  // veio de "Minhas tarefas" (ou de uma notificação): abre a tarefa pedida no link
+  const [params, setParams] = useSearchParams();
+  const wanted = params.get("tarefa");
+  useEffect(() => {
+    if (!wanted || !query.data) return;
+    const found = query.data.data.columns.flatMap(c => c.tasks).find(t => t.id === wanted);
+    if (found) setDetail(found);
+    setParams({}, { replace: true });
+  }, [wanted, query.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const people = useQuery({ queryKey: ["kanban-people"], queryFn: () => apiGet<{ data: Person[] }>("/organization/people") });
   const clients = useQuery({ queryKey: ["business-clients"], queryFn: () => apiGet<{ data: Client[] }>("/business/clients") });
   const projects = useQuery({ queryKey: ["business-projects"], queryFn: () => apiGet<{ data: Project[] }>("/business/projects") });
