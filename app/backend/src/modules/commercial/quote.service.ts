@@ -3,6 +3,7 @@ import { prisma } from "../../prisma";
 import { brl } from "../templates/contract.service";
 import { normalizePricing, paymentText, type PaymentMethod, type PricingConfig, type QuoteCalc } from "./quote.rules";
 import { quoteModelPdf } from "./quote.pdf";
+import { splitCityFromAddress } from "../aftersales/warranty-manual.rules";
 
 export const PRICING_SETTING = "commercial.pricing";
 
@@ -171,6 +172,8 @@ export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizatio
   const ent = org?.enterprise;
   const c = q.client;
   const street = [c.street, c.addressNumber, c.complement].filter(Boolean).join(", ");
+  const legacy = splitCityFromAddress(c.address);
+  const legacyCity = legacy.city ? { city: legacy.city.split(" / ")[0], uf: legacy.city.split(" / ")[1] } : null;
   const payment = {
     ...q.payment,
     financed: Math.max(0, q.total - q.payment.downPayment),
@@ -189,7 +192,17 @@ export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizatio
       site: "www.mobieer.com.br",
       email: ent?.email ?? "contato@mobieer.com.br",
     },
-    client: { name: c.name, address: street || c.address, district: c.district, city: c.city, state: c.state, zipCode: c.zipCode, phone: c.phone, email: c.email },
+    client: {
+      name: c.name,
+      // sem endereço estruturado, cidade/UF saem do fim do endereço digitado ("… — Fortaleza/CE")
+      address: street || legacy.street,
+      district: c.district,
+      city: c.city ?? legacyCity?.city ?? null,
+      state: c.state ?? legacyCity?.uf ?? null,
+      zipCode: c.zipCode,
+      phone: c.phone,
+      email: c.email,
+    },
     items: q.items,
     subtotal: q.subtotal,
     discount: q.discount,
