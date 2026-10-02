@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Eraser, Grid3x3, Redo2, Trash2, Undo2 } from "lucide-react";
+import { Eraser, Grid3x3, ImageMinus, ImagePlus, Redo2, Trash2, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,7 +10,17 @@ import { cn } from "@/lib/utils";
  * desenho fica igual em qualquer tela e pode ser reaberto e continuado depois.
  * Pointer events cobrem caneta, dedo e mouse; `touchAction: none` evita a
  * página rolar enquanto se desenha.
+ *
+ * Foto de fundo (como anotar foto no iPad): a foto fica numa camada embaixo
+ * do traço. Borracha, desfazer e limpar mexem só no traço; no PNG salvo a foto
+ * e o desenho saem juntos.
  */
+
+/** Área da foto dentro do quadro, mantendo a proporção (igual ao object-fit: contain). */
+function containRect(w: number, h: number) {
+  const scale = Math.min(RES_W / w, RES_H / h);
+  return { w: w * scale, h: h * scale, x: (RES_W - w * scale) / 2, y: (RES_H - h * scale) / 2 };
+}
 
 const RES_W = 1600;
 const RES_H = 1100;
@@ -31,12 +41,15 @@ const SIZES = [
 
 export function SketchPad({
   initialImageUrl,
+  initialBackgroundUrl,
   onDirtyChange,
   registerGetter,
   className,
 }: {
   /** Desenho já salvo, para continuar de onde parou. */
   initialImageUrl?: string | null;
+  /** Foto para desenhar por cima. */
+  initialBackgroundUrl?: string | null;
   onDirtyChange?: (dirty: boolean) => void;
   /** Recebe a função que devolve o PNG atual (data URL). */
   registerGetter: (fn: () => string | null) => void;
@@ -53,6 +66,30 @@ export function SketchPad({
   const [dirty, setDirty] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [bg, setBg] = useState<string | null>(initialBackgroundUrl ?? null);
+  const bgImg = useRef<HTMLImageElement | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
+  const ownBg = useRef<string | null>(null);
+
+  // carrega a foto de fundo para poder juntar no PNG
+  useEffect(() => {
+    bgImg.current = null;
+    if (!bg) return;
+    const img = new Image();
+    img.onload = () => (bgImg.current = img);
+    img.src = bg;
+  }, [bg]);
+  useEffect(() => setBg(initialBackgroundUrl ?? null), [initialBackgroundUrl]);
+  // libera a foto escolhida aqui dentro ao trocar ou fechar
+  useEffect(() => () => { if (ownBg.current) URL.revokeObjectURL(ownBg.current); }, []);
+
+  const pickPhoto = (file: File) => {
+    if (ownBg.current) URL.revokeObjectURL(ownBg.current);
+    ownBg.current = URL.createObjectURL(file);
+    setBg(ownBg.current);
+    setGrid(false);
+    markDirty(true);
+  };
 
   const ctxOf = () => canvasRef.current?.getContext("2d") ?? null;
 
@@ -87,6 +124,11 @@ export function SketchPad({
     if (!octx) return null;
     octx.fillStyle = "#ffffff";
     octx.fillRect(0, 0, RES_W, RES_H);
+    const photo = bgImg.current;
+    if (photo) {
+      const r = containRect(photo.naturalWidth, photo.naturalHeight);
+      octx.drawImage(photo, r.x, r.y, r.w, r.h);
+    }
     octx.drawImage(canvas, 0, 0);
     return out.toDataURL("image/png");
   }, []);
@@ -267,6 +309,25 @@ export function SketchPad({
           ))}
         </div>
 
+        <input
+          ref={photoInput}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) pickPhoto(f);
+          }}
+        />
+        <Button type="button" size="sm" variant="outline" onClick={() => photoInput.current?.click()} title="Tirar uma foto ou escolher da galeria e desenhar por cima">
+          <ImagePlus className="mr-2 h-4 w-4" /> {bg ? "Trocar foto" : "Foto"}
+        </Button>
+        {bg && (
+          <Button type="button" size="sm" variant="ghost" onClick={() => { setBg(null); markDirty(true); }}>
+            <ImageMinus className="mr-2 h-4 w-4" /> Tirar foto
+          </Button>
+        )}
         <Button type="button" size="sm" variant={erasing ? "secondary" : "ghost"} onClick={() => setErasing((v) => !v)}>
           <Eraser className="mr-2 h-4 w-4" /> Borracha
         </Button>
@@ -287,7 +348,7 @@ export function SketchPad({
       <div
         className="relative overflow-hidden rounded-lg border border-border bg-white"
         style={
-          grid
+          grid && !bg
             ? {
                 backgroundImage:
                   "linear-gradient(to right, rgba(0,0,0,.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,.07) 1px, transparent 1px)",
@@ -296,10 +357,13 @@ export function SketchPad({
             : undefined
         }
       >
+        {bg && (
+          <img src={bg} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full select-none object-contain" />
+        )}
         <canvas
           ref={canvasRef}
           style={{ touchAction: "none", aspectRatio: `${RES_W} / ${RES_H}` }}
-          className="block w-full cursor-crosshair bg-transparent"
+          className="relative block w-full cursor-crosshair bg-transparent"
           onPointerDown={start}
           onPointerMove={move}
           onPointerUp={end}
@@ -309,7 +373,7 @@ export function SketchPad({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Desenhe com a caneta ou o dedo. A malha é só guia visual — não sai no arquivo salvo.
+        Desenhe com a caneta ou o dedo. Em "Foto" você tira uma foto ou escolhe da galeria e desenha por cima; a borracha apaga só o traço. A malha é só guia visual — não sai no arquivo salvo.
       </p>
     </div>
   );
