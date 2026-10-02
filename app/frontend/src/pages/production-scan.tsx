@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiGet, apiObjectUrl, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
+import { CameraScanner } from "@/components/camera-scanner";
 
 type CheckItem = {
   id: string;
@@ -132,7 +133,7 @@ export function ProductionScanPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Leitor de etiquetas" description="Leia o código de barras da etiqueta para dar baixa no item. O que ficar sem baixa aparece em vermelho na conferência." />
+      <PageHeader title="Leitor de etiquetas" description="Leia o código de barras da etiqueta — com o leitor, pela câmera do celular ou digitando — para dar baixa no item. O que ficar sem baixa aparece em vermelho na conferência." />
 
       <Card>
         <CardContent className="space-y-4 pt-6">
@@ -172,6 +173,9 @@ export function ProductionScanPage() {
             </div>
             <Button type="submit" className="h-12" disabled={!canScan || !code.trim() || scan.isPending}>Registrar</Button>
           </form>
+
+          {/* celular/tablet: lê a etiqueta pela câmera, uma atrás da outra */}
+          <CameraScanner disabled={!canScan} onCode={(value) => { if (!scan.isPending) scan.mutate(value); }} />
 
           {feedback && (
             <div className={cn("flex items-start gap-3 rounded-lg border p-4", TONE[feedback.tone])} role="status" aria-live="polite">
