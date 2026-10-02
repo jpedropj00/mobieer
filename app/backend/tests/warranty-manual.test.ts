@@ -52,3 +52,11 @@ test("PDF: as 6 páginas fixas da loja mais certificado e declaração, mesmo se
   const sizes = new Set(doc.getPages().map((p) => `${Math.round(p.getWidth())}x${Math.round(p.getHeight())}`));
   assert.equal(sizes.size, 1); // páginas preenchidas no mesmo tamanho das da loja
 });
+
+test("endereço antigo: separa cidade/UF do fim; sem cidade, fica tudo como endereço", async () => {
+  const { splitCityFromAddress } = await import("../src/modules/aftersales/warranty-manual.rules");
+  assert.deepEqual(splitCityFromAddress("Av. Francisco Sá, 3667, Sala 12 — Fortaleza/CE"), { street: "Av. Francisco Sá, 3667, Sala 12", city: "Fortaleza / CE" });
+  assert.deepEqual(splitCityFromAddress("Rua das Flores, 100, Eusébio - ce"), { street: "Rua das Flores, 100", city: "Eusébio / CE" });
+  assert.deepEqual(splitCityFromAddress("Rua das Flores, 100"), { street: "Rua das Flores, 100", city: null });
+  assert.deepEqual(splitCityFromAddress(null), { street: null, city: null });
+});

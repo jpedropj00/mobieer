@@ -72,6 +72,18 @@ export function matchRooms(ambientes: string | null | undefined): { checked: (ty
   return { checked: MANUAL_ROOMS.filter((r) => checked.has(r)), others: others.join(", ") };
 }
 
+/**
+ * Cidade/UF no fim do endereço antigo, texto livre ("Av. X, 100 — Fortaleza/CE"
+ * ou "..., Fortaleza - CE"). Devolve o endereço sem esse pedaço e a cidade.
+ */
+export function splitCityFromAddress(address: string | null | undefined): { street: string | null; city: string | null } {
+  const a = address?.trim();
+  if (!a) return { street: null, city: null };
+  const m = /^(.*?)[\s,—–-]+([A-Za-zÀ-ÿ' ]{3,})\s*[/-]\s*([A-Za-z]{2})\s*$/.exec(a);
+  if (!m || !m[1].trim()) return { street: a, city: null };
+  return { street: m[1].trim().replace(/[,—–-]\s*$/, "").trim(), city: `${m[2].trim()} / ${m[3].toUpperCase()}` };
+}
+
 /** Rótulo do modelo → nome do campo. A comparação ignora acento, caixa e os dois-pontos. */
 export const FIELD_LABELS: Record<string, string> = {
   cliente: "cliente",
