@@ -242,13 +242,16 @@ publicWorkOrderRoutes.post(
       .object({
         receivedByName: z.string().trim().min(2, "Nome de quem recebeu").max(120),
         signature: z.string().max(400_000).regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/, "Assinatura inválida"),
+        // avaliação da montagem pelo cliente (opcional)
+        rating: z.coerce.number().int().min(1).max(5).optional().nullable(),
+        comment: z.string().trim().max(1000).optional().nullable().or(z.literal("")),
       })
       .parse(req.body);
     const pending = o.tasks.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED");
     if (pending.length) throw new InvalidStateError(`Conclua todos os cômodos antes (${pending.length} em aberto)`);
     await prisma.installationWorkOrder.update({
       where: { id: o.id },
-      data: { status: "DONE", completedAt: new Date(), receivedByName: input.receivedByName, clientSignature: input.signature },
+      data: { status: "DONE", completedAt: new Date(), receivedByName: input.receivedByName, clientSignature: input.signature, clientRating: input.rating ?? null, clientComment: input.comment?.trim() || null },
     });
     await prisma.auditLog.create({
       data: { userId: null, action: "WORK_ORDER_COMPLETED", entity: "InstallationWorkOrder", entityId: o.id, details: { number: o.number, receivedByName: input.receivedByName, via: "qr" } },
@@ -257,7 +260,7 @@ publicWorkOrderRoutes.post(
       organizationId: o.organizationId,
       permission: "hr.employees.manage",
       title: `Requisição ${o.number} concluída`,
-      message: `${o.contractor.name} concluiu a montagem em ${o.project.code}. Recebido por ${input.receivedByName}.`,
+      message: `${o.contractor.name} concluiu a montagem em ${o.project.code}. Recebido por ${input.receivedByName}.${input.rating ? ` Nota do cliente: ${input.rating}/5${input.rating <= 2 ? " — vale um contato com o cliente" : ""}.` : ""}`,
     });
     return ok(res, publicView(await byToken(req.params.token)), "Montagem concluída. Obrigado!");
   })

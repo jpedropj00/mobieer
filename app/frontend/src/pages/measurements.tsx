@@ -31,6 +31,8 @@ export type MeasurementVisit = {
   daysToTechDeadline: number | null;
   createdAt: string;
   technician: { id: string; name: string } | null;
+  confirmation?: "AWAITING" | "CONFIRMED" | "RESCHEDULE_REQUESTED" | null;
+  clientConfirmedAt?: string | null;
   project?: { id: string; code: string; name: string; clientName: string | null };
 };
 type Person = { id: string; name: string };
@@ -130,6 +132,15 @@ export function MeasurementCard({
       </div>
 
       <div className="mt-2 space-y-1 text-sm">
+        {visit.confirmation === "RESCHEDULE_REQUESTED" && (
+          <p className="text-warning">O cliente não pode na data marcada e sugeriu outras — remarque.</p>
+        )}
+        {visit.status === "SCHEDULED" && visit.confirmation === "AWAITING" && (
+          <p className="text-warning">Aguardando o cliente confirmar no portal.</p>
+        )}
+        {visit.status === "SCHEDULED" && visit.confirmation === "CONFIRMED" && (
+          <p className="text-success">Cliente confirmou{visit.clientConfirmedAt ? ` em ${fmtDateTime(visit.clientConfirmedAt)}` : ""}.</p>
+        )}
         {visit.status === "REQUESTED" && (
           <>
             <p className="text-muted-foreground">

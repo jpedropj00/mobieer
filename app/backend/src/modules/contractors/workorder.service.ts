@@ -58,6 +58,8 @@ export function serializeWorkOrder(o: Row, opts: { withToken: boolean }) {
     instructions: o.instructions,
     receivedByName: o.receivedByName,
     hasClientSignature: Boolean(o.clientSignature),
+    clientRating: o.clientRating,
+    clientComment: o.clientComment,
     completedAt: o.completedAt,
     createdAt: o.createdAt,
     createdBy: o.createdBy,

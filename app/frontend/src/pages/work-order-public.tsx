@@ -137,8 +137,10 @@ export function WorkOrderPublicPage() {
 function CompleteForm({ token, onDone }: { token: string; onDone: (r: { data: WorkOrder; message?: string }) => void }) {
   const [name, setName] = useState("");
   const [signature, setSignature] = useState<string | null>(null);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
   const save = useMutation({
-    mutationFn: () => call<WorkOrder>(`${encodeURIComponent(token)}/complete`, { receivedByName: name, signature }),
+    mutationFn: () => call<WorkOrder>(`${encodeURIComponent(token)}/complete`, { receivedByName: name, signature, rating: rating || null, comment: comment.trim() || null }),
     onSuccess: (r) => {
       toast.success(r.message ?? "Concluída");
       onDone(r);
@@ -150,6 +152,25 @@ function CompleteForm({ token, onDone }: { token: string; onDone: (r: { data: Wo
       <p className="font-medium">Conferência do cliente</p>
       <p className="text-sm text-muted-foreground">Peça ao cliente (ou responsável) para conferir a montagem, escrever o nome e assinar.</p>
       <Input placeholder="Nome de quem recebeu" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium">Como foi a montagem?</p>
+        <div className="flex gap-1" role="radiogroup" aria-label="Nota da montagem, de 1 a 5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={rating === n}
+              aria-label={`${n} de 5`}
+              onClick={() => setRating(rating === n ? 0 : n)}
+              className={`h-11 w-11 rounded-lg border text-xl ${n <= rating ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+        <Input placeholder="Quer deixar um comentário? (opcional)" value={comment} maxLength={1000} onChange={(e) => setComment(e.target.value)} />
+      </div>
       <SignaturePad onChange={setSignature} height={160} />
       <Button size="lg" className="w-full" disabled={name.trim().length < 2 || !signature || save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? "Enviando…" : "Finalizar montagem"}

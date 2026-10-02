@@ -24,6 +24,8 @@ type WorkOrder = {
   scheduledFor: string | null;
   instructions: string | null;
   receivedByName: string | null;
+  clientRating?: number | null;
+  clientComment?: string | null;
   completedAt: string | null;
   createdAt: string;
   project: { id: string; code: string; name: string };
@@ -133,6 +135,11 @@ export function WorkOrdersTab({ contractors, projects }: { contractors: { id: st
                     <TableCell>
                       <Badge variant={STATUS[o.status].variant}>{STATUS[o.status].label}</Badge>
                       {o.receivedByName && <span className="block text-xs text-muted-foreground">recebido por {o.receivedByName} em {formatDate(o.completedAt)}</span>}
+                      {o.clientRating != null && (
+                        <span className={`block text-xs ${o.clientRating <= 2 ? "text-destructive" : "text-muted-foreground"}`} title={o.clientComment ?? undefined}>
+                          Nota do cliente: {"★".repeat(o.clientRating)}{"☆".repeat(5 - o.clientRating)}{o.clientComment ? ` — “${o.clientComment}”` : ""}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {o.status === "OPEN" && (

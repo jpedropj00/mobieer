@@ -2773,6 +2773,8 @@ model MeasurementVisit {
   preferredPeriod  String? // MANHA | TARDE | QUALQUER
   clientNotes      String?
   scheduledAt      DateTime? // data/hora confirmada pela equipe
+  clientConfirmedAt     DateTime? // cliente confirmou o dia/hora no portal
+  rescheduleRequestedAt DateTime? // cliente não pode e sugeriu outras datas
   technicianId     String?
   technician       User?                   @relation("MeasurementTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
   teamNotes        String?
@@ -3638,6 +3640,9 @@ model InstallationWorkOrder {
   // conferência do cliente na conclusão (substitui a assinatura no papel)
   receivedByName  String?
   clientSignature String?                  @db.Text
+  // avaliação da montagem pelo cliente (1 a 5) na conferência
+  clientRating    Int?
+  clientComment   String?                  @db.Text
   completedAt     DateTime?
   createdById     String?
   createdBy       User?                    @relation("WorkOrderCreator", fields: [createdById], references: [id], onDelete: SetNull)

@@ -14,6 +14,7 @@ import { uploadDocument } from "../../middlewares/upload";
 import { pipeToResponse } from "../../utils/stream";
 import { enumQuery } from "../../utils/query";
 
+import { scheduleChanged } from "./measurements.rules";
 const router = Router();
 router.use(authenticate);
 
@@ -146,6 +147,11 @@ router.patch(
             ? { connect: { id: input.technicianId } }
             : { disconnect: true },
     };
+    // remarcou: o cliente precisa confirmar de novo
+    if (scheduleChanged(cur.scheduledAt, input.scheduledAt)) {
+      data.clientConfirmedAt = null;
+      data.rescheduleRequestedAt = null;
+    }
     if (input.action === "cancel") data.status = "CANCELLED";
     if (input.action === "reopen") data.status = "REQUESTED";
     if (input.action === "schedule" || (input.scheduledAt && cur.status === "REQUESTED")) {
