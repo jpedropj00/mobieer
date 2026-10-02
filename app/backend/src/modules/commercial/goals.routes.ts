@@ -14,6 +14,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { BadRequestError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { conversionRate, goalProgress, monthRange, parseMonth } from "./goals.service";
+import { goalSuggestion } from "./reminders.service";
 
 const router = Router();
 router.use(authenticate);
@@ -78,6 +79,17 @@ router.get(
     }
 
     return ok(res, { month, scope: sellerId ? "seller" : "store", ...main, bySeller });
+  })
+);
+
+// GET /api/commercial/goals/suggestion?month=&profit=  meta sugerida pelas despesas fixas
+router.get(
+  "/suggestion",
+  requirePermission("commercial.goals.manage"),
+  asyncHandler(async (req, res) => {
+    const month = parseMonth(req.query.month);
+    const profit = z.coerce.number().min(0).max(300).catch(20).parse(req.query.profit ?? 20);
+    return ok(res, await goalSuggestion(req.user!.organizationId, month, profit));
   })
 );
 

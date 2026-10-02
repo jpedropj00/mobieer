@@ -57,6 +57,7 @@ import timelineRoutes from "./modules/timeline/timeline.routes";
 import goalsRoutes from "./modules/commercial/goals.routes";
 import quoteRoutes from "./modules/commercial/quote.routes";
 import referrerRoutes from "./modules/commercial/referrers.routes";
+import remindersRoutes from "./modules/commercial/reminders.routes";
 import teamsRoutes from "./modules/commercial/teams.routes";
 import portalFinanceRoutes from "./modules/portal/portal-finance.routes";
 import agendaResponseRoutes from "./modules/agenda/response.routes";
@@ -148,6 +149,7 @@ export function createApp() {
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial/goals", goalsRoutes);
+  app.use("/api/commercial/reminders", remindersRoutes);
   app.use("/api/commercial/quotes", quoteRoutes);
   app.use("/api/referrers", referrerRoutes);
   app.use("/api/commercial", teamsRoutes);

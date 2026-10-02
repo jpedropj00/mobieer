@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { apiGet, apiPatch } from "@/services/api";
 import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export function NotificationsMenu() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data } = useQuery({
     queryKey: ["notifications"],
@@ -82,7 +84,7 @@ export function NotificationsMenu() {
         ) : (
           <div className="max-h-80 overflow-y-auto">
             {notifications.map((n) => (
-              <DropdownMenuItem key={n.id} className="flex cursor-default items-start gap-2.5 px-3 py-2.5" onClick={() => markOne.mutate(n.id)}>
+              <DropdownMenuItem key={n.id} className={`flex items-start gap-2.5 px-3 py-2.5 ${n.link ? "cursor-pointer" : "cursor-default"}`} onClick={() => { markOne.mutate(n.id); if (n.link) navigate(n.link); }}>
                 <span className={`mt-0.5 flex h-2 w-2 shrink-0 rounded-full ${TYPE_STYLE[n.type] ?? "bg-muted"} ${n.read ? "opacity-30" : ""}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">

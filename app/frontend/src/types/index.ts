@@ -639,6 +639,7 @@ export type Notification = {
   message: string | null;
   read: boolean;
   createdAt: string;
+  link?: string | null;
   product: { id: string; name: string; code: string } | null;
 };
 
