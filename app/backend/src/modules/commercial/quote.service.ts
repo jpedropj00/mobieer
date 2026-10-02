@@ -1,8 +1,8 @@
-import { BRAND, PAGE, brandDocument, brandSection, brandTitle, ensureSpace } from "../../lib/brand-pdf";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { brl } from "../templates/contract.service";
-import { normalizePricing, quoteRooms, type PaymentMethod, type PricingConfig, type QuoteCalc } from "./quote.rules";
+import { normalizePricing, paymentText, type PaymentMethod, type PricingConfig, type QuoteCalc } from "./quote.rules";
+import { quoteModelPdf } from "./quote.pdf";
 
 export const PRICING_SETTING = "commercial.pricing";
 
@@ -17,7 +17,7 @@ export async function loadPricing(): Promise<PricingConfig> {
 }
 
 export const quoteInclude = {
-  client: { select: { id: true, name: true, document: true, phone: true, email: true, address: true } },
+  client: { select: { id: true, name: true, document: true, phone: true, email: true, address: true, street: true, addressNumber: true, complement: true, district: true, city: true, state: true, zipCode: true } },
   opportunity: { select: { id: true, title: true, status: true } },
   project: { select: { id: true, code: true, name: true } },
   seller: { select: { id: true, name: true } },
@@ -58,6 +58,11 @@ export function serializeQuote(q: QuoteRow) {
       id: i.id,
       room: i.room,
       description: i.description,
+      corpo: i.corpo,
+      porta: i.porta,
+      puxador: i.puxador,
+      complemento: i.complemento,
+      modelo: i.modelo,
       quantity: n(i.quantity),
       unitCost: n(i.unitCost),
       unitPrice: n(i.unitPrice),
@@ -125,6 +130,11 @@ export function calcToData(c: QuoteCalc) {
         position,
         room: i.room,
         description: i.description,
+        corpo: i.corpo,
+        porta: i.porta,
+        puxador: i.puxador,
+        complemento: i.complemento,
+        modelo: i.modelo,
         quantity: new Prisma.Decimal(i.quantity.toFixed(3)),
         unitCost: D(i.unitCost),
         unitPrice: D(i.unitPrice),
@@ -151,42 +161,41 @@ export async function nextQuoteNumber(organizationId: string) {
 
 const brDate = (d: Date | null | undefined) => (d ? d.toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza" }) : "—");
 
-/**
- * PDF do orçamento para o cliente, enxuto: o nome do cliente, os cômodos e o
- * valor final. Itens, valores por cômodo, condição de pagamento, custo,
- * mark-up e comissões ficam só na tela do orçamento.
- */
+/** PDF do orçamento para o cliente, no modelo da loja (quote.pdf.ts). */
 export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizationId: string): Promise<Buffer> {
-  const org = await prisma.organization.findUnique({ where: { id: organizationId }, include: { enterprise: true } });
+  const [org, seller, pricing] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: organizationId }, include: { enterprise: true } }),
+    prisma.user.findUnique({ where: { id: q.seller.id }, select: { name: true, signatureImage: true } }),
+    loadPricing(),
+  ]);
   const ent = org?.enterprise;
-  const contacts = [ent?.phone, ent?.email].filter((x): x is string => Boolean(x));
-  const { doc, done, width: W } = brandDocument({ contacts: contacts.length ? [...contacts, "www.mobieer.com.br"] : undefined });
-  const L = PAGE.left;
-
-  brandTitle(doc, `Orçamento ${q.number}${q.version > 1 ? ` · versão ${q.version}` : ""}`, `Emitido em ${brDate(q.issuedAt)}   ·   Válido até ${brDate(q.validUntil)}`);
-
-  brandSection(doc, "Cliente");
-  doc.font("Helvetica-Bold").fontSize(15).fillColor(BRAND.ink).text(q.client.name, L, doc.y, { width: W });
-  doc.moveDown(1.2);
-
-  const rooms = quoteRooms(q.items);
-  brandSection(doc, rooms.length === 1 ? "Cômodo" : "Cômodos");
-  for (const room of rooms) {
-    ensureSpace(doc, 24);
-    const y = doc.y;
-    doc.font("Helvetica").fontSize(11).fillColor(BRAND.orange).text("•", L + 2, y, { lineBreak: false });
-    doc.fillColor(BRAND.ink).text(room, L + 16, y, { width: W - 16, lineGap: 3 });
-    doc.moveDown(0.25);
-  }
-  doc.x = L;
-  doc.moveDown(1.2);
-
-  ensureSpace(doc, 70);
-  const ty = doc.y;
-  doc.roundedRect(L, ty, W, 46, 5).fill(BRAND.soft);
-  doc.font("Helvetica-Bold").fontSize(10).fillColor(BRAND.muted).text("VALOR TOTAL", L + 18, ty + 18, { characterSpacing: 0.8, lineBreak: false });
-  doc.font("Helvetica-Bold").fontSize(20).fillColor(BRAND.orange).text(brl(q.total), L + W / 2, ty + 13, { width: W / 2 - 18, align: "right", lineBreak: false });
-  doc.fillColor(BRAND.ink);
-  doc.end();
-  return done;
+  const c = q.client;
+  const street = [c.street, c.addressNumber, c.complement].filter(Boolean).join(", ");
+  const payment = {
+    ...q.payment,
+    financed: Math.max(0, q.total - q.payment.downPayment),
+    installmentValue: q.payment.installments > 0 ? Math.round(((q.total - q.payment.downPayment) / q.payment.installments) * 100) / 100 : 0,
+  };
+  return quoteModelPdf({
+    number: q.number,
+    version: q.version,
+    issuedAt: q.issuedAt,
+    validUntil: q.validUntil,
+    seller: { name: seller?.name ?? q.seller.name, signatureImage: seller?.signatureImage },
+    store: ent?.tradeName ?? "MOBIEER",
+    company: {
+      name: "MOBIEER MÓVEIS SOB MEDIDA",
+      city: [ent?.municipio ?? "Fortaleza", ent?.uf ?? "CE"].join("-"),
+      site: "www.mobieer.com.br",
+      email: ent?.email ?? "contato@mobieer.com.br",
+    },
+    client: { name: c.name, address: street || c.address, district: c.district, city: c.city, state: c.state, zipCode: c.zipCode, phone: c.phone, email: c.email },
+    items: q.items,
+    subtotal: q.subtotal,
+    discount: q.discount,
+    total: q.total,
+    payment: q.paymentTerms?.trim() || paymentText(payment, brl),
+    notes: q.notes,
+    config: pricing.document,
+  });
 }

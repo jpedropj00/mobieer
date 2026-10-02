@@ -1908,6 +1908,12 @@ model CommercialQuoteItem {
   id          String          @id @default(cuid())
   room        String?
   description String
+  // acabamentos do ambiente, como saem no orçamento da loja
+  corpo       String?
+  porta       String?
+  puxador     String?
+  complemento String?
+  modelo      String?
   unitCost    Decimal         @default(0) @db.Decimal(14, 2)
   position    Int             @default(0)
   quantity    Decimal         @db.Decimal(12, 3)

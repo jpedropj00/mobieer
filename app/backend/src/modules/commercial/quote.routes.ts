@@ -35,7 +35,12 @@ const calcSchema = z.object({
     .array(
       z.object({
         room: text(120),
-        description: z.string().trim().min(1, "Descreva o item").max(300),
+        description: z.string().trim().min(1, "Descreva o item").max(3000),
+        corpo: text(160),
+        porta: text(160),
+        puxador: text(160),
+        complemento: text(160),
+        modelo: text(160),
         quantity: z.coerce.number().positive().max(100000).optional(),
         unitCost: money,
       })
@@ -156,6 +161,15 @@ router.put(
         validityDays: z.coerce.number().int().min(1).max(365),
         commissionRoles: z.array(z.object({ role: z.string().trim().min(1).max(40), label: z.string().trim().min(1).max(60), defaultPercent: z.coerce.number().min(0).max(50) })).min(1).max(10),
         financingPlans: z.array(planSchema).max(30),
+        document: z
+          .object({
+            supplier: z.string().trim().min(1).max(80),
+            line: z.string().trim().min(1).max(60),
+            deliveryDays: z.coerce.number().int().min(1).max(365),
+            deliveryText: z.string().trim().min(1).max(120),
+            notes: z.array(z.string().trim().min(1).max(400)).max(15),
+          })
+          .optional(),
       })
       .parse(req.body);
     if (new Set(input.financingPlans.map((p) => p.id)).size !== input.financingPlans.length) throw new BadRequestError("Dois planos com o mesmo código");

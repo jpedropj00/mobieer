@@ -3,7 +3,8 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_PRICING, computeQuote, normalizePricing, paymentText, quoteRooms, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
+import { quoteModelPdf } from "../src/modules/commercial/quote.pdf";
+import { DEFAULT_PRICING, ambCode, computeQuote, normalizePricing, obsLabel, paymentText, quoteRooms, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
 
 const config: PricingConfig = {
   ...DEFAULT_PRICING,
@@ -154,4 +155,33 @@ test("cômodos do orçamento: sem repetir, na ordem, e item sem cômodo entra pe
     ["Cozinha", "Dormitório casal", "Painel de TV"]
   );
   assert.deepEqual(quoteRooms([]), []);
+});
+
+test("modelo da loja: códigos de ambiente, rótulos das OBS e acabamentos no cálculo", () => {
+  assert.deepEqual([0, 1, 25, 26, 27].map(ambCode), ["AA", "AB", "AZ", "BA", "BB"]);
+  assert.deepEqual([0, 1, 2, 3, 6].map(obsLabel), ["OBS:", "OBS²:", "OBS³:", "OBS4:", "OBS7:"]);
+  const q = computeQuote(base({ items: [{ room: "Cozinha", description: "Armário alto", unitCost: 600, corpo: " MDF 15mm Branco TX ", porta: "", puxador: "Cava usinado" }] }), config);
+  assert.deepEqual([q.items[0].corpo, q.items[0].porta, q.items[0].puxador, q.items[0].modelo], ["MDF 15mm Branco TX", null, "Cava usinado", null]);
+});
+
+test("configuração do PDF: completa com o padrão da loja e aceita lista de observações vazia", () => {
+  const padrao = normalizePricing({}).document;
+  assert.equal(padrao.supplier, "MOBIEER MÓVEIS PLANEJADOS");
+  assert.equal(padrao.deliveryDays, 45);
+  assert.equal(padrao.notes.length, 7);
+  const custom = normalizePricing({ document: { line: "CORPORATIVO", deliveryDays: 60, notes: [" Garantia de 5 anos ", ""] } }).document;
+  assert.deepEqual([custom.line, custom.deliveryDays, custom.notes, custom.supplier], ["CORPORATIVO", 60, ["Garantia de 5 anos"], "MOBIEER MÓVEIS PLANEJADOS"]);
+  assert.deepEqual(normalizePricing({ document: { notes: [] } }).document.notes, []);
+});
+
+test("PDF no modelo da loja: gera com muitos ambientes e observação longa sem quebrar", async () => {
+  const items = Array.from({ length: 30 }, (_, i) => ({ room: `Ambiente ${i + 1}`, description: "Armário com portas de giro em MDF 15mm. ".repeat(12), quantity: 1, total: 1000 + i, corpo: "MDF 15mm", porta: null, puxador: null, complemento: null, modelo: null }));
+  const pdf = await quoteModelPdf({
+    number: "ORC-00009", version: 2, issuedAt: new Date("2026-08-22T15:00:00Z"), validUntil: new Date("2026-09-01T15:00:00Z"),
+    seller: { name: "Vendedora" }, store: "Mobieer", company: { name: "MOBIEER MÓVEIS SOB MEDIDA", city: "Fortaleza-CE", site: "www.mobieer.com.br", email: null },
+    client: { name: "Cliente", address: null, district: null, city: null, state: null, zipCode: null, phone: null, email: null },
+    items, subtotal: 31000, discount: 500, total: 30500, payment: "À vista", notes: "Entrega sujeita à liberação da obra.", config: DEFAULT_PRICING.document,
+  });
+  assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
+  assert.ok(pdf.length > 5000);
 });
