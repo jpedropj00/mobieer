@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, CalendarClock, CheckCircle2, FileText, Loader2, Paperclip, Plus, Receipt, RotateCcw, Trash2, Undo2, Wallet, X,
+  AlertTriangle, CalendarClock, CheckCircle2, FileText, Loader2, Paperclip, Plus, Receipt, RotateCcw, ScanBarcode, Trash2, Undo2, Wallet, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/states";
-import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiDownload, apiGet, apiOpen, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { BoletoReader } from "@/components/boleto-reader";
 import { errorMessage } from "@/lib/errors";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -147,6 +148,7 @@ export function FinanceDocuments() {
   });
 
   const recarregar = () => qc.invalidateQueries({ queryKey: ["finance-docs"] });
+  const [boleto, setBoleto] = useState(false);
 
   const itens = lista.data?.data.items ?? [];
   const totais = painel.data?.data.totais;
@@ -182,12 +184,19 @@ export function FinanceDocuments() {
           <Filtro label="Fornecedor" value={filtros.supplierId} onChange={(v) => setFiltros((f) => ({ ...f, supplierId: v }))}
             itens={(fornecedores.data?.data ?? []).map((s) => ({ value: s.id, label: s.name }))} />
           {podeGerenciar && (
-            <Button onClick={() => setForm(true)} className="ml-auto">
+            <Button variant="outline" onClick={() => setBoleto(true)} className="ml-auto">
+              <ScanBarcode className="h-4 w-4" /> Ler boleto
+            </Button>
+          )}
+          {podeGerenciar && (
+            <Button onClick={() => setForm(true)}>
               <Plus className="h-4 w-4" /> Novo documento
             </Button>
           )}
         </CardContent>
       </Card>
+
+      <BoletoReader open={boleto} onClose={() => setBoleto(false)} onCreated={recarregar} />
 
       <Tabs defaultValue="lista">
         <TabsList>
@@ -697,10 +706,8 @@ function DocumentoDetalhe({
                             <ReciboBotao paymentId={p.id} issuedReceiptId={p.issuedReceiptId} podeEmitir={podePagar} onDone={atualizar} />
                           )}
                           {p.receipt && (
-                            <Button size="sm" variant="ghost" asChild>
-                              <a href={`/api/finance/documents/payments/${p.id}/receipt`} target="_blank" rel="noreferrer">
-                                <Paperclip className="h-4 w-4" />
-                              </a>
+                            <Button size="sm" variant="ghost" title="Ver comprovante" onClick={() => apiOpen(`/finance/documents/payments/${p.id}/receipt`).catch((e) => toast.error(errorMessage(e, "Falha ao abrir o comprovante")))}>
+                              <Paperclip className="h-4 w-4" />
                             </Button>
                           )}
                           {podePagar && (
@@ -745,9 +752,9 @@ function DocumentoDetalhe({
                   <div className="space-y-1">
                     {d.attachments.map((a) => (
                       <div key={a.id} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
-                        <a href={`/api/finance/documents/attachments/${a.id}`} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:underline">
+                        <button type="button" className="min-w-0 truncate text-left hover:underline" onClick={() => apiOpen(`/finance/documents/attachments/${a.id}`).catch((e) => toast.error(errorMessage(e, "Falha ao abrir o arquivo")))}>
                           {a.fileName}
-                        </a>
+                        </button>
                         {podeGerenciar && (
                           <Button size="sm" variant="ghost" onClick={() => removerAnexo.mutate(a.id)}>
                             <Trash2 className="h-4 w-4" />
@@ -879,10 +886,8 @@ function ComprovantesAConferir({ onAbrir }: { onAbrir: (id: string) => void }) {
               <span className="text-muted-foreground"> · {a.transaction.category}{a.transaction.project ? ` · ${a.transaction.project.code}` : ""} · {brl(a.transaction.amount - a.transaction.paidAmount)} em aberto</span>
             </span>
             <span className="flex gap-1">
-              <Button size="sm" variant="ghost" asChild>
-                <a href={`/api/finance/documents/attachments/${a.id}`} target="_blank" rel="noreferrer">
-                  <Paperclip className="h-4 w-4" /> Ver
-                </a>
+              <Button size="sm" variant="ghost" onClick={() => apiOpen(`/finance/documents/attachments/${a.id}`).catch((e) => toast.error(errorMessage(e, "Falha ao abrir o arquivo")))}>
+                <Paperclip className="h-4 w-4" /> Ver
               </Button>
               <Button size="sm" variant="outline" onClick={() => onAbrir(a.transaction.id)}>Abrir documento</Button>
               <Button size="sm" onClick={() => conferir.mutate(a.id)} disabled={conferir.isPending}>

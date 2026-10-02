@@ -46,7 +46,7 @@ const include = {
 } as const;
 
 const serialize = (t: {
-  id: string; type: string; category: string; amount: Prisma.Decimal; date: Date; dueDate: Date | null;
+  id: string; type: string; category: string; amount: Prisma.Decimal; paidAmount?: Prisma.Decimal | null; date: Date; dueDate: Date | null;
   description: string | null; status: string; paidAt: Date | null; method: string | null; createdAt: Date;
   project: { id: string; code: string; name: string } | null;
   client: { id: string; name: string } | null;
@@ -58,6 +58,8 @@ const serialize = (t: {
   type: t.type,
   category: t.category,
   amount: money(t.amount),
+  // já pago (pagamentos parciais): o "marcar pago" sugere só o saldo
+  paidAmount: money(t.paidAmount ?? 0),
   date: t.date,
   dueDate: t.dueDate,
   description: t.description,

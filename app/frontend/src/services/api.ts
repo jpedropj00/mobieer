@@ -93,6 +93,19 @@ export async function apiObjectUrl(path: string): Promise<string> {
   return URL.createObjectURL(await response.blob());
 }
 
+/** Abre um arquivo autenticado numa aba nova (link direto não leva o token). */
+export async function apiOpen(path: string) {
+  const tab = window.open("", "_blank");
+  try {
+    const url = await apiObjectUrl(path);
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
+}
+
 /** Baixa um arquivo autenticado (o backend responde com redirect assinado ou o arquivo). */
 export async function apiDownload(path: string, fileName: string) {
   const response = await safeFetch(`${API_BASE}${path}`, {

@@ -44,6 +44,8 @@ import {
   statusAfterPayments,
 } from "./documents.service";
 import { issueReceipt } from "./receipt.service";
+import { BoletoError, beneficiaryFromText, findBoletoInText, parseBoleto } from "./boleto.rules";
+import { extractPdfLines } from "../promob/promob.pdf";
 
 const router = Router();
 router.use(authenticate);
@@ -917,6 +919,42 @@ router.post(
       await storage.remove(key).catch(() => undefined);
       throw e;
     }
+  })
+);
+
+// POST /api/finance/documents/boleto/read — lê o boleto (linha digitável digitada,
+// código lido pela câmera ou o PDF) e devolve os dados para virar conta a pagar
+router.post(
+  "/boleto/read",
+  canManage,
+  uploadDocument.single("file"),
+  asyncHandler(async (req, res) => {
+    const { code } = z.object({ code: z.string().max(200).optional() }).parse(req.body ?? {});
+    let boleto = null;
+    let beneficiary: { name: string | null; document: string | null } = { name: null, document: null };
+    try {
+      if (req.file) {
+        if (!/pdf/i.test(req.file.mimetype) && !/\.pdf$/i.test(req.file.originalname)) throw new BoletoError("Envie o boleto em PDF — foto pela câmera é lida na própria tela");
+        const text = (await extractPdfLines(req.file.buffer)).map((l) => l.cells.map((c) => c.s).join(" ")).join("\n");
+        boleto = findBoletoInText(text);
+        beneficiary = beneficiaryFromText(text);
+        if (!boleto) throw new BoletoError("Não achei a linha digitável neste PDF — digite os números do boleto");
+      } else if (code) {
+        boleto = parseBoleto(code);
+      } else throw new BoletoError("Digite a linha digitável, leia o código de barras ou envie o PDF do boleto");
+    } catch (e) {
+      if (e instanceof BoletoError) throw new BadRequestError(e.message);
+      throw e;
+    }
+    // fornecedor já cadastrado com o mesmo CNPJ do beneficiário
+    let supplier: { id: string; name: string } | null = null;
+    const docDigits = beneficiary.document?.replace(/\D/g, "").replace(/^0(?=\d{14}$)/, "");
+    if (docDigits && docDigits.length === 14) {
+      const list = await prisma.supplier.findMany({ where: { cnpj: { not: null } }, select: { id: true, name: true, cnpj: true } });
+      const hit = list.find((s) => s.cnpj!.replace(/\D/g, "") === docDigits);
+      if (hit) supplier = { id: hit.id, name: hit.name };
+    }
+    return ok(res, { boleto, beneficiary, supplier });
   })
 );
 
