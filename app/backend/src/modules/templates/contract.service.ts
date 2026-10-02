@@ -6,7 +6,7 @@
  * O modelo é texto puro com marcadores — nada de .docx: assim a substituição é
  * confiável e o resultado sai sempre igual.
  */
-import PDFDocument from "pdfkit";
+import { BRAND, PAGE, brandDocument, brandField, brandSection, brandTitle, ensureSpace } from "../../lib/brand-pdf";
 import { prisma } from "../../prisma";
 import { NotFoundError } from "../../utils/ApiError";
 
@@ -266,42 +266,57 @@ export async function buildContractContext(
 export { renderTemplate } from "../../utils/template";
 
 /**
- * Gera o PDF do contrato. O corpo é texto puro: linhas em MAIÚSCULAS curtas
- * viram títulos de cláusula, o resto é parágrafo justificado.
+ * Gera o PDF de um documento de texto (contrato, recibo, vistoria, certificado)
+ * no padrão visual da loja. O corpo é texto puro: linha curta em MAIÚSCULAS
+ * vira título de seção, "Rótulo: valor" sai com o rótulo em negrito, "• " vira
+ * item de lista e o resto é parágrafo justificado.
  */
 export function contractPdf(opts: { title: string; body: string; footer?: string }): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margins: { top: 56, bottom: 56, left: 56, right: 56 } });
-    const chunks: Buffer[] = [];
-    doc.on("data", (c: Buffer) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
+  const { doc, done, width } = brandDocument();
+  brandTitle(doc, opts.title);
 
-    doc.font("Helvetica-Bold").fontSize(14).text(opts.title.toUpperCase(), { align: "center" });
-    doc.moveDown(1.2);
-
-    for (const rawLine of opts.body.split(/\r?\n/)) {
-      const line = rawLine.trimEnd();
-      if (!line.trim()) {
-        doc.moveDown(0.6);
-        continue;
-      }
-      const isHeading = line.length <= 90 && line === line.toUpperCase() && /[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(line);
-      if (isHeading) {
-        doc.moveDown(0.4);
-        doc.font("Helvetica-Bold").fontSize(11).text(line, { align: "left" });
-        doc.moveDown(0.2);
-      } else {
-        doc.font("Helvetica").fontSize(10.5).text(line, { align: "justify", lineGap: 2 });
-      }
+  // título de seção só no começo de um bloco: "CONTRATANTE" sob a linha de assinatura é texto
+  let blockStart = true;
+  for (const rawLine of opts.body.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      doc.moveDown(0.35);
+      blockStart = true;
+      continue;
     }
-
-    if (opts.footer) {
-      doc.moveDown(1.5);
-      doc.font("Helvetica").fontSize(8).fillColor("#666").text(opts.footer, { align: "center" });
+    const first = blockStart;
+    blockStart = false;
+    const isHeading = first && line.length <= 90 && line === line.toUpperCase() && /[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(line);
+    const field = /^((?:(?!\. )[^:•\[]){2,70}):\s+(.+)$/.exec(line);
+    if (isHeading) {
+      ensureSpace(doc, 46);
+      doc.moveDown(0.3);
+      brandSection(doc, line);
+    } else if (field && line.length <= 160) {
+      brandField(doc, field[1], field[2]);
+    } else if (line.startsWith("• ")) {
+      const y = doc.y;
+      doc.font("Helvetica").fontSize(10).fillColor(BRAND.orange).text("•", PAGE.left + 2, y, { lineBreak: false });
+      doc.fillColor(BRAND.ink).text(line.slice(2), PAGE.left + 14, y, { width: width - 14, lineGap: 2 });
+      doc.x = PAGE.left;
+    } else {
+      doc.font("Helvetica").fontSize(10).fillColor(BRAND.ink).text(line, PAGE.left, doc.y, { width, align: "justify", lineGap: 2.5 });
     }
-    doc.end();
-  });
+  }
+
+  if (opts.footer) {
+    // a nota final cabe no espaço até o rodapé: não abre uma página só para ela
+    const limit = doc.page.height - 62;
+    const h = doc.font("Helvetica").fontSize(7.5).heightOfString(opts.footer, { width, align: "center" });
+    if (doc.y + 10 + h > limit) doc.addPage();
+    else doc.y += 10;
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 60;
+    doc.fillColor(BRAND.muted).text(opts.footer, PAGE.left, doc.y, { width, align: "center" });
+    doc.page.margins.bottom = bottom;
+  }
+  doc.end();
+  return done;
 }
 
 /** Modelo inicial de contrato, para a empresa editar. */

@@ -40,7 +40,8 @@ export function roomsFromParsed(parsed: unknown): ImportRoom[] {
 /** A importação serve para orçamento? Precisa ter algum valor. */
 export const hasBudgetValues = (rooms: ImportRoom[]) => rooms.some((r) => r.cost > 0);
 
-const desc = (r: ImportRoom) => `Móveis planejados — ${r.items} item(ns)${r.unpriced ? ` (${r.unpriced} sem preço no Promob)` : ""}`;
+// vai para o PDF do cliente: o aviso de itens sem preço fica só na tela da importação
+const desc = (r: ImportRoom) => `Móveis planejados — ${r.items} ${r.items === 1 ? "item" : "itens"}`;
 
 /**
  * Cria ou atualiza o rascunho de orçamento do projeto a partir da importação.
