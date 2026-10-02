@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BriefcaseBusiness, Building2, CalendarClock, Headphones, Plus } from "lucide-react";
+import { BriefcaseBusiness, Building2, CalendarClock, Camera, Headphones, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { apiGet, apiObjectUrl, apiPost } from "@/services/api";
+import { apiGet, apiObjectUrl, apiPost, apiPostForm } from "@/services/api";
+import { errorMessage } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,6 +24,42 @@ type Project={id:string;code:string;name:string;status:string;client:{id:string;
 type AssistAtt={id:string;fileName:string;mimeType:string;uploadedByLabel:string|null;createdAt:string;downloadUrl:string};
 type Assistance={id:string;number:string;title:string;status:string;priority:string;client:{id:string;name:string};project?:{name:string}|null;assignee?:{name:string}|null;attachments:AssistAtt[]};
 function AssistThumb({path}:{path:string}){const{data}=useQuery({queryKey:["assist-img",path],queryFn:()=>apiObjectUrl(path),staleTime:300000});if(!data)return <div className="h-12 w-12 animate-pulse rounded bg-muted"/>;return <a href={data} target="_blank" rel="noreferrer"><img src={data} alt="Foto" className="h-12 w-12 rounded border border-border object-cover"/></a>;}
+/** Foto tirada pela equipe na visita: no celular abre a câmera; no computador, o seletor de arquivo. */
+function AssistPhotoButton({ ticketId, count, onDone }: { ticketId: string; count: number; onDone: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const send = useMutation({
+    mutationFn: async (files: File[]) => {
+      for (const f of files) {
+        const form = new FormData();
+        form.append("photo", f);
+        await apiPostForm(`/business/assistances/${ticketId}/attachments`, form);
+      }
+      return files.length;
+    },
+    onSuccess: (n) => { toast.success(n === 1 ? "Foto anexada" : `${n} fotos anexadas`); onDone(); },
+    onError: (e) => { toast.error(errorMessage(e, "Não foi possível anexar a foto")); onDone(); },
+  });
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          if (files.length) send.mutate(files);
+        }}
+      />
+      <Button size="sm" variant="outline" disabled={send.isPending || count >= 20} title={count >= 20 ? "Limite de 20 fotos por chamado" : undefined} onClick={() => input.current?.click()}>
+        {send.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}Bater foto
+      </Button>
+    </>
+  );
+}
 type Person={id:string;name:string};
 const LEAD_SOURCES=["Instagram","Indicação","Google","Site","Arquiteto","Parceiros","Outro"];
 const statusLabel:Record<string,string>={ACTIVE:"Ativo",INACTIVE:"Inativo",PLANNING:"Planejamento",ON_HOLD:"Pausado",COMPLETED:"Concluído",CANCELLED:"Cancelado",OPEN:"Aberto",TRIAGE:"Triagem",SCHEDULED:"Agendado",IN_PROGRESS:"Em andamento",WAITING_CLIENT:"Aguardando cliente",RESOLVED:"Resolvido"};
@@ -34,7 +71,7 @@ const save=useMutation({mutationFn:()=>dialog==="client"?apiPost("/business/clie
 if(clients.isLoading||projects.isLoading||helps.isLoading)return <PageSkeleton/>;return <div className="space-y-6"><PageHeader title="Clientes, projetos e assistência" description="Entidades compartilhadas pelos processos e tarefas da MOBIEER."/><Tabs defaultValue="clients"><TabsList><TabsTrigger value="clients">Clientes</TabsTrigger><TabsTrigger value="projects">Projetos</TabsTrigger><TabsTrigger value="assistances">Assistência</TabsTrigger></TabsList>
 <TabsContent value="clients" className="space-y-4"><Toolbar title="Clientes" canCreate={can("organization.manage")} onCreate={()=>setDialog("client")}/><Grid empty="Nenhum cliente cadastrado">{clients.data?.data.map(c=><EntityCard key={c.id} icon={Building2} title={c.name} badge={statusLabel[c.status]} description={[c.document,c.email,c.phone].filter(Boolean).join(" · ")} footer={`${c._count.projects} projetos · ${c._count.kanbanTasks} tarefas`}/>)}</Grid></TabsContent>
 <TabsContent value="projects" className="space-y-4"><Toolbar title="Projetos" canCreate={can("organization.manage")} onCreate={()=>setDialog("project")}/><Grid empty="Nenhum projeto cadastrado">{projects.data?.data.map(p=><Link key={p.id} to={`/clientes-projetos/${p.id}`} className="block"><EntityCard icon={BriefcaseBusiness} title={`${p.code} — ${p.name}`} badge={statusLabel[p.status]} description={`Cliente: ${p.client.name}`} footer={`${p._count.assistances} assistências · ${p._count.kanbanTasks} tarefas`}/></Link>)}</Grid></TabsContent>
-<TabsContent value="assistances" className="space-y-4"><div className="space-y-1"><h2 className="text-lg font-semibold">Assistências</h2><p className="text-sm text-muted-foreground">O pedido é aberto pelo cliente no portal, com fotos e a descrição do problema. Aqui a equipe envia as datas e acompanha a visita.</p></div><Grid empty="Nenhuma assistência cadastrada">{helps.data?.data.map(a=><div key={a.id} className="space-y-2"><EntityCard icon={Headphones} title={`${a.number} — ${a.title}`} badge={statusLabel[a.status]} description={`Cliente: ${a.client.name}`} footer={`${a.assignee?.name||"Sem responsável"} · Prioridade ${a.priority.toLowerCase()}`}/>{a.attachments.length>0&&<div className="flex flex-wrap gap-2 px-1">{a.attachments.map(att=><AssistThumb key={att.id} path={att.downloadUrl.replace("/api","")}/>)}</div>}<div className="px-1"><Button size="sm" variant="outline" onClick={()=>setScheduling({id:a.id,number:a.number,title:a.title,clientName:a.client.name})}><CalendarClock className="mr-2 h-4 w-4"/>Agendar visita</Button></div></div>)}</Grid><AssistanceScheduleDialog ticket={scheduling} canManage={can("organization.tasks.edit.all")} onClose={()=>setScheduling(null)}/></TabsContent></Tabs>
+<TabsContent value="assistances" className="space-y-4"><div className="space-y-1"><h2 className="text-lg font-semibold">Assistências</h2><p className="text-sm text-muted-foreground">O pedido é aberto pelo cliente no portal, com fotos e a descrição do problema. Aqui a equipe envia as datas, acompanha a visita e anexa as fotos que tirar no local.</p></div><Grid empty="Nenhuma assistência cadastrada">{helps.data?.data.map(a=><div key={a.id} className="space-y-2"><EntityCard icon={Headphones} title={`${a.number} — ${a.title}`} badge={statusLabel[a.status]} description={`Cliente: ${a.client.name}`} footer={`${a.assignee?.name||"Sem responsável"} · Prioridade ${a.priority.toLowerCase()}`}/>{a.attachments.length>0&&<div className="flex flex-wrap gap-2 px-1">{a.attachments.map(att=><AssistThumb key={att.id} path={att.downloadUrl.replace("/api","")}/>)}</div>}<div className="flex flex-wrap gap-2 px-1"><Button size="sm" variant="outline" onClick={()=>setScheduling({id:a.id,number:a.number,title:a.title,clientName:a.client.name})}><CalendarClock className="mr-2 h-4 w-4"/>Agendar visita</Button>{can("organization.tasks.edit.all")&&<AssistPhotoButton ticketId={a.id} count={a.attachments.length} onDone={refresh}/>}</div></div>)}</Grid><AssistanceScheduleDialog ticket={scheduling} canManage={can("organization.tasks.edit.all")} onClose={()=>setScheduling(null)}/></TabsContent></Tabs>
 <Dialog open={!!dialog} onOpenChange={v=>!v&&setDialog(null)}><DialogContent><DialogHeader><DialogTitle>{dialog==="client"?"Novo cliente":"Novo projeto"}</DialogTitle></DialogHeader>{dialog==="client"&&<div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
 <div className="grid gap-3 sm:grid-cols-2"><Field label="Nome *"><Input value={clientForm.name} onChange={e=>setClientForm({...clientForm,name:e.target.value})}/></Field><Field label="CPF / CNPJ"><Input value={clientForm.document} onChange={e=>setClientForm({...clientForm,document:e.target.value})}/></Field><Field label="E-mail"><Input type="email" value={clientForm.email} onChange={e=>setClientForm({...clientForm,email:e.target.value})}/></Field><Field label="Telefone"><Input inputMode="tel" value={clientForm.phone} onChange={e=>setClientForm({...clientForm,phone:e.target.value})}/></Field><Field label="Telefone 2"><Input inputMode="tel" value={clientForm.secondaryPhone} onChange={e=>setClientForm({...clientForm,secondaryPhone:e.target.value})}/></Field><Field label="Origem do lead"><Select value={clientForm.leadSource||"NONE"} onValueChange={v=>setClientForm({...clientForm,leadSource:v==="NONE"?"":v})}><SelectTrigger><SelectValue placeholder="Não informada"/></SelectTrigger><SelectContent><SelectItem value="NONE">Não informada</SelectItem>{LEAD_SOURCES.map(o=><SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent></Select></Field><Field label="Consultor de vendas"><Picker value={clientForm.sellerId} onChange={v=>setClientForm({...clientForm,sellerId:v})} items={people.data?.data??[]}/></Field><Field label="Responsável pelo atendimento"><Picker value={clientForm.attendantId} onChange={v=>setClientForm({...clientForm,attendantId:v})} items={people.data?.data??[]}/></Field></div>
 <div><p className="mb-2 text-sm font-medium">Endereço</p><div className="grid gap-3 sm:grid-cols-6"><div className="sm:col-span-2"><Field label="CEP"><Input inputMode="numeric" placeholder="00000-000" value={clientForm.zipCode} onChange={e=>setClientForm({...clientForm,zipCode:e.target.value})}/></Field></div><div className="sm:col-span-4"><Field label="Rua"><Input value={clientForm.street} onChange={e=>setClientForm({...clientForm,street:e.target.value})}/></Field></div><div className="sm:col-span-2"><Field label="Número"><Input value={clientForm.addressNumber} onChange={e=>setClientForm({...clientForm,addressNumber:e.target.value})}/></Field></div><div className="sm:col-span-4"><Field label="Complemento"><Input value={clientForm.complement} onChange={e=>setClientForm({...clientForm,complement:e.target.value})}/></Field></div><div className="sm:col-span-2"><Field label="Bairro"><Input value={clientForm.district} onChange={e=>setClientForm({...clientForm,district:e.target.value})}/></Field></div><div className="sm:col-span-3"><Field label="Cidade"><Input value={clientForm.city} onChange={e=>setClientForm({...clientForm,city:e.target.value})}/></Field></div><div className="sm:col-span-1"><Field label="UF"><Input maxLength={2} value={clientForm.state} onChange={e=>setClientForm({...clientForm,state:e.target.value.toUpperCase()})}/></Field></div></div></div>
