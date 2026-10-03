@@ -24,7 +24,8 @@ import { Textarea } from "@/components/ui/textarea";
 type PaymentMethod = "AVISTA" | "PIX" | "BOLETO" | "CARTAO" | "FINANCEIRA";
 type FinancingPlan = { id: string; name: string; method: "CARTAO" | "FINANCEIRA"; installments: number; feePercent: number; requiresDownPayment: boolean };
 type CommissionRole = { role: string; label: string; defaultPercent: number };
-type PricingConfig = { defaultMarkup: number; minScore: number; validityDays: number; commissionRoles: CommissionRole[]; financingPlans: FinancingPlan[] };
+type QuoteDocumentConfig = { supplier: string; line: string; deliveryDays: number; deliveryText: string; notes: string[] };
+type PricingConfig = { defaultMarkup: number; minScore: number; validityDays: number; commissionRoles: CommissionRole[]; financingPlans: FinancingPlan[]; document: QuoteDocumentConfig };
 type Approval = "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED";
 type QuoteStatus = "DRAFT" | "SENT" | "VIEWED" | "NEGOTIATION" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
 
@@ -37,11 +38,13 @@ type Quote = {
   validUntil: string | null;
   notes: string | null;
   paymentTerms: string | null;
+  deliveryText?: string | null;
+  deliveryDays?: number | null;
   client: { id: string; name: string };
   opportunity: { id: string; title: string } | null;
   project: { id: string; code: string; name: string } | null;
   seller: { id: string; name: string };
-  items: { room: string | null; description: string; quantity: number; unitCost: number; unitPrice: number; total: number }[];
+  items: { room: string | null; description: string; quantity: number; unitCost: number; unitPrice: number; total: number; corpo?: string | null; porta?: string | null; puxador?: string | null; complemento?: string | null; modelo?: string | null }[];
   commissions: { userId: string | null; referrerId?: string | null; name: string; role: string; percent: number; amount: number }[];
   referrer?: { id: string; name: string } | null;
   costTotal: number;
@@ -205,7 +208,15 @@ export function QuotesTab() {
 
 // ------------------------------------------------------------------ editor
 
-type ItemForm = { room: string; description: string; quantity: string; unitCost: string };
+type ItemForm = { room: string; description: string; quantity: string; unitCost: string; corpo: string; porta: string; puxador: string; complemento: string; modelo: string };
+/** Acabamentos do ambiente: saem na segunda tabela do orçamento da loja. */
+const FINISHES = [
+  ["corpo", "Caixaria", "MDF 15mm Branco TX"],
+  ["porta", "Porta", "MDF 15mm Areia"],
+  ["puxador", "Puxador", "Cava usinado"],
+  ["complemento", "Complemento", ""],
+  ["modelo", "Modelo", ""],
+] as const;
 type CommissionForm = { userId: string; referrerId?: string; name: string; role: string; percent: string };
 type Referrer = { id: string; name: string; kind: string; defaultRtPercent: number };
 const RT_ROLE = "INDICADOR";
@@ -226,12 +237,15 @@ type Form = {
   downPayment: string;
   feePercent: string;
   paymentTerms: string;
+  deliveryText: string;
+  deliveryDays: string;
+  validUntil: string;
   notes: string;
   futureSale: boolean;
   futureReleaseDate: string;
 };
 
-const emptyItem = (): ItemForm => ({ room: "", description: "", quantity: "1", unitCost: "" });
+const emptyItem = (): ItemForm => ({ room: "", description: "", quantity: "1", unitCost: "", corpo: "", porta: "", puxador: "", complemento: "", modelo: "" });
 
 function fromQuote(q: Quote): Form {
   return {
@@ -239,7 +253,7 @@ function fromQuote(q: Quote): Form {
     opportunityId: q.opportunity?.id ?? "",
     projectId: q.project?.id ?? "",
     referrerId: q.referrer?.id ?? "",
-    items: q.items.map((i) => ({ room: i.room ?? "", description: i.description, quantity: String(i.quantity).replace(".", ","), unitCost: toField(i.unitCost) })),
+    items: q.items.map((i) => ({ room: i.room ?? "", description: i.description, quantity: String(i.quantity).replace(".", ","), unitCost: toField(i.unitCost), corpo: i.corpo ?? "", porta: i.porta ?? "", puxador: i.puxador ?? "", complemento: i.complemento ?? "", modelo: i.modelo ?? "" })),
     markup: String(q.markup).replace(".", ","),
     commissions: q.commissions.map((c) => ({ userId: c.userId ?? "", referrerId: c.referrerId ?? "", name: c.name, role: c.role, percent: toField(c.percent) })),
     discount: toField(q.discount),
@@ -251,6 +265,9 @@ function fromQuote(q: Quote): Form {
     downPayment: toField(q.payment.downPayment),
     feePercent: toField(q.payment.feePercent),
     paymentTerms: q.paymentTerms ?? "",
+    deliveryText: q.deliveryText ?? "",
+    deliveryDays: q.deliveryDays ? String(q.deliveryDays) : "",
+    validUntil: q.validUntil ? q.validUntil.slice(0, 10) : "",
     notes: q.notes ?? "",
     futureSale: Boolean(q.futureSale),
     futureReleaseDate: q.futureReleaseDate ? q.futureReleaseDate.slice(0, 10) : "",
@@ -266,7 +283,7 @@ function toPayload(f: Form, roleLabel: (role: string) => string, addendumOf?: st
     referrerId: f.referrerId || null,
     items: f.items
       .filter((i) => i.description.trim() || parse(i.unitCost) > 0)
-      .map((i) => ({ room: i.room || null, description: i.description.trim() || i.room || "Item", quantity: parse(i.quantity) || 1, unitCost: parse(i.unitCost) })),
+      .map((i) => ({ room: i.room || null, description: i.description.trim() || i.room || "Item", quantity: parse(i.quantity) || 1, unitCost: parse(i.unitCost), corpo: i.corpo.trim() || null, porta: i.porta.trim() || null, puxador: i.puxador.trim() || null, complemento: i.complemento.trim() || null, modelo: i.modelo.trim() || null })),
     markup: parse(f.markup),
     // percentual sem pessoa escolhida ainda conta no preço, com o nome do papel
     commissions: f.commissions.filter((c) => parse(c.percent) > 0).map((c) => ({ userId: c.userId || null, referrerId: c.referrerId || null, name: c.name.trim() || roleLabel(c.role), role: c.role, percent: parse(c.percent) })),
@@ -281,6 +298,10 @@ function toPayload(f: Form, roleLabel: (role: string) => string, addendumOf?: st
       feePercent: parse(f.feePercent),
     },
     paymentTerms: f.paymentTerms || null,
+    deliveryText: f.deliveryText.trim() || null,
+    deliveryDays: parse(f.deliveryDays) > 0 ? Math.round(parse(f.deliveryDays)) : null,
+    // meio-dia: a data não escorrega de dia por causa do fuso
+    validUntil: f.validUntil ? `${f.validUntil}T15:00:00.000Z` : null,
     notes: f.notes || null,
     futureSale: f.futureSale,
     futureReleaseDate: f.futureSale && f.futureReleaseDate ? `${f.futureReleaseDate}T12:00:00.000Z` : null,
@@ -339,6 +360,9 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           downPayment: "",
           feePercent: "",
           paymentTerms: "",
+          deliveryText: "",
+          deliveryDays: "",
+          validUntil: "",
           notes: "",
           futureSale: false,
           futureReleaseDate: "",
@@ -418,7 +442,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           <Link to="/comercial?aba=orcamentos"><ArrowLeft className="mr-1 h-4 w-4" /> Orçamentos</Link>
         </Button>
         <div className="flex-1">
-          <PageHeader title={title} description="Custo de cada ambiente (peças e mão de obra), mark-up e comissões. Custo, comissões e resultado não saem no PDF do cliente." />
+          <PageHeader title={title} description="Custo de cada ambiente (peças e mão de obra), acabamentos, mark-up e comissões. Custo, comissões e resultado não saem no PDF do cliente." />
         </div>
       </div>
 
@@ -497,23 +521,35 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
               {canEdit && form.projectId && <PromobImportButton projectId={form.projectId} onPick={(items) => set("items", items)} />}
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="hidden grid-cols-[1fr_1.4fr_70px_120px_110px_32px] gap-2 text-xs font-medium text-muted-foreground md:grid">
-                <span>Ambiente</span><span>Descrição</span><span>Qtd</span><span>Custo unitário</span><span className="text-right">Venda</span><span />
-              </div>
-              {form.items.map((it, i) => (
-                <div key={i} className="grid grid-cols-2 gap-2 md:grid-cols-[1fr_1.4fr_70px_120px_110px_32px] md:items-center">
-                  <Input disabled={!canEdit} placeholder="Cozinha" value={it.room} onChange={(e) => set("items", form.items.map((x, k) => (k === i ? { ...x, room: e.target.value } : x)))} />
-                  <Input disabled={!canEdit} placeholder="Armários, bancada…" value={it.description} onChange={(e) => set("items", form.items.map((x, k) => (k === i ? { ...x, description: e.target.value } : x)))} />
-                  <Input disabled={!canEdit} inputMode="decimal" value={it.quantity} onChange={(e) => set("items", form.items.map((x, k) => (k === i ? { ...x, quantity: e.target.value } : x)))} />
-                  <Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={it.unitCost} onChange={(e) => set("items", form.items.map((x, k) => (k === i ? { ...x, unitCost: e.target.value } : x)))} />
-                  <span className="text-right text-sm font-medium">{formatCurrency(calc?.items[i]?.total ?? quote?.items[i]?.total ?? 0)}</span>
-                  {canEdit ? (
-                    <Button variant="ghost" size="icon" aria-label="Remover" disabled={form.items.length === 1} onClick={() => set("items", form.items.filter((_, k) => k !== i))}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  ) : <span />}
-                </div>
-              ))}
+              {form.items.map((it, i) => {
+                const upd = (patch: Partial<ItemForm>) => set("items", form.items.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+                return (
+                  <div key={i} className="space-y-2 rounded-lg border border-border p-3">
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-[1.6fr_70px_130px_120px_32px] md:items-end">
+                      <Field label="Ambiente"><Input disabled={!canEdit} placeholder="Cozinha" value={it.room} onChange={(e) => upd({ room: e.target.value })} /></Field>
+                      <Field label="Qtd"><Input disabled={!canEdit} inputMode="decimal" value={it.quantity} onChange={(e) => upd({ quantity: e.target.value })} /></Field>
+                      <Field label="Custo unitário"><Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={it.unitCost} onChange={(e) => upd({ unitCost: e.target.value })} /></Field>
+                      <div className="pb-2 text-right">
+                        <p className="text-xs text-muted-foreground">Venda</p>
+                        <p className="text-sm font-medium">{formatCurrency(calc?.items[i]?.total ?? quote?.items[i]?.total ?? 0)}</p>
+                      </div>
+                      {canEdit ? (
+                        <Button variant="ghost" size="icon" aria-label="Remover ambiente" disabled={form.items.length === 1} onClick={() => set("items", form.items.filter((_, k) => k !== i))}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : <span />}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                      {FINISHES.map(([key, label, hint]) => (
+                        <Field key={key} label={label}><Input disabled={!canEdit} placeholder={hint} value={it[key]} onChange={(e) => upd({ [key]: e.target.value } as Partial<ItemForm>)} /></Field>
+                      ))}
+                    </div>
+                    <Field label="Observação do ambiente (o que será feito — sai no orçamento do cliente)">
+                      <Textarea disabled={!canEdit} rows={2} maxLength={3000} placeholder="Armário alto com 4 portas de giro, 2 gavetões…" value={it.description} onChange={(e) => upd({ description: e.target.value })} />
+                    </Field>
+                  </div>
+                );
+              })}
               {canEdit && (
                 <Button variant="outline" size="sm" onClick={() => set("items", [...form.items, emptyItem()])}>
                   <Plus className="mr-1 h-4 w-4" /> Ambiente
@@ -588,7 +624,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           </div>
 
           <Card>
-            <CardHeader className="py-3"><CardTitle className="text-base">Pagamento</CardTitle></CardHeader>
+            <CardHeader className="py-3"><CardTitle className="text-base">Negociação e condições</CardTitle></CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-4">
               <Field label="Forma">
                 <Select disabled={!canEdit} value={form.method} onValueChange={(v) => pickMethod(v as PaymentMethod)}>
@@ -616,8 +652,17 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
                   )}
                 </>
               )}
-              <Field label="Condição no PDF (opcional)" className="sm:col-span-4">
-                <Input disabled={!canEdit} placeholder="Deixe vazio para montar a partir da forma de pagamento" value={form.paymentTerms} onChange={(e) => set("paymentTerms", e.target.value)} />
+              <Field label="Condição de pagamento no PDF (texto livre — vazio usa a forma escolhida acima)" className="sm:col-span-4">
+                <Textarea disabled={!canEdit} rows={2} maxLength={1000} placeholder="Ex.: Entrada de 30% no fechamento e saldo em 10x no boleto" value={form.paymentTerms} onChange={(e) => set("paymentTerms", e.target.value)} />
+              </Field>
+              <Field label="Prazo de entrega (texto)" className="sm:col-span-2">
+                <Input disabled={!canEdit} placeholder={config?.document?.deliveryText ?? "Em dias úteis conforme ambientes"} value={form.deliveryText} onChange={(e) => set("deliveryText", e.target.value)} />
+              </Field>
+              <Field label="Prazo (dias)">
+                <Input disabled={!canEdit} inputMode="numeric" placeholder={String(config?.document?.deliveryDays ?? 45)} value={form.deliveryDays} onChange={(e) => set("deliveryDays", e.target.value.replace(/[^0-9]/g, ""))} />
+              </Field>
+              <Field label="Proposta válida até">
+                <Input type="date" disabled={!canEdit} value={form.validUntil} onChange={(e) => set("validUntil", e.target.value)} />
               </Field>
               <div className="flex flex-wrap items-end gap-3 sm:col-span-4">
                 <label className="flex items-center gap-2 text-sm">
@@ -942,7 +987,7 @@ function PromobImportButton({ projectId, onPick }: { projectId: string; onPick: 
     mutationFn: (importId: string) => apiGet<{ data: { rooms: { room: string; cost: number }[]; warning: string | null } }>(`/commercial/quotes/promob/${importId}`),
     onSuccess: (r) => {
       if (!r.data.rooms.length) return toast.error(r.data.warning ?? "Sem valores no arquivo");
-      onPick(r.data.rooms.map((x) => ({ room: x.room, description: "Móveis planejados", quantity: "1", unitCost: toField(x.cost) })));
+      onPick(r.data.rooms.map((x) => ({ ...emptyItem(), room: x.room, description: "Móveis planejados", unitCost: toField(x.cost) })));
       toast.success(`${r.data.rooms.length} ambiente(s) trazidos do Promob — confira se o valor é o custo`);
       setOpen(false);
     },
@@ -986,7 +1031,7 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
     if (q.data && !c) setC(q.data.data);
   }, [q.data, c]);
   const save = useMutation({
-    mutationFn: () => apiPut<{ message: string }>("/commercial/quotes/config", c),
+    mutationFn: () => apiPut<{ message: string }>("/commercial/quotes/config", c && { ...c, document: { ...c.document, notes: c.document.notes.map((n) => n.trim()).filter(Boolean) } }),
     onSuccess: (r) => {
       toast.success(r.message);
       qc.invalidateQueries({ queryKey: ["quotes", "config"] });
@@ -1053,6 +1098,19 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
               >
                 <Plus className="mr-1 h-4 w-4" /> Plano
               </Button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="font-medium">Orçamento em PDF (modelo da loja)</p>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-[1.4fr_1fr_90px]">
+                <Field label="Fornecedor"><Input value={c.document.supplier} onChange={(e) => setC({ ...c, document: { ...c.document, supplier: e.target.value } })} /></Field>
+                <Field label="Linha"><Input value={c.document.line} onChange={(e) => setC({ ...c, document: { ...c.document, line: e.target.value } })} /></Field>
+                <Field label="Prazo (dias)"><NumInput value={c.document.deliveryDays} onChange={(v) => setC({ ...c, document: { ...c.document, deliveryDays: Math.max(1, Math.round(v)) } })} /></Field>
+              </div>
+              <Field label="Prazo de entrega (texto)"><Input value={c.document.deliveryText} onChange={(e) => setC({ ...c, document: { ...c.document, deliveryText: e.target.value } })} /></Field>
+              <Field label="Observações fixas do rodapé — uma por linha (viram OBS, OBS², OBS³…)">
+                <Textarea rows={7} value={c.document.notes.join("\n")} onChange={(e) => setC({ ...c, document: { ...c.document, notes: e.target.value.split("\n") } })} />
+              </Field>
             </div>
           </div>
         )}

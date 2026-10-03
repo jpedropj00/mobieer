@@ -62,7 +62,7 @@ export async function operationDashboard(organizationId: string, period: Period,
     // projetos que entraram em produção no período: m² das peças do Promob
     prisma.productionOrder.findMany({
       where: { ...org, releasedAt: inPeriod },
-      select: { project: { select: { promobImports: { where: { status: "PARSED" }, orderBy: { createdAt: "desc" }, take: 1, select: { parsedJson: true } } } } },
+      select: { project: { select: { promobImports: { where: { status: "PARSED" }, orderBy: { createdAt: "desc" }, take: 5, select: { parsedJson: true } } } } },
     }),
     prisma.assistanceTicket.findMany({ where: { ...org, createdAt: inPeriod }, select: { createdAt: true, problemType: true } }),
     prisma.assistanceTicket.findMany({ where: { ...org, resolvedAt: inPeriod }, select: { createdAt: true, resolvedAt: true } }),
@@ -87,10 +87,18 @@ export async function operationDashboard(organizationId: string, period: Period,
 
   const sheetRows = sheetExits.filter((m) => isSheetProduct(m.product.name));
   const sheetsUsed = sheetRows.reduce((s, m) => s + m.quantity, 0);
-  const pieceArea = releasedOrders.reduce((s, o) => {
-    const parsed = o.project.promobImports[0]?.parsedJson as { pecas?: { areaM2?: number | null }[] } | null;
-    return s + (parsed?.pecas ?? []).reduce((a, p) => a + (Number(p.areaM2) || 0), 0);
-  }, 0);
+  // Chapas previstas: o plano de corte (PDF) e o CSV do plugin já trazem as chapas por material;
+  // sem isso, estima pela área das peças.
+  let pieceArea = 0;
+  let plannedSheets = 0;
+  for (const o of releasedOrders) {
+    const parsed = o.project.promobImports.map((i) => i.parsedJson as { pecas?: { areaM2?: number | null }[]; materiais?: { areaM2?: number; chapas?: number | null }[] } | null).find((x) => x?.materiais?.length || x?.pecas?.length);
+    if (!parsed) continue;
+    const area = parsed.materiais?.length ? parsed.materiais.reduce((a, m) => a + (Number(m.areaM2) || 0), 0) : (parsed.pecas ?? []).reduce((a, x) => a + (Number(x.areaM2) || 0), 0);
+    pieceArea += area;
+    const real = (parsed.materiais ?? []).reduce((a, m) => a + (Number(m.chapas) || 0), 0);
+    plannedSheets += real || sheetsFor(area);
+  }
 
   const resolveDays = atResolved.map((t) => (t.resolvedAt!.getTime() - t.createdAt.getTime()) / 86_400_000);
   const problemTypes = new Map<string, number>();
@@ -116,7 +124,7 @@ export async function operationDashboard(organizationId: string, period: Period,
       used: sheetsUsed,
       usedSeries: series(keys, sheetRows.map((m) => ({ at: m.date, value: m.quantity })), r.bucket),
       plannedArea: Math.round(pieceArea * 100) / 100,
-      planned: sheetsFor(pieceArea),
+      planned: plannedSheets,
       projectsReleased: releasedOrders.length,
     },
     assistance: {

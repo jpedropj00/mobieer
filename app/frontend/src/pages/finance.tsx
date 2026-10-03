@@ -5,6 +5,7 @@ import { ArrowDownCircle, ArrowUpCircle, Calculator, CreditCard as CreditCardIco
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { FinanceDocuments } from "@/components/finance-documents";
+import { PayDialog } from "@/components/pay-dialog";
 import { FinanceRequestsPanel, RecurringTab } from "@/components/finance-recurring";
 import { KpiCard } from "@/components/kpi-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -169,6 +170,7 @@ export function FinancePage() {
     onError: (e) => toast.error(errorMessage(e, "Falha ao registrar")),
   });
 
+  const [paying, setPaying] = useState<{ id: string; description: string | null; category: string; amount: number; paidAmount?: number | null; method?: string | null; type: "RECEITA" | "DESPESA" } | null>(null);
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => apiPatch(`/finance/transactions/${id}`, { status }),
     onSuccess: refresh,
@@ -281,6 +283,7 @@ export function FinancePage() {
 
   return (
     <div className="space-y-6">
+      <PayDialog tx={paying} onClose={() => setPaying(null)} onDone={refresh} />
       <PageHeader title="Financeiro" description="Receitas, despesas e contas a pagar/receber.">
         {canManage && (
           <Button size="sm" onClick={() => setDialog(true)}>
@@ -552,8 +555,8 @@ export function FinancePage() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right">
                         {canManage && t.status === "PENDENTE" && (
-                          <Button size="sm" variant="outline" disabled={setStatus.isPending} onClick={() => setStatus.mutate({ id: t.id, status: "PAGO" })}>
-                            Marcar pago
+                          <Button size="sm" variant="outline" onClick={() => setPaying(t)}>
+                            {t.type === "RECEITA" ? "Marcar recebido" : "Marcar pago"}
                           </Button>
                         )}
                         {canManage && t.status === "PAGO" && (

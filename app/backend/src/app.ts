@@ -37,6 +37,9 @@ import measurementsRoutes from "./modules/measurements/measurements.routes";
 import techProjectRoutes from "./modules/techproject/techproject.routes";
 import productionRoutes from "./modules/production/production.routes";
 import shopFloorRoutes from "./modules/production/shopfloor.routes";
+import productionLabelRoutes from "./modules/production/labels.routes";
+import installationScheduleRoutes from "./modules/production/installation-schedule.routes";
+import weeklyRoutes from "./modules/weekly/weekly.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
 import financeRecurringRoutes from "./modules/finance/recurring.routes";
@@ -57,6 +60,7 @@ import timelineRoutes from "./modules/timeline/timeline.routes";
 import goalsRoutes from "./modules/commercial/goals.routes";
 import quoteRoutes from "./modules/commercial/quote.routes";
 import referrerRoutes from "./modules/commercial/referrers.routes";
+import remindersRoutes from "./modules/commercial/reminders.routes";
 import teamsRoutes from "./modules/commercial/teams.routes";
 import portalFinanceRoutes from "./modules/portal/portal-finance.routes";
 import agendaResponseRoutes from "./modules/agenda/response.routes";
@@ -84,7 +88,8 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: [...env.frontendUrls, "https://mobieer.vercel.app", /^http:\/\/localhost:\d+$/],
+      // domínio oficial fixo aqui também: se FRONTEND_URLS ficar desatualizado, o site não perde a API
+      origin: [...env.frontendUrls, "https://mobieerprojetos.com.br", "https://www.mobieerprojetos.com.br", "https://mobieer.vercel.app", /^http:\/\/localhost:\d+$/],
       credentials: true,
     })
   );
@@ -147,6 +152,7 @@ export function createApp() {
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial/goals", goalsRoutes);
+  app.use("/api/commercial/reminders", remindersRoutes);
   app.use("/api/commercial/quotes", quoteRoutes);
   app.use("/api/referrers", referrerRoutes);
   app.use("/api/commercial", teamsRoutes);
@@ -157,6 +163,9 @@ export function createApp() {
   app.use("/api/tech-approval", techProjectRoutes);
   app.use("/api/production", productionRoutes);
   app.use("/api/production", shopFloorRoutes);
+  app.use("/api/production", productionLabelRoutes);
+  app.use("/api/production", installationScheduleRoutes);
+  app.use("/api/weekly", weeklyRoutes);
   app.use("/api/production", productionStepsRoutes);
   app.use("/api/fiscal/import", fiscalImportRoutes);
   app.use("/api/fiscal", fiscalRoutes);

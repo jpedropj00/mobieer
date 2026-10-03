@@ -277,12 +277,12 @@ function Conversation({ channel, meId, canModerate }: { channel: Channel; meId: 
               return (
                 <div key={m.id} className={cn("group flex", mine ? "justify-end" : "justify-start")}>
                   <div className={cn("max-w-[85%] space-y-1 rounded-lg px-3 py-2", mine ? "bg-primary/10" : "bg-muted/60")}>
-                    {!mine && (
-                      <p className="flex items-center gap-1 text-xs font-medium">
-                        {m.author?.name ?? "Usuário removido"}
-                        {m.author?.isContractor && <HardHat className="h-3 w-3 text-muted-foreground" aria-label="Montador" />}
-                      </p>
-                    )}
+                    {/* quem enviou aparece em toda mensagem, inclusive nas minhas */}
+                    <p className={cn("flex items-center gap-1 text-xs font-medium", mine && "justify-end text-primary")}>
+                      {m.author?.name ?? "Usuário removido"}
+                      {mine && <span className="font-normal text-muted-foreground">(você)</span>}
+                      {m.author?.isContractor && <HardHat className="h-3 w-3 text-muted-foreground" aria-label="Montador" />}
+                    </p>
                     {m.deleted ? (
                       <p className="text-sm italic text-muted-foreground">Mensagem apagada</p>
                     ) : (

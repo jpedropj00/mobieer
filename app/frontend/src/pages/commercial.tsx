@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Too
 import { PageHeader } from "@/components/page-header";
 import { KpiCard } from "@/components/kpi-card";
 import { CommercialGoals } from "@/components/commercial-goals";
+import { CommercialReminders, remindersQuery } from "@/components/commercial-reminders";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,8 @@ export function CommercialPage() {
         };
       }>("/commercial/funnel"),
   });
+
+  const reminders = useQuery(remindersQuery());
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["commercial"] });
 
@@ -150,6 +153,7 @@ export function CommercialPage() {
       <Tabs value={params.get("aba") ?? "funil"} onValueChange={(v) => setParams(v === "funil" ? {} : { aba: v }, { replace: true })}>
         <TabsList>
           <TabsTrigger value="funil">Funil ({oppList.length})</TabsTrigger>
+          <TabsTrigger value="lembretes">Lembretes{reminders.data?.data.total ? ` (${reminders.data.data.total})` : ""}</TabsTrigger>
           <TabsTrigger value="orcamentos">Orçamentos</TabsTrigger>
           <TabsTrigger value="indicadores">Indicadores e RT</TabsTrigger>
           <TabsTrigger value="equipes">Equipes e carteira</TabsTrigger>
@@ -204,6 +208,9 @@ export function CommercialPage() {
           )}
         </TabsContent>
 
+        <TabsContent value="lembretes">
+          <CommercialReminders />
+        </TabsContent>
         <TabsContent value="orcamentos">
           <QuotesTab />
         </TabsContent>

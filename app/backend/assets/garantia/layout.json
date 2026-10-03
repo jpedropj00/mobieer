@@ -1,0 +1,1174 @@
+{
+ "certificado": [
+  {
+   "t": "img",
+   "f": "image35.png",
+   "x": 0.0,
+   "y": -17.65,
+   "w": 790.87,
+   "h": 1154.3
+  },
+  {
+   "t": "img",
+   "f": "image36.png",
+   "x": 0.0,
+   "y": -17.65,
+   "w": 790.87,
+   "h": 303.24
+  },
+  {
+   "t": "img",
+   "f": "image37.png",
+   "x": 14.48,
+   "y": -17.65,
+   "w": 76.95,
+   "h": 101.33,
+   "line": 0.038,
+   "box": [
+    0.02,
+    0.0,
+    0.901,
+    0.985
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 30.84,
+   "y": 13.33,
+   "w": 37.96,
+   "h": 39.74,
+   "lines": [
+    "07"
+   ],
+   "color": "FFFFFF",
+   "font": "Nourd Semi-Bold",
+   "size": 29.5,
+   "leading": 41.3,
+   "spc": 0,
+   "align": "center"
+  },
+  {
+   "t": "txt",
+   "x": 203.25,
+   "y": 310.02,
+   "w": 401.76,
+   "h": 65.52,
+   "lines": [
+    "CERTIFICADO"
+   ],
+   "color": "C84A0B",
+   "font": "Fraunces",
+   "size": 48.95,
+   "leading": 68.53,
+   "spc": 4.89,
+   "align": "center"
+  },
+  {
+   "t": "txt",
+   "x": 247.54,
+   "y": 370.54,
+   "w": 313.18,
+   "h": 51.01,
+   "lines": [
+    "DE GARANTIA"
+   ],
+   "color": "222222",
+   "font": "Fraunces",
+   "size": 37.78,
+   "leading": 52.9,
+   "spc": 3.77,
+   "align": "center"
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 450.01,
+   "w": 169.25,
+   "h": 20.49,
+   "lines": [
+    "DADOS DO CLIENTE"
+   ],
+   "color": "C84A0B",
+   "font": "Nourd Semi-Bold",
+   "size": 15.45,
+   "leading": 21.64,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 492.22,
+   "w": 56.15,
+   "h": 19.18,
+   "lines": [
+    "Cliente:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image38.png",
+   "x": 151.62,
+   "y": 501.21,
+   "w": 579.06,
+   "h": 15.24,
+   "line": 0.35,
+   "box": [
+    0.018,
+    0.3,
+    0.991,
+    0.4
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 530.01,
+   "w": 90.95,
+   "h": 19.8,
+   "lines": [
+    "CPF / CNPJ:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 15.09,
+   "leading": 21.13,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image39.png",
+   "x": 151.62,
+   "y": 530.17,
+   "w": 579.06,
+   "h": 15.24,
+   "line": 0.95,
+   "box": [
+    0.02,
+    0.9,
+    0.991,
+    1.0
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 569.56,
+   "w": 67.22,
+   "h": 19.18,
+   "lines": [
+    "Telefone:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image40.png",
+   "x": 136.38,
+   "y": 559.12,
+   "w": 335.24,
+   "h": 29.71,
+   "line": 0.897,
+   "box": [
+    0.03,
+    0.436,
+    0.982,
+    1.0
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 607.0,
+   "w": 50.62,
+   "h": 20.49,
+   "lines": [
+    "E-mail:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 15.45,
+   "leading": 21.64,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image41.png",
+   "x": 136.38,
+   "y": 617.02,
+   "w": 594.29,
+   "h": 15.24,
+   "line": 0.45,
+   "box": [
+    0.015,
+    0.35,
+    0.991,
+    0.5
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 645.74,
+   "w": 72.76,
+   "h": 19.18,
+   "lines": [
+    "Endereço:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image42.png",
+   "x": 136.38,
+   "y": 645.98,
+   "w": 594.29,
+   "h": 28.95,
+   "line": 0.553,
+   "box": [
+    0.015,
+    0.526,
+    0.992,
+    0.579
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image43.png",
+   "x": 136.38,
+   "y": 688.64,
+   "w": 289.53,
+   "h": 15.24,
+   "line": 0.8,
+   "box": [
+    0.058,
+    0.7,
+    0.961,
+    1.0
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image44.png",
+   "x": 470.86,
+   "y": 688.64,
+   "w": 259.81,
+   "h": 15.24,
+   "line": 0.8,
+   "box": [
+    0.003,
+    0.3,
+    0.982,
+    1.0
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 738.59,
+   "w": 179.53,
+   "h": 20.49,
+   "lines": [
+    "DADOS DO PROJETO"
+   ],
+   "color": "C84A0B",
+   "font": "Nourd Semi-Bold",
+   "size": 15.45,
+   "leading": 21.64,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 777.33,
+   "w": 113.09,
+   "h": 19.18,
+   "lines": [
+    "Nº do Contrato:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image45.png",
+   "x": 166.86,
+   "y": 789.98,
+   "w": 563.82,
+   "h": 15.24,
+   "line": 0.15,
+   "box": [
+    0.023,
+    0.1,
+    0.991,
+    0.25
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image46.png",
+   "x": 166.86,
+   "y": 818.93,
+   "w": 563.82,
+   "h": 15.24,
+   "line": 0.95,
+   "box": [
+    0.023,
+    0.75,
+    0.993,
+    0.95
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 852.36,
+   "w": 71.18,
+   "h": 19.18,
+   "lines": [
+    "Projetista:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image47.png",
+   "x": 166.86,
+   "y": 862.36,
+   "w": 563.82,
+   "h": 15.24,
+   "line": 0.4,
+   "box": [
+    0.023,
+    0.3,
+    0.991,
+    0.45
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image48.png",
+   "x": 166.86,
+   "y": 891.31,
+   "w": 563.82,
+   "h": 14.48
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 927.39,
+   "w": 117.84,
+   "h": 19.18,
+   "lines": [
+    "Data da compra:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image49.png",
+   "x": 166.86,
+   "y": 919.5,
+   "w": 183.62,
+   "h": 29.71,
+   "line": 0.821,
+   "box": [
+    0.066,
+    0.333,
+    0.963,
+    0.846
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 409.67,
+   "y": 927.05,
+   "w": 120.21,
+   "h": 19.87,
+   "lines": [
+    "Data da entrega:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.73,
+   "leading": 20.63,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image50.png",
+   "x": 531.82,
+   "y": 919.5,
+   "w": 168.38,
+   "h": 29.71,
+   "line": 0.821,
+   "box": [
+    0.027,
+    0.333,
+    0.995,
+    0.846
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 964.33,
+   "w": 150.26,
+   "h": 19.18,
+   "lines": [
+    "Data da vistoria final:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image51.png",
+   "x": 197.34,
+   "y": 962.93,
+   "w": 183.62,
+   "h": 29.71,
+   "line": 0.564,
+   "box": [
+    0.058,
+    0.026,
+    0.963,
+    0.59
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 1006.39,
+   "w": 203.25,
+   "h": 20.49,
+   "lines": [
+    "AMBIENTES ENTREGUES"
+   ],
+   "color": "C84A0B",
+   "font": "Nourd Semi-Bold",
+   "size": 15.45,
+   "leading": 21.64,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image52.png",
+   "x": 44.95,
+   "y": 1035.32,
+   "w": 31.24,
+   "h": 29.71,
+   "line": 0.256,
+   "box": [
+    0.122,
+    0.205,
+    0.659,
+    0.974
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image53.png",
+   "x": 227.81,
+   "y": 1035.32,
+   "w": 31.24,
+   "h": 29.71,
+   "line": 0.256,
+   "box": [
+    0.341,
+    0.205,
+    0.927,
+    0.974
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image54.png",
+   "x": 44.95,
+   "y": 1064.27,
+   "w": 31.24,
+   "h": 29.71,
+   "line": 0.231,
+   "box": [
+    0.122,
+    0.179,
+    0.659,
+    0.769
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image55.png",
+   "x": 227.81,
+   "y": 1064.27,
+   "w": 31.24,
+   "h": 29.71,
+   "line": 0.718,
+   "box": [
+    0.341,
+    0.179,
+    0.927,
+    0.769
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image56.png",
+   "x": 44.95,
+   "y": 1093.22,
+   "w": 31.24,
+   "h": 29.71,
+   "line": 0.205,
+   "box": [
+    0.122,
+    0.154,
+    0.659,
+    0.744
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image57.png",
+   "x": 227.81,
+   "y": 1093.22,
+   "w": 31.24,
+   "h": 29.71,
+   "line": 0.231,
+   "box": [
+    0.341,
+    0.154,
+    0.927,
+    0.744
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 684.99,
+   "w": 90.95,
+   "h": 19.18,
+   "lines": [
+    "Cidade / UF:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 439.72,
+   "y": 684.65,
+   "w": 34.8,
+   "h": 19.87,
+   "lines": [
+    "CEP:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.73,
+   "leading": 20.63,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 815.43,
+   "w": 93.32,
+   "h": 19.18,
+   "lines": [
+    "Consultor(a):"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.37,
+   "leading": 20.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 49.82,
+   "y": 888.96,
+   "w": 102.02,
+   "h": 19.87,
+   "lines": [
+    "Montador(es):"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 14.73,
+   "leading": 20.63,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 227.77,
+   "y": 931.1,
+   "w": 119.42,
+   "h": 12.51,
+   "lines": [
+    "/ _______ / _______"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 9.69,
+   "leading": 13.57,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 561.52,
+   "y": 929.01,
+   "w": 137.61,
+   "h": 15.95,
+   "lines": [
+    "/ _______ / _______"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 11.49,
+   "leading": 16.09,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 78.3,
+   "y": 1041.07,
+   "w": 50.62,
+   "h": 16.51,
+   "lines": [
+    "Cozinha"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 12.57,
+   "leading": 17.6,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 78.3,
+   "y": 1069.93,
+   "w": 40.33,
+   "h": 16.51,
+   "lines": [
+    "Closet"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 12.57,
+   "leading": 17.6,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 78.3,
+   "y": 1098.08,
+   "w": 90.95,
+   "h": 17.19,
+   "lines": [
+    "Área Gourmet"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 12.93,
+   "leading": 18.11,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 267.31,
+   "y": 1039.67,
+   "w": 85.41,
+   "h": 18.57,
+   "lines": [
+    "Sala de Estar"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.65,
+   "leading": 19.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 267.31,
+   "y": 1069.62,
+   "w": 82.25,
+   "h": 17.13,
+   "lines": [
+    "Home Office"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.29,
+   "leading": 18.61,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 267.31,
+   "y": 1098.48,
+   "w": 61.69,
+   "h": 17.13,
+   "lines": [
+    "Escritório"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.29,
+   "leading": 18.61,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 446.84,
+   "y": 1039.67,
+   "w": 93.32,
+   "h": 18.57,
+   "lines": [
+    "Sala de Jantar"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.65,
+   "leading": 19.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 446.84,
+   "y": 1069.62,
+   "w": 58.52,
+   "h": 17.13,
+   "lines": [
+    "Banheiro"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.29,
+   "leading": 18.61,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 446.84,
+   "y": 1097.39,
+   "w": 50.62,
+   "h": 18.57,
+   "lines": [
+    "Outros:"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.65,
+   "leading": 19.12,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 637.44,
+   "y": 1040.77,
+   "w": 46.66,
+   "h": 17.13,
+   "lines": [
+    "Quarto"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.29,
+   "leading": 18.61,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 637.44,
+   "y": 1069.62,
+   "w": 69.6,
+   "h": 17.13,
+   "lines": [
+    "Lavanderia"
+   ],
+   "color": "222222",
+   "font": "Nourd Semi-Bold",
+   "size": 13.29,
+   "leading": 18.61,
+   "spc": 0,
+   "align": "left"
+  }
+ ],
+ "declaracao": [
+  {
+   "t": "img",
+   "f": "image58.png",
+   "x": 0.0,
+   "y": -31.58,
+   "w": 790.0,
+   "h": 1365.8
+  },
+  {
+   "t": "img",
+   "f": "image59.png",
+   "x": 8.98,
+   "y": -31.58,
+   "w": 772.53,
+   "h": 211.7
+  },
+  {
+   "t": "img",
+   "f": "image60.png",
+   "x": 40.57,
+   "y": 0.86,
+   "w": 81.09,
+   "h": 98.17,
+   "line": 0.191,
+   "box": [
+    0.011,
+    0.078,
+    1.0,
+    0.991
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 158.85,
+   "y": 0.81,
+   "w": 298.2,
+   "h": 35.89,
+   "lines": [
+    "ASSISTÊNCIA TÉCNICA"
+   ],
+   "color": "FFFFFF",
+   "font": "Nourd Semi-Bold",
+   "size": 26.59,
+   "leading": 37.23,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 158.85,
+   "y": 47.52,
+   "w": 503.69,
+   "h": 86.63,
+   "lines": [
+    "Caso seja necessária assistência técnica, entre em contato com a Mobieer para agendamento prévio. Nossa equipe está pronta para atender você."
+   ],
+   "color": "FFFFFF",
+   "font": "Nourd Light",
+   "size": 20.95,
+   "leading": 29.33,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image61.png",
+   "x": 40.57,
+   "y": 163.05,
+   "w": 65.73,
+   "h": 81.95,
+   "line": 0.125,
+   "box": [
+    0.065,
+    0.104,
+    0.987,
+    1.0
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 58.43,
+   "y": 187.93,
+   "w": 34.76,
+   "h": 34.47,
+   "lines": [
+    "09"
+   ],
+   "color": "FFFFFF",
+   "font": "Nourd Semi-Bold",
+   "size": 26.59,
+   "leading": 37.23,
+   "spc": 0,
+   "align": "center"
+  },
+  {
+   "t": "txt",
+   "x": 66.92,
+   "y": 322.41,
+   "w": 647.38,
+   "h": 77.7,
+   "lines": [
+    "Declaro que recebi os móveis planejados instalados conforme contratado, juntamente com este Manual de Uso e Conservação, estando ciente das orientações de utilização, manutenção e das condições de garantia aqui descritas."
+   ],
+   "color": "1E1E1E",
+   "font": "Nourd Light",
+   "size": 18.12,
+   "leading": 27.18,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 66.92,
+   "y": 485.72,
+   "w": 255.71,
+   "h": 26.37,
+   "lines": [
+    "ASSINATURA DO CLIENTE"
+   ],
+   "color": "1E1E1E",
+   "font": "Nourd Semi-Bold",
+   "size": 19.74,
+   "leading": 27.63,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image62.png",
+   "x": 56.79,
+   "y": 536.94,
+   "w": 628.27,
+   "h": 17.07
+  },
+  {
+   "t": "txt",
+   "x": 66.92,
+   "y": 610.01,
+   "w": 245.67,
+   "h": 26.37,
+   "lines": [
+    "RESPONSÁVEL MOBIEER"
+   ],
+   "color": "1E1E1E",
+   "font": "Nourd Semi-Bold",
+   "size": 19.74,
+   "leading": 27.63,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image63.png",
+   "x": 56.79,
+   "y": 667.54,
+   "w": 628.27,
+   "h": 17.07,
+   "line": 0.6,
+   "box": [
+    0.016,
+    0.5,
+    1.0,
+    0.65
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 66.92,
+   "y": 725.12,
+   "w": 53.3,
+   "h": 25.6,
+   "lines": [
+    "DATA"
+   ],
+   "color": "1E1E1E",
+   "font": "Nourd Semi-Bold",
+   "size": 19.33,
+   "leading": 27.07,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 66.92,
+   "y": 766.27,
+   "w": 259.57,
+   "h": 20.53,
+   "lines": [
+    "_______ /_______ /_______"
+   ],
+   "color": "1E1E1E",
+   "font": "Nourd Light",
+   "size": 15.3,
+   "leading": 21.42,
+   "spc": 0,
+   "align": "left"
+  },
+  {
+   "t": "img",
+   "f": "image64.png",
+   "x": 40.57,
+   "y": 829.73,
+   "w": 693.15,
+   "h": 261.21
+  },
+  {
+   "t": "img",
+   "f": "image65.png",
+   "x": 73.01,
+   "y": 910.83,
+   "w": 644.49,
+   "h": 17.07,
+   "line": 0.5,
+   "box": [
+    0.012,
+    0.45,
+    0.979,
+    0.55
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image66.png",
+   "x": 73.01,
+   "y": 943.26,
+   "w": 644.49,
+   "h": 17.07,
+   "line": 0.85,
+   "box": [
+    0.012,
+    0.8,
+    0.979,
+    1.0
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image67.png",
+   "x": 73.01,
+   "y": 992.77,
+   "w": 644.49,
+   "h": 17.07,
+   "line": 0.15,
+   "box": [
+    0.012,
+    0.05,
+    0.979,
+    0.2
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image68.png",
+   "x": 73.01,
+   "y": 1025.21,
+   "w": 644.49,
+   "h": 17.07,
+   "line": 0.55,
+   "box": [
+    0.012,
+    0.45,
+    0.98,
+    0.95
+   ]
+  },
+  {
+   "t": "img",
+   "f": "image69.png",
+   "x": 346.17,
+   "y": 1057.65,
+   "w": 65.73,
+   "h": 49.51,
+   "line": 0.19,
+   "box": [
+    0.182,
+    0.0,
+    0.857,
+    1.0
+   ]
+  },
+  {
+   "t": "txt",
+   "x": 66.92,
+   "y": 266.64,
+   "w": 170.73,
+   "h": 30.82,
+   "lines": [
+    "DECLARAÇÃO"
+   ],
+   "color": "D1490E",
+   "font": "Nourd Semi-Bold",
+   "size": 22.56,
+   "leading": 31.59,
+   "spc": 1.12,
+   "align": "left"
+  },
+  {
+   "t": "txt",
+   "x": 80.83,
+   "y": 861.82,
+   "w": 140.6,
+   "h": 23.38,
+   "lines": [
+    "OBSERVAÇÕES"
+   ],
+   "color": "1E1E1E",
+   "font": "Nourd Semi-Bold",
+   "size": 18.12,
+   "leading": 25.37,
+   "spc": 0,
+   "align": "left"
+  }
+ ],
+ "page": {
+  "w": 790.0,
+  "h": 1119.0
+ }
+}

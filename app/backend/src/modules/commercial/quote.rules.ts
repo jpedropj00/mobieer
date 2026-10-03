@@ -34,29 +34,72 @@ export type FinancingPlan = {
 
 export type CommissionRole = { role: string; label: string; defaultPercent: number };
 
+/** O que sai fixo no PDF do orçamento (modelo da loja). */
+export type QuoteDocumentConfig = {
+  supplier: string;
+  line: string;
+  /** prazo em dias de cada ambiente */
+  deliveryDays: number;
+  deliveryText: string;
+  /** observações do rodapé: OBS, OBS², OBS³… */
+  notes: string[];
+};
+
 export type PricingConfig = {
   defaultMarkup: number;
   minScore: number;
   validityDays: number;
   commissionRoles: CommissionRole[];
   financingPlans: FinancingPlan[];
+  document: QuoteDocumentConfig;
 };
+
+export const DEFAULT_QUOTE_DOCUMENT: QuoteDocumentConfig = {
+  supplier: "MOBIEER MÓVEIS PLANEJADOS",
+  line: "RESIDENCIAL",
+  deliveryDays: 45,
+  deliveryText: "Em dias úteis conforme ambientes",
+  notes: [
+    "5 ANOS DE GARANTIA PARA MÓVEIS E FERRAGENS (COM EXCEÇÃO DE SITUAÇÕES CONFIGURADAS MAU USO).",
+    "PRODUÇÃO 100% INDUSTRIAL E FABRICAÇÃO PRÓPRIA.",
+    "ASSISTÊNCIA VITALÍCIA.",
+    "TODAS AS PORTAS DE GIRO COM AMORTECEDOR.",
+    "TODAS AS PEÇAS, PORTAS, MÓDULOS, TAMPONAMENTOS E CAIXARIAS EM MDF NAVAL.",
+    "FERRAGENS INOX, VISANDO MAIOR DURABILIDADE.",
+    "CORREDIÇAS INVISÍVEIS NA COZINHA, PORTAS DESLIZANTES COM AMORTECEDOR, DOBRADIÇAS COM ARTICULADORES E AMORTECEDOR.",
+  ],
+};
+
+/** Código do ambiente no orçamento: AA, AB, AC… */
+export function ambCode(index: number): string {
+  const A = 65;
+  return String.fromCharCode(A + (Math.floor(index / 26) % 26)) + String.fromCharCode(A + (index % 26));
+}
+
+/** Rótulo da observação fixa: OBS:, OBS²:, OBS³:, OBS4:… */
+export function obsLabel(index: number): string {
+  return index === 0 ? "OBS:" : index === 1 ? "OBS²:" : index === 2 ? "OBS³:" : `OBS${index + 1}:`;
+}
 
 export const DEFAULT_PRICING: PricingConfig = {
   defaultMarkup: 1.67, // custo R$ 600 → venda R$ 1.000
-  minScore: 1.5,
+  // mark-up efetivo (o que sobra sobre o custo): de 2 para cima fecha direto, abaixo precisa de liberação
+  minScore: 2,
   validityDays: 10,
   commissionRoles: [
     { role: "VENDEDOR", label: "Vendedor", defaultPercent: 3 },
     { role: "PROJETISTA", label: "Projetista", defaultPercent: 2 },
   ],
   financingPlans: [],
+  document: DEFAULT_QUOTE_DOCUMENT,
 };
 
 /** Comissão somada acima disto torna o preço absurdo (divide por quase zero). */
 export const MAX_COMMISSION_PERCENT = 50;
 
-export type QuoteItemInput = { room?: string | null; description: string; quantity?: number; unitCost: number };
+export const FINISH_FIELDS = ["corpo", "porta", "puxador", "complemento", "modelo"] as const;
+export type Finishes = Partial<Record<(typeof FINISH_FIELDS)[number], string | null>>;
+export type QuoteItemInput = { room?: string | null; description: string; quantity?: number; unitCost: number } & Finishes;
 /** Papel da linha de comissão que é a reserva técnica do indicador (arquiteto/parceiro). */
 export const REFERRER_ROLE = "INDICADOR";
 
@@ -95,7 +138,21 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
     const quantity = it.quantity && it.quantity > 0 ? it.quantity : 1;
     const cost = r2(pos(it.unitCost) * quantity);
     const total = r2(cost * gross);
-    return { room: it.room?.trim() || null, description: it.description.trim(), quantity, unitCost: pos(it.unitCost), cost, unitPrice: r2(total / quantity), total };
+    const finish = (k: (typeof FINISH_FIELDS)[number]) => it[k]?.trim() || null;
+    return {
+      room: it.room?.trim() || null,
+      description: it.description.trim(),
+      corpo: finish("corpo"),
+      porta: finish("porta"),
+      puxador: finish("puxador"),
+      complemento: finish("complemento"),
+      modelo: finish("modelo"),
+      quantity,
+      unitCost: pos(it.unitCost),
+      cost,
+      unitPrice: r2(total / quantity),
+      total,
+    };
   });
   const costTotal = r2(items.reduce((s, i) => s + i.cost, 0));
   const subtotal = r2(items.reduce((s, i) => s + i.total, 0));
@@ -126,7 +183,8 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
   const result = r2(netRevenue - costTotal - commissionTotal - freight - otherCosts);
   const marginPercent = total > 0 ? r2((result / total) * 100) : null;
   const score = costTotal > 0 ? r4((netRevenue - commissionTotal - freight - otherCosts) / costTotal) : null;
-  const needsApproval = score != null && score < config.minScore;
+  // folga de meio centésimo: o preço é arredondado em centavos e um mark-up de 2,00 pode dar 1,9999
+  const needsApproval = score != null && score < config.minScore - 0.005;
 
   return {
     items,
@@ -162,6 +220,20 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
 
 export type QuoteCalc = ReturnType<typeof computeQuote>;
 
+/** Cômodos do orçamento, sem repetir e na ordem em que aparecem (item sem cômodo entra pela descrição). */
+export function quoteRooms(items: { room?: string | null; description: string }[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const it of items) {
+    const name = (it.room?.trim() || it.description.trim()).replace(/\s+/g, " ");
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
 /** Texto da condição de pagamento para o PDF e o contrato. */
 export function paymentText(p: QuoteCalc["payment"], brl: (n: number) => string): string {
   const entrada = p.downPayment > 0 ? `Entrada de ${brl(p.downPayment)} + ` : "";
@@ -169,6 +241,20 @@ export function paymentText(p: QuoteCalc["payment"], brl: (n: number) => string)
   if (p.method === "AVISTA" || p.method === "PIX") return `${PAYMENT_LABEL[p.method]}: ${brl(p.financed)}`;
   const onde = p.planName ?? PAYMENT_LABEL[p.method];
   return `${entrada}${p.installments}x de ${brl(p.installmentValue)} (${onde})${p.downPayment > 0 ? "" : " sem entrada"}`;
+}
+
+function normalizeDocument(raw: unknown): QuoteDocumentConfig {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Partial<QuoteDocumentConfig>;
+  const str = (v: unknown, d: string) => (typeof v === "string" && v.trim() ? v.trim() : d);
+  const D = DEFAULT_QUOTE_DOCUMENT;
+  return {
+    supplier: str(o.supplier, D.supplier),
+    line: str(o.line, D.line),
+    deliveryDays: typeof o.deliveryDays === "number" && o.deliveryDays > 0 ? Math.round(o.deliveryDays) : D.deliveryDays,
+    deliveryText: str(o.deliveryText, D.deliveryText),
+    // lista vazia é uma escolha válida (orçamento sem observações fixas)
+    notes: Array.isArray(o.notes) ? o.notes.filter((n): n is string => typeof n === "string" && Boolean(n.trim())).map((n) => n.trim()) : D.notes,
+  };
 }
 
 /** Aceita o que vier gravado e completa com o padrão — config velha não quebra a tela. */
@@ -181,5 +267,6 @@ export function normalizePricing(raw: unknown): PricingConfig {
     validityDays: Math.round(num(o.validityDays, DEFAULT_PRICING.validityDays)),
     commissionRoles: Array.isArray(o.commissionRoles) && o.commissionRoles.length ? o.commissionRoles : DEFAULT_PRICING.commissionRoles,
     financingPlans: Array.isArray(o.financingPlans) ? o.financingPlans : [],
+    document: normalizeDocument(o.document),
   };
 }

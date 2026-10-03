@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight, Factory, Loader2, Play, Plus, RotateCcw, Scissors, Square, Timer, Trash2, X } from "lucide-react";
+import { ArrowRight, Factory, Loader2, Play, Plus, Printer, RotateCcw, ScanBarcode, Scissors, Square, Timer, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiGet, apiPost } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { cn, errorMessage } from "@/lib/utils";
+import { openLabels } from "@/pages/production-scan";
 
 export const SECTORS = ["CORTE", "FITA_BORDA", "FURACAO", "PRE_MONTAGEM", "ACABAMENTO", "LIMPEZA", "EMBALAGEM", "EXPEDICAO"] as const;
 export type Sector = (typeof SECTORS)[number];
@@ -35,6 +36,9 @@ export type ProductionItem = {
   referencia: string | null;
   quantidade: number;
   material: string | null;
+  code?: string | null;
+  medidas?: string | null;
+  modulo?: string | null;
   status: "PENDING" | "IN_PROGRESS" | "DONE" | "CANCELLED";
   sector: Sector | null;
   sectorLabel: string | null;
@@ -280,6 +284,22 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
               )}
             </div>
           )}
+          {activeItems > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+              <span className="text-xs text-muted-foreground">Etiquetas com código de barras:</span>
+              <Button size="sm" variant="outline" onClick={() => openLabels(projectId, "a4")}>
+                <Printer className="mr-1 h-4 w-4" /> Folha A4 (24 por folha)
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => openLabels(projectId, "termica")}>
+                <Printer className="mr-1 h-4 w-4" /> Impressora térmica (100 × 50 mm)
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link to={`/producao/leitor?projeto=${projectId}`}>
+                  <ScanBarcode className="mr-1 h-4 w-4" /> Abrir leitor e conferência
+                </Link>
+              </Button>
+            </div>
+          )}
           {reqs.length > 0 && (
             <div className="space-y-1 pt-1">
               <p className="text-xs font-medium text-muted-foreground">Requisições geradas</p>
@@ -307,7 +327,7 @@ export function ProductionItemsPanel({ projectId, canManage }: { projectId: stri
                     {it.quantidade > 1 && <span className="ml-1 text-xs text-muted-foreground">×{it.quantidade}</span>}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {[it.ambiente, it.referencia, it.material].filter(Boolean).join(" · ") || "—"}
+                    {[it.ambiente, it.modulo, it.medidas, it.material, it.code ? `cód. ${it.code}` : it.referencia].filter(Boolean).join(" · ") || "—"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

@@ -22,6 +22,7 @@ type Visit = {
   doneAt: string | null;
   techProjectDueAt: string | null;
   technician: { id: string; name: string } | null;
+  confirmation: "AWAITING" | "CONFIRMED" | "RESCHEDULE_REQUESTED" | null;
 };
 
 const PERIOD_LABEL: Record<string, string> = { MANHA: "Manhã", TARDE: "Tarde", QUALQUER: "Qualquer horário" };
@@ -40,7 +41,8 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
 
   const [form, setForm] = useState({ d1: "", d2: "", d3: "", period: "QUALQUER", notes: "" });
   const visit = data?.data ?? null;
-  const editing = !visit || visit.status === "REQUESTED";
+  const [rescheduling, setRescheduling] = useState(false);
+  const editing = !visit || visit.status === "REQUESTED" || (visit.status === "SCHEDULED" && rescheduling);
 
   useEffect(() => {
     if (visit?.status === "REQUESTED") {
@@ -69,6 +71,17 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
     onError: (e) => toast.error(errorMessage(e, "Falha ao atualizar")),
   });
 
+  const confirm = useMutation({
+    mutationFn: () => portalPost<{ message?: string }>(`/measurement/${visit!.id}/confirm`, {}),
+    onSuccess: (r) => { toast.success(r.message ?? "Medição confirmada"); qc.invalidateQueries({ queryKey: key }); },
+    onError: (e) => toast.error(errorMessage(e, "Não foi possível confirmar")),
+  });
+  const reschedule = useMutation({
+    mutationFn: () => portalPost<{ message?: string }>(`/measurement/${visit!.id}/reschedule`, body()),
+    onSuccess: (r) => { toast.success(r.message ?? "Datas enviadas"); setRescheduling(false); qc.invalidateQueries({ queryKey: key }); },
+    onError: (e) => toast.error(errorMessage(e, "Não foi possível enviar as datas")),
+  });
+
   if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   const datesCount = [form.d1, form.d2, form.d3].filter(Boolean).length;
@@ -81,7 +94,7 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
             <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
               <span>Medição</span>
               <Badge variant={visit.status === "DONE" ? "success" : visit.status === "SCHEDULED" ? "secondary" : visit.status === "CANCELLED" ? "muted" : "warning"}>
-                {visit.status === "DONE" ? "Concluída" : visit.status === "SCHEDULED" ? "Agendada" : visit.status === "CANCELLED" ? "Cancelada" : "Aguardando confirmação"}
+                {visit.status === "DONE" ? "Concluída" : visit.status === "SCHEDULED" ? (visit.confirmation === "CONFIRMED" ? "Confirmada" : "Agendada — confirme") : visit.status === "CANCELLED" ? "Cancelada" : "Aguardando a equipe"}
               </Badge>
             </CardTitle>
           </CardHeader>
@@ -91,6 +104,21 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
                 Sua medição está agendada para <strong>{fmtDateTime(visit.scheduledAt)}</strong>
                 {visit.technician ? ` com ${visit.technician.name}` : ""}.
               </p>
+            )}
+            {visit.status === "SCHEDULED" && visit.confirmation === "CONFIRMED" && (
+              <p className="flex items-center gap-2 text-success"><CheckCircle2 className="h-4 w-4" /> Você confirmou este horário. Se precisar mudar, peça outra data abaixo.</p>
+            )}
+            {visit.status === "SCHEDULED" && !rescheduling && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {visit.confirmation !== "CONFIRMED" && (
+                  <Button size="sm" disabled={confirm.isPending} onClick={() => confirm.mutate()}>
+                    {confirm.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />} Confirmar este horário
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => { setForm({ d1: "", d2: "", d3: "", period: "QUALQUER", notes: "" }); setRescheduling(true); }}>
+                  Não posso nesse dia — sugerir outras datas
+                </Button>
+              </div>
             )}
             {visit.status === "DONE" && (
               <>
@@ -106,7 +134,9 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
             )}
             {visit.status === "REQUESTED" && (
               <p className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" />
-                Recebemos seu pedido. A equipe vai confirmar a melhor data entre as que você sugeriu.
+                {visit.confirmation === "RESCHEDULE_REQUESTED"
+                  ? "Recebemos suas novas datas. A equipe vai remarcar e avisar você."
+                  : "Recebemos seu pedido. A equipe vai confirmar a melhor data entre as que você sugeriu."}
               </p>
             )}
           </CardContent>
@@ -116,7 +146,7 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
       {editing && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">{visit ? "Ajustar solicitação" : "Solicitar medição"}</CardTitle>
+            <CardTitle className="text-base">{rescheduling ? "Sugerir outras datas" : visit ? "Ajustar solicitação" : "Solicitar medição"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">Sugira até 3 datas de sua preferência. A equipe confirma uma delas.</p>
@@ -147,13 +177,16 @@ export function PortalMeasurement({ projectId }: { projectId: string }) {
               <Label className="text-xs">Observações (portaria, interfone, acesso…)</Label>
               <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
             </div>
-            <Button
-              disabled={datesCount === 0 || request.isPending || update.isPending}
-              onClick={() => (visit ? update.mutate() : request.mutate())}
-            >
-              {(request.isPending || update.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              {visit ? "Atualizar" : "Enviar solicitação"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={datesCount === 0 || request.isPending || update.isPending || reschedule.isPending}
+                onClick={() => (rescheduling ? reschedule.mutate() : visit ? update.mutate() : request.mutate())}
+              >
+                {(request.isPending || update.isPending || reschedule.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                {rescheduling ? "Enviar novas datas" : visit ? "Atualizar" : "Enviar solicitação"}
+              </Button>
+              {rescheduling && <Button variant="outline" onClick={() => setRescheduling(false)}>Manter o horário marcado</Button>}
+            </div>
           </CardContent>
         </Card>
       )}

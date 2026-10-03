@@ -12,7 +12,7 @@ import { apiDelete, apiDownload, apiGet, apiPostForm } from "@/services/api";
 import { errorMessage } from "@/lib/utils";
 import { PromobCompareButton } from "@/components/promob-compare";
 
-type ParsedItem = { descricao: string; referencia?: string | null; quantidade?: number | null; ambiente?: string | null };
+type ParsedItem = { descricao: string; referencia?: string | null; quantidade?: number | null; ambiente?: string | null; valorTotal?: number | null };
 type Peca = {
   descricao: string;
   quantidade: number;
@@ -30,10 +30,28 @@ type Parsed = {
   totals: { ambientes: number; itens: number; valor?: number | null };
   // só no CSV de plano de corte
   pecas?: Peca[];
-  materiais?: { material: string; pecas: number; areaM2: number }[];
+  materiais?: { material: string; pecas: number; areaM2: number; chapas?: number | null; chapaM2?: number | null; aproveitamento?: number | null }[];
+  fitas?: { fita: string; metros: number }[];
   columns?: { recognized: Record<string, string>; unknown: string[]; delimiter: string };
   warnings?: string[];
+  // PDF do Promob: orçamento (BUDGET) ou plano de corte (CUT_PLAN)
+  kind?: "BUDGET" | "CUT_PLAN";
+  cliente?: { nome: string | null; celular?: string | null; email?: string | null };
+  projeto?: string | null;
+  totalFinal?: number | null;
+  valoresPorAmbiente?: { ambiente: string; valor: number }[];
+  itensSemPreco?: number;
+  pagamento?: { descricao: string; valorParcelar: number | null; valorParcela: number | null; valorTotal: number | null }[];
+  insumos?: {
+    chapas: { material: string; m2: number }[];
+    fitasM: number;
+    ferragens: { descricao: string; quantidade: number }[];
+    operacoes: { descricao: string; unidade: string; quantidade: number }[];
+  };
 };
+type QuoteSync = { quoteId: string; number: string; created: boolean; total: number } | { skipped: string } | null;
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dec = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 type PromobImport = {
   id: string;
   fileName: string;
@@ -61,7 +79,87 @@ type Preview = {
 const FIELD_LABEL: Record<string, string> = {
   descricao: "Peça", quantidade: "Quantidade", comprimento: "Comprimento", largura: "Largura", espessura: "Espessura",
   material: "Material", ambiente: "Ambiente", modulo: "Módulo", referencia: "Referência", borda: "Fita/borda", valor: "Valor",
+  pecaId: "ID da peça", temMateria: "Tem matéria-prima", chapaX: "Chapa (comprimento)", chapaY: "Chapa (largura)", pontoX: "Canto X", pontoY: "Canto Y",
 };
+
+/** O que foi lido do arquivo: resumo do orçamento, chapas por material, fitas e insumos. */
+function ParsedSummary({ d }: { d: Parsed }) {
+  return (
+    <div className="space-y-3">
+      {(d.cliente?.nome || d.projeto) && (
+        <p className="text-xs text-muted-foreground">
+          {d.cliente?.nome ? `Cliente no arquivo: ${d.cliente.nome}` : ""}
+          {d.projeto ? `${d.cliente?.nome ? " · " : ""}Projeto: ${d.projeto}` : ""}
+        </p>
+      )}
+      {d.valoresPorAmbiente && d.valoresPorAmbiente.length > 0 && (
+        <div>
+          <p className="mb-1 font-medium">Valores por ambiente (viram o custo no orçamento)</p>
+          <table className="w-full text-xs">
+            <tbody>
+              {d.valoresPorAmbiente.map((a) => (
+                <tr key={a.ambiente} className="border-t">
+                  <td className="py-1">{a.ambiente}</td>
+                  <td className="py-1 text-right">{brl(a.valor)}</td>
+                </tr>
+              ))}
+              {d.totalFinal != null && (
+                <tr className="border-t font-medium">
+                  <td className="py-1">Total do Promob</td>
+                  <td className="py-1 text-right">{brl(d.totalFinal)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {d.pagamento && d.pagamento.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Condição no Promob: {d.pagamento.map((x) => `${x.descricao}${x.valorParcela != null ? ` — parcelas de ${brl(x.valorParcela)}` : ""}`).join("; ")}
+            </p>
+          )}
+        </div>
+      )}
+      {d.materiais && d.materiais.length > 0 && (
+        <div>
+          <p className="mb-1 font-medium">Chapas por material</p>
+          <table className="w-full text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 text-left">Material</th>
+                <th className="text-right">Peças</th>
+                <th className="text-right">Área (m²)</th>
+                <th className="text-right">Chapas</th>
+                <th className="text-right">Aproveit.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.materiais.map((m) => (
+                <tr key={m.material} className="border-t">
+                  <td className="py-1">{m.material}</td>
+                  <td className="text-right">{m.pecas}</td>
+                  <td className="text-right">{dec(m.areaM2)}</td>
+                  <td className="text-right">{m.chapas ?? "—"}</td>
+                  <td className="text-right">{m.aproveitamento != null ? `${dec(m.aproveitamento)}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {d.fitas && d.fitas.length > 0 && (
+        <p className="text-xs"><span className="font-medium">Fita de borda:</span> {d.fitas.map((f) => `${f.fita} — ${dec(f.metros)} m`).join(" · ")}</p>
+      )}
+      {d.insumos && (
+        <div className="space-y-1 text-xs">
+          <p className="font-medium">Insumos do projeto</p>
+          {d.insumos.chapas.length > 0 && <p>Chapas: {d.insumos.chapas.map((c) => `${c.material} ${dec(c.m2)} m²`).join(" · ")}</p>}
+          {d.insumos.fitasM > 0 && <p>Fita de borda: {dec(d.insumos.fitasM)} m</p>}
+          {d.insumos.ferragens.length > 0 && <p>Ferragens: {d.insumos.ferragens.slice(0, 8).map((f) => `${f.descricao} (${dec(f.quantidade)})`).join(" · ")}{d.insumos.ferragens.length > 8 ? ` · e mais ${d.insumos.ferragens.length - 8}` : ""}</p>}
+          {d.insumos.operacoes.length > 0 && <p>Operações: {d.insumos.operacoes.map((o) => `${o.descricao} ${dec(o.quantidade)} ${o.unidade.toLowerCase()}`).join(" · ")}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const fmtSize = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const fmtDate = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -86,7 +184,10 @@ export function PromobPanel({ projectId, canManage }: { projectId: string; canMa
       return apiPostForm(`/promob/projects/${projectId}/imports`, fd);
     },
     onSuccess: (r: unknown) => {
-      toast.success((r as { message?: string })?.message ?? "Arquivo importado");
+      const res = r as { message?: string; data?: { quote?: QuoteSync } };
+      toast.success(res?.message ?? "Arquivo importado");
+      const qs = res.data?.quote;
+      if (qs && "skipped" in qs) toast.message(`Sem orçamento automático: ${qs.skipped}`);
       setFile(null);
       setPreview(null);
       if (fileRef.current) fileRef.current.value = "";
@@ -103,6 +204,16 @@ export function PromobPanel({ projectId, canManage }: { projectId: string; canMa
     },
     onSuccess: (r) => setPreview(r.data),
     onError: (e) => toast.error(errorMessage(e, "Falha ao ler o arquivo")),
+  });
+  const reprocess = useMutation({
+    mutationFn: (id: string) => apiPostForm<{ message?: string; data?: { quote?: QuoteSync } }>(`/promob/imports/${id}/reprocess`, new FormData()),
+    onSuccess: (r) => {
+      toast.success(r.message ?? "Arquivo relido");
+      const qs = r.data?.quote;
+      if (qs && "skipped" in qs) toast.message(`Sem orçamento automático: ${qs.skipped}`);
+      invalidate();
+    },
+    onError: (e) => toast.error(errorMessage(e, "Falha ao reler o arquivo")),
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiDelete(`/promob/imports/${id}`),
@@ -159,6 +270,7 @@ export function PromobPanel({ projectId, canManage }: { projectId: string; canMa
               </div>
 
               {imp.notes && <p className="text-xs text-muted-foreground">{imp.notes}</p>}
+              {imp.parsed && <ParsedSummary d={imp.parsed} />}
 
               {imp.parsed && (imp.parsed.totals.ambientes > 0 || imp.parsed.totals.itens > 0) && (
                 <div className="space-y-2 rounded-lg border border-border p-3 text-xs">
@@ -202,6 +314,11 @@ export function PromobPanel({ projectId, canManage }: { projectId: string; canMa
                 >
                   <Download className="mr-1 h-4 w-4" /> Baixar original
                 </Button>
+                {canManage && (
+                  <Button size="sm" variant="outline" disabled={reprocess.isPending} onClick={() => reprocess.mutate(imp.id)} title="Lê de novo o arquivo guardado, com o leitor atual">
+                    {reprocess.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Eye className="mr-1 h-4 w-4" />} Reler arquivo
+                  </Button>
+                )}
                 {canManage && (
                   <Button size="sm" variant="ghost" className="text-destructive" disabled={remove.isPending} onClick={() => { if (confirm(`Remover a importação "${imp.fileName}"?`)) remove.mutate(imp.id); }}>
                     <Trash2 className="h-4 w-4" />
@@ -249,29 +366,7 @@ function PreviewDialog({ preview: p, saving, onCancel, onConfirm }: { preview: P
               {d.columns.unknown.length > 0 && <p className="text-muted-foreground">Ignoradas: {d.columns.unknown.join(", ")}</p>}
             </div>
           )}
-          {d?.materiais && d.materiais.length > 0 && (
-            <div>
-              <p className="mb-1 font-medium">Materiais</p>
-              <table className="w-full text-xs">
-                <thead className="text-muted-foreground">
-                  <tr>
-                    <th className="py-1 text-left">Material</th>
-                    <th className="text-right">Peças</th>
-                    <th className="text-right">Área (m²)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.materiais.map((m) => (
-                    <tr key={m.material} className="border-t">
-                      <td className="py-1">{m.material}</td>
-                      <td className="text-right">{m.pecas}</td>
-                      <td className="text-right">{m.areaM2.toLocaleString("pt-BR")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {d && <ParsedSummary d={d} />}
           {d?.pecas && d.pecas.length > 0 ? (
             <div>
               <p className="mb-1 font-medium">Peças {d.pecas.length > 300 ? "(primeiras 300)" : ""}</p>
@@ -314,6 +409,7 @@ function PreviewDialog({ preview: p, saving, onCancel, onConfirm }: { preview: P
                         <td className="p-1">{it.descricao}</td>
                         <td className="p-1 text-muted-foreground">{it.referencia ?? ""}</td>
                         <td className="p-1 text-right">{it.quantidade ?? ""}</td>
+                        <td className="p-1 text-right">{it.valorTotal ? brl(it.valorTotal) : ""}</td>
                       </tr>
                     ))}
                   </tbody>

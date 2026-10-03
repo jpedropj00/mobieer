@@ -18,6 +18,7 @@ import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { brl } from "../templates/contract.service";
 import { PAYMENT_METHODS, QuoteRuleError, computeQuote, normalizePricing, type PricingConfig } from "./quote.rules";
 import { CATEGORY_SALE, planFinance } from "./quote.finance";
+import { hasBudgetValues, roomsFromParsed } from "./quote.promob";
 import { PRICING_SETTING, calcToData, loadPricing, nextQuoteNumber, quoteInclude, quotePdf, serializeQuote } from "./quote.service";
 
 const router = Router();
@@ -34,7 +35,12 @@ const calcSchema = z.object({
     .array(
       z.object({
         room: text(120),
-        description: z.string().trim().min(1, "Descreva o item").max(300),
+        description: z.string().trim().min(1, "Descreva o item").max(3000),
+        corpo: text(160),
+        porta: text(160),
+        puxador: text(160),
+        complemento: text(160),
+        modelo: text(160),
         quantity: z.coerce.number().positive().max(100000).optional(),
         unitCost: money,
       })
@@ -68,7 +74,9 @@ const quoteSchema = calcSchema.extend({
   futureSale: z.boolean().optional(),
   futureReleaseDate: z.coerce.date().optional().nullable(),
   validUntil: z.coerce.date().optional().nullable(),
-  paymentTerms: text(500),
+  paymentTerms: text(1000),
+  deliveryText: text(160),
+  deliveryDays: z.coerce.number().int().min(1).max(365).optional().nullable(),
   notes: text(4000),
 });
 
@@ -155,6 +163,15 @@ router.put(
         validityDays: z.coerce.number().int().min(1).max(365),
         commissionRoles: z.array(z.object({ role: z.string().trim().min(1).max(40), label: z.string().trim().min(1).max(60), defaultPercent: z.coerce.number().min(0).max(50) })).min(1).max(10),
         financingPlans: z.array(planSchema).max(30),
+        document: z
+          .object({
+            supplier: z.string().trim().min(1).max(80),
+            line: z.string().trim().min(1).max(60),
+            deliveryDays: z.coerce.number().int().min(1).max(365),
+            deliveryText: z.string().trim().min(1).max(120),
+            notes: z.array(z.string().trim().min(1).max(400)).max(15),
+          })
+          .optional(),
       })
       .parse(req.body);
     if (new Set(input.financingPlans.map((p) => p.id)).size !== input.financingPlans.length) throw new BadRequestError("Dois planos com o mesmo código");
@@ -184,14 +201,8 @@ router.get(
       select: { id: true, fileName: true, totalValue: true, parsedJson: true },
     });
     if (!imp) throw new NotFoundError("Importação não encontrada");
-    const itens = ((imp.parsedJson as { itens?: { ambiente?: string | null; valorTotal?: number | null }[] } | null)?.itens ?? []);
-    const byRoom = new Map<string, number>();
-    for (const it of itens) {
-      const k = it.ambiente?.trim() || "Sem ambiente";
-      byRoom.set(k, (byRoom.get(k) ?? 0) + (Number(it.valorTotal) || 0));
-    }
-    const rooms = [...byRoom.entries()].map(([room, cost]) => ({ room, cost: Math.round(cost * 100) / 100 }));
-    const hasValues = rooms.some((r) => r.cost > 0);
+    const rooms = roomsFromParsed(imp.parsedJson);
+    const hasValues = hasBudgetValues(rooms);
     return ok(res, {
       fileName: imp.fileName,
       rooms: hasValues ? rooms : [],
@@ -287,6 +298,8 @@ router.post(
         sellerId: req.user!.id,
         validUntil: input.validUntil ?? new Date(now.getTime() + config.validityDays * DAY),
         paymentTerms: input.paymentTerms || null,
+        deliveryText: input.deliveryText || null,
+        deliveryDays: input.deliveryDays ?? null,
         notes: input.notes || null,
         approvalStatus: c.needsApproval ? "PENDING" : "NOT_REQUIRED",
         approvalRequestedAt: c.needsApproval ? now : null,
@@ -330,6 +343,8 @@ router.put(
           futureReleaseDate: input.futureSale ? input.futureReleaseDate ?? null : null,
           validUntil: input.validUntil ?? cur.validUntil,
           paymentTerms: input.paymentTerms || null,
+          deliveryText: input.deliveryText || null,
+          deliveryDays: input.deliveryDays ?? null,
           notes: input.notes || null,
           approvalStatus,
           ...(approvalStatus === "PENDING" && cur.approvalStatus !== "PENDING"
@@ -381,6 +396,8 @@ router.post(
         sellerId: cur.sellerId,
         validUntil: new Date(Date.now() + config.validityDays * DAY),
         paymentTerms: cur.paymentTerms,
+        deliveryText: cur.deliveryText,
+        deliveryDays: cur.deliveryDays,
         notes: cur.notes,
         approvalStatus: c.needsApproval ? "PENDING" : "NOT_REQUIRED",
         approvalRequestedAt: c.needsApproval ? new Date() : null,

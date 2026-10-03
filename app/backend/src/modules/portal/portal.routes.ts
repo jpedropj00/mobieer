@@ -14,6 +14,7 @@ import { uploadPhoto } from "../../middlewares/upload";
 import { recomputeSignatureStatus } from "../documents/documents.routes";
 import { APPLIANCE_CATEGORIES, getOrCreateSheet, serializeItem, serializeSheet } from "../appliances/appliances.service";
 import { MEASUREMENT_PERIODS, serializeVisit, visitInclude } from "../measurements/measurements.service";
+import { cleanPreferredDates } from "../measurements/measurements.rules";
 import { approvalInclude, getOrCreateApproval, serializeApproval } from "../techproject/techproject.service";
 import { closeRound } from "../techproject/rounds.service";
 import {
@@ -786,6 +787,72 @@ router.patch(
       include: visitInclude,
     });
     return ok(res, serializeVisit(updated), "Solicitação atualizada");
+  })
+);
+
+// POST /measurement/:id/confirm  -> o cliente confirma o dia e a hora marcados pela equipe
+router.post(
+  "/measurement/:id/confirm",
+  asyncHandler(async (req, res) => {
+    const visit = await prisma.measurementVisit.findFirst({
+      where: { id: req.params.id, project: { clientId: req.portal!.clientId } },
+      include: visitInclude,
+    });
+    if (!visit) throw new NotFoundError("Medição não encontrada");
+    if (visit.status !== "SCHEDULED" || !visit.scheduledAt) throw new BadRequestError("Esta medição não está agendada");
+    if (visit.clientConfirmedAt) return ok(res, serializeVisit(visit), "Medição já confirmada");
+    const updated = await prisma.measurementVisit.update({ where: { id: visit.id }, data: { clientConfirmedAt: new Date() }, include: visitInclude });
+    const when = visit.scheduledAt.toLocaleString("pt-BR", { timeZone: "America/Fortaleza", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const to = [...new Set([visit.project.managerId, visit.technicianId].filter((x): x is string => Boolean(x)))];
+    if (to.length) {
+      await prisma.notification.createMany({
+        data: to.map((userId) => ({ type: "INFO" as const, title: "Cliente confirmou a medição", message: `${visit.project.code} — ${visit.project.name}: confirmada para ${when}.`, userId, link: "/medicoes" })),
+      });
+    }
+    return ok(res, serializeVisit(updated), "Medição confirmada. Até lá!");
+  })
+);
+
+// POST /measurement/:id/reschedule  -> o cliente não pode na data marcada e sugere outras
+router.post(
+  "/measurement/:id/reschedule",
+  asyncHandler(async (req, res) => {
+    const visit = await prisma.measurementVisit.findFirst({
+      where: { id: req.params.id, project: { clientId: req.portal!.clientId } },
+      include: visitInclude,
+    });
+    if (!visit) throw new NotFoundError("Medição não encontrada");
+    if (visit.status !== "SCHEDULED") throw new BadRequestError("Esta medição não está agendada");
+    const input = measurementRequestSchema.parse(req.body);
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Fortaleza" });
+    const dates = cleanPreferredDates(input.preferredDates, today);
+    if (!dates.length) throw new BadRequestError("Sugira pelo menos uma data de hoje em diante");
+    const updated = await prisma.measurementVisit.update({
+      where: { id: visit.id },
+      data: {
+        status: "REQUESTED",
+        scheduledAt: null,
+        clientConfirmedAt: null,
+        rescheduleRequestedAt: new Date(),
+        preferredDates: dates,
+        preferredPeriod: input.preferredPeriod ?? null,
+        clientNotes: input.clientNotes?.trim() || visit.clientNotes,
+      },
+      include: visitInclude,
+    });
+    const to = [...new Set([visit.project.managerId, visit.technicianId].filter((x): x is string => Boolean(x)))];
+    if (to.length) {
+      await prisma.notification.createMany({
+        data: to.map((userId) => ({
+          type: "INFO" as const,
+          title: "Cliente pediu outra data para a medição",
+          message: `${visit.project.code} — ${visit.project.name}: não pode na data marcada. Sugestões: ${dates.map((d) => d.split("-").reverse().join("/")).join(", ")}.`,
+          userId,
+          link: "/medicoes",
+        })),
+      });
+    }
+    return ok(res, serializeVisit(updated), "Recebemos suas datas. A equipe vai remarcar e avisar você.");
   })
 );
 

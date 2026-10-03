@@ -49,6 +49,10 @@ type ItemRow = {
   referencia: string | null;
   quantidade: number;
   material: string | null;
+  code?: string | null;
+  medidas?: string | null;
+  modulo?: string | null;
+  fita?: string | null;
   status: string;
   sector: string | null;
   sourceImportId: string | null;
@@ -95,6 +99,10 @@ export function serializeItem(i: ItemRow) {
     referencia: i.referencia,
     quantidade: i.quantidade,
     material: i.material,
+    code: i.code ?? null,
+    medidas: i.medidas ?? null,
+    modulo: i.modulo ?? null,
+    fita: i.fita ?? null,
     status: i.status,
     sector: i.sector,
     sectorLabel: i.sector ? SECTOR_LABEL[i.sector as ProductionSector] ?? i.sector : null,

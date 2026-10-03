@@ -65,15 +65,22 @@ test("sem quantidade conta 1 e avisa", () => {
   assert.ok(r.warnings.some((w) => w.includes("quantidade")));
 });
 
-test("adapter pelo formato; falha de leitura vira PARSE_FAILED com motivo", () => {
+test("adapter pelo formato; falha de leitura vira PARSE_FAILED com motivo", async () => {
   assert.equal(detectPromobFormat("plano.CSV", ""), "CSV");
   assert.equal(detectPromobFormat("orc.xml", ""), "XML");
   assert.equal(detectPromobFormat("orc.pdf", ""), "PDF");
   assert.equal(detectPromobFormat("x.bin", ""), "OTHER");
-  const ok = readPromobFile({ buffer: Buffer.from(CSV), originalname: "p.csv", mimetype: "text/csv" });
+  const ok = await readPromobFile({ buffer: Buffer.from(CSV), originalname: "p.csv", mimetype: "text/csv" });
   assert.equal(ok.status, "PARSED");
   assert.equal(ok.itemCount, 3);
-  const bad = readPromobFile({ buffer: Buffer.from("A;B\n1;2"), originalname: "p.csv", mimetype: "text/csv" });
+  const bad = await readPromobFile({ buffer: Buffer.from("A;B\n1;2"), originalname: "p.csv", mimetype: "text/csv" });
   assert.equal(bad.status, "PARSE_FAILED");
   assert.match(bad.notes!, /descrição/);
+});
+
+test("nome de arquivo com acento que o upload quebrou é consertado; nome normal fica igual", async () => {
+  const { fixUploadName } = await import("../src/utils/upload-name");
+  assert.equal(fixUploadName(Buffer.from("orçamento teste.pdf", "utf8").toString("latin1")), "orçamento teste.pdf");
+  assert.equal(fixUploadName("COZINHA_NEILA.csv"), "COZINHA_NEILA.csv");
+  assert.equal(fixUploadName("orçamento.pdf"), "orçamento.pdf");
 });

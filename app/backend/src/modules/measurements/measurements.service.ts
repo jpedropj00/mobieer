@@ -1,3 +1,4 @@
+import { confirmationState } from "./measurements.rules";
 import { prisma } from "../../prisma";
 import { PayloadTooLargeError, UnsupportedFileTypeError, ValidationError } from "../../utils/ApiError";
 
@@ -43,6 +44,8 @@ type VisitRow = {
   preferredPeriod: string | null;
   clientNotes: string | null;
   scheduledAt: Date | null;
+  clientConfirmedAt?: Date | null;
+  rescheduleRequestedAt?: Date | null;
   teamNotes: string | null;
   doneAt: Date | null;
   techProjectDueAt: Date | null;
@@ -63,6 +66,9 @@ export function serializeVisit(v: VisitRow) {
     preferredPeriod: v.preferredPeriod,
     clientNotes: v.clientNotes,
     scheduledAt: v.scheduledAt,
+    clientConfirmedAt: v.clientConfirmedAt ?? null,
+    rescheduleRequestedAt: v.rescheduleRequestedAt ?? null,
+    confirmation: confirmationState(v),
     teamNotes: v.teamNotes,
     doneAt: v.doneAt,
     techProjectDueAt: v.techProjectDueAt,

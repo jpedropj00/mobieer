@@ -3,7 +3,8 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_PRICING, computeQuote, normalizePricing, paymentText, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
+import { quoteModelPdf } from "../src/modules/commercial/quote.pdf";
+import { DEFAULT_PRICING, ambCode, computeQuote, normalizePricing, obsLabel, paymentText, quoteRooms, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
 
 const config: PricingConfig = {
   ...DEFAULT_PRICING,
@@ -107,4 +108,80 @@ test("configuração gravada incompleta é completada com o padrão", () => {
   assert.equal(c.defaultMarkup, DEFAULT_PRICING.defaultMarkup);
   assert.deepEqual(c.financingPlans, []);
   assert.equal(normalizePricing(null).validityDays, 10);
+});
+
+test("Promob → orçamento: ambientes com o subtotal do arquivo e a contagem de itens sem preço", async () => {
+  const { hasBudgetValues, roomsFromParsed } = await import("../src/modules/commercial/quote.promob");
+  const rooms = roomsFromParsed({
+    itens: [
+      { ambiente: "Cozinhas", valorTotal: 48.52 },
+      { ambiente: "Cozinhas", valorTotal: 0 },
+      { ambiente: "Ferragens", valorTotal: 0 },
+      { ambiente: null, valorTotal: 10 },
+    ],
+    valoresPorAmbiente: [{ ambiente: "Cozinhas", valor: 1010.3 }],
+  });
+  assert.deepEqual(rooms, [
+    { room: "Cozinhas", cost: 1010.3, items: 2, unpriced: 1 }, // o subtotal do arquivo manda sobre a soma
+    { room: "Ferragens", cost: 0, items: 1, unpriced: 1 },
+    { room: "Sem ambiente", cost: 10, items: 1, unpriced: 0 },
+  ]);
+  assert.equal(hasBudgetValues(rooms), true);
+  assert.equal(hasBudgetValues(roomsFromParsed({ itens: [{ ambiente: "Cozinha", valorTotal: null }] })), false);
+  assert.deepEqual(roomsFromParsed(null), []);
+});
+
+test("regra da loja: mark-up de 2 para cima fecha direto; abaixo pede liberação", () => {
+  assert.equal(DEFAULT_PRICING.minScore, 2);
+  const at = (markup: number, over: Partial<QuoteInput> = {}) => computeQuote(base({ markup, ...over }), DEFAULT_PRICING).needsApproval;
+  assert.equal(at(2), false);
+  assert.equal(at(2.4), false);
+  assert.equal(at(1.99), true);
+  assert.equal(at(1.67), true);
+  // centavos arredondados não derrubam um mark-up de 2 cravado
+  assert.equal(computeQuote(base({ markup: 2, items: [{ room: "Sala", description: "Painel", unitCost: 333.33 }], commissions: [{ name: "Ana", role: "VENDEDOR", percent: 3 }] }), DEFAULT_PRICING).needsApproval, false);
+  // desconto que derruba o mark-up efetivo para menos de 2 volta a pedir liberação
+  assert.equal(at(2, { discount: 100 }), true);
+});
+
+test("cômodos do orçamento: sem repetir, na ordem, e item sem cômodo entra pela descrição", () => {
+  assert.deepEqual(
+    quoteRooms([
+      { room: "Cozinha", description: "Armários" },
+      { room: " cozinha ", description: "Ilha" },
+      { room: "Dormitório casal", description: "Guarda-roupa" },
+      { room: null, description: "Painel de TV" },
+    ]),
+    ["Cozinha", "Dormitório casal", "Painel de TV"]
+  );
+  assert.deepEqual(quoteRooms([]), []);
+});
+
+test("modelo da loja: códigos de ambiente, rótulos das OBS e acabamentos no cálculo", () => {
+  assert.deepEqual([0, 1, 25, 26, 27].map(ambCode), ["AA", "AB", "AZ", "BA", "BB"]);
+  assert.deepEqual([0, 1, 2, 3, 6].map(obsLabel), ["OBS:", "OBS²:", "OBS³:", "OBS4:", "OBS7:"]);
+  const q = computeQuote(base({ items: [{ room: "Cozinha", description: "Armário alto", unitCost: 600, corpo: " MDF 15mm Branco TX ", porta: "", puxador: "Cava usinado" }] }), config);
+  assert.deepEqual([q.items[0].corpo, q.items[0].porta, q.items[0].puxador, q.items[0].modelo], ["MDF 15mm Branco TX", null, "Cava usinado", null]);
+});
+
+test("configuração do PDF: completa com o padrão da loja e aceita lista de observações vazia", () => {
+  const padrao = normalizePricing({}).document;
+  assert.equal(padrao.supplier, "MOBIEER MÓVEIS PLANEJADOS");
+  assert.equal(padrao.deliveryDays, 45);
+  assert.equal(padrao.notes.length, 7);
+  const custom = normalizePricing({ document: { line: "CORPORATIVO", deliveryDays: 60, notes: [" Garantia de 5 anos ", ""] } }).document;
+  assert.deepEqual([custom.line, custom.deliveryDays, custom.notes, custom.supplier], ["CORPORATIVO", 60, ["Garantia de 5 anos"], "MOBIEER MÓVEIS PLANEJADOS"]);
+  assert.deepEqual(normalizePricing({ document: { notes: [] } }).document.notes, []);
+});
+
+test("PDF no modelo da loja: gera com muitos ambientes e observação longa sem quebrar", async () => {
+  const items = Array.from({ length: 30 }, (_, i) => ({ room: `Ambiente ${i + 1}`, description: "Armário com portas de giro em MDF 15mm. ".repeat(12), quantity: 1, total: 1000 + i, corpo: "MDF 15mm", porta: null, puxador: null, complemento: null, modelo: null }));
+  const pdf = await quoteModelPdf({
+    number: "ORC-00009", version: 2, issuedAt: new Date("2026-08-22T15:00:00Z"), validUntil: new Date("2026-09-01T15:00:00Z"),
+    seller: { name: "Vendedora" }, store: "Mobieer", company: { name: "MOBIEER MÓVEIS SOB MEDIDA", city: "Fortaleza-CE", site: "www.mobieer.com.br", email: null },
+    client: { name: "Cliente", address: null, district: null, city: null, state: null, zipCode: null, phone: null, email: null },
+    items, subtotal: 31000, discount: 500, total: 30500, payment: "À vista", notes: "Entrega sujeita à liberação da obra.", config: DEFAULT_PRICING.document,
+  });
+  assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
+  assert.ok(pdf.length > 5000);
 });

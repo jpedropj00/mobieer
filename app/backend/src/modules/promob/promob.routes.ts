@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { uploadPromob } from "../../middlewares/upload";
@@ -10,6 +10,7 @@ import { ok } from "../../utils/response";
 import { storage } from "../../lib/storage";
 import { createPromobImport } from "./promob.import";
 import { readPromobFile } from "./promob.adapters";
+import { syncQuoteFromImport } from "../commercial/quote.promob";
 import { pipeToResponse } from "../../utils/stream";
 
 import { diffParts, partsFromParsed } from "./promob.diff";
@@ -87,7 +88,7 @@ router.post(
   asyncHandler(async (req, res) => {
     await ensureProject(req.params.projectId, req.user!.organizationId);
     if (!req.file) throw new BadRequestError("Envie o arquivo exportado do Promob");
-    const read = readPromobFile(req.file);
+    const read = await readPromobFile(req.file);
     return ok(res, { fileName: req.file.originalname, sizeBytes: req.file.size, ...read });
   })
 );
@@ -108,7 +109,37 @@ router.post(
       createdById: req.user!.id,
       source: "MANUAL",
     });
-    return ok(res, serialize(row), row.status === "PARSED" ? `Importado: ${row.itemCount} item(ns)` : "Arquivo importado");
+    const q = row.quote;
+    const quoteMsg = q && "number" in q ? ` — orçamento ${q.number} ${q.created ? "criado" : "atualizado"} no comercial` : "";
+    return ok(res, { ...serialize(row), quote: q }, row.status === "PARSED" ? `Importado: ${row.itemCount} item(ns)${quoteMsg}` : "Arquivo importado");
+  })
+);
+
+// POST /api/promob/imports/:id/reprocess — relê o arquivo guardado com o leitor atual
+// (serve para importações antigas, de quando o formato ainda não era lido)
+router.post(
+  "/imports/:id/reprocess",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const cur = await ensureImport(req.params.id, req.user!.organizationId);
+    const buffer = await storage.getBytes(cur.storageKey);
+    const read = await readPromobFile({ buffer, originalname: cur.fileName, mimetype: cur.mimeType });
+    const row = await prisma.promobImport.update({
+      where: { id: cur.id },
+      data: {
+        format: read.format,
+        status: read.status,
+        itemCount: read.itemCount,
+        totalValue: read.totalValue,
+        parsedJson: read.parsed === null ? Prisma.DbNull : (read.parsed as Prisma.InputJsonValue),
+        notes: read.notes,
+      },
+      include: { createdBy: { select: { id: true, name: true } } },
+    });
+    let quote: Awaited<ReturnType<typeof syncQuoteFromImport>> | null = null;
+    if (row.status === "PARSED") quote = await syncQuoteFromImport(row.id, req.user!.id).catch((e: unknown) => ({ skipped: e instanceof Error ? e.message : "falha ao gerar o orçamento" }));
+    const quoteMsg = quote && "number" in quote ? ` — orçamento ${quote.number} ${quote.created ? "criado" : "atualizado"} no comercial` : "";
+    return ok(res, { ...serialize(row), quote }, row.status === "PARSED" ? `Arquivo relido: ${row.itemCount} item(ns)${quoteMsg}` : `Arquivo relido, mas sem dados: ${row.notes ?? "formato não reconhecido"}`);
   })
 );
 

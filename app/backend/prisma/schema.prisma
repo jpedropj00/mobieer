@@ -1834,6 +1834,9 @@ model CommercialQuote {
   surcharge      Decimal                @default(0) @db.Decimal(14, 2)
   total          Decimal                @default(0) @db.Decimal(14, 2)
   paymentTerms   String?
+  // negociação deste orçamento: prazo de entrega (texto e dias); vazio = padrão da configuração
+  deliveryText   String?
+  deliveryDays   Int?
   notes          String?                @db.Text
   sentAt         DateTime?
   approvedAt     DateTime?
@@ -1846,6 +1849,9 @@ model CommercialQuote {
   // venda futura: entrega bem depois do prazo normal (fim de obra, entrega do imóvel)
   futureSale        Boolean   @default(false)
   futureReleaseDate DateTime?
+  // gerado/atualizado automaticamente a partir de uma importação do Promob
+  promobImportId    String?
+  promobImport      PromobImport? @relation(fields: [promobImportId], references: [id], onDelete: SetNull)
   // Formação do preço (quote.rules.ts). Custos e comissões nunca saem no PDF.
   costTotal           Decimal       @default(0) @db.Decimal(14, 2)
   markup              Decimal       @default(1) @db.Decimal(8, 4)
@@ -1896,6 +1902,7 @@ model CommercialQuote {
 
   @@unique([organizationId, number, version])
   @@index([organizationId, status, issuedAt])
+  @@index([promobImportId])
   @@index([clientId])
   @@index([sellerId])
 }
@@ -1904,6 +1911,12 @@ model CommercialQuoteItem {
   id          String          @id @default(cuid())
   room        String?
   description String
+  // acabamentos do ambiente, como saem no orçamento da loja
+  corpo       String?
+  porta       String?
+  puxador     String?
+  complemento String?
+  modelo      String?
   unitCost    Decimal         @default(0) @db.Decimal(14, 2)
   position    Int             @default(0)
   quantity    Decimal         @db.Decimal(12, 3)
@@ -2769,6 +2782,8 @@ model MeasurementVisit {
   preferredPeriod  String? // MANHA | TARDE | QUALQUER
   clientNotes      String?
   scheduledAt      DateTime? // data/hora confirmada pela equipe
+  clientConfirmedAt     DateTime? // cliente confirmou o dia/hora no portal
+  rescheduleRequestedAt DateTime? // cliente não pode e sugeriu outras datas
   technicianId     String?
   technician       User?                   @relation("MeasurementTechnician", fields: [technicianId], references: [id], onDelete: SetNull)
   teamNotes        String?
@@ -2953,6 +2968,7 @@ model PromobImport {
   itemCount        Int               @default(0)
   totalValue       Decimal?          @db.Decimal(14, 2) // total do orçamento, quando o XML traz valores
   parsedJson       Json? // itens/ambientes extraídos (best-effort)
+  quotes           CommercialQuote[]
   notes            String?           @db.Text
   createdById      String?
   createdBy        User?             @relation("PromobImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -3001,6 +3017,11 @@ model ProductionItem {
   referencia     String? // referência do Promob, quando veio de um import
   quantidade     Int                   @default(1)
   material       String?
+  // etiqueta: código de barras (único na organização) e o que vai impresso
+  code           String?
+  medidas        String?
+  modulo         String?
+  fita           String?
   status         ProductionItemStatus  @default(PENDING)
   sector         ProductionSector? // setor atual (null se PENDING/DONE/CANCELLED)
   sourceImportId String?
@@ -3014,6 +3035,7 @@ model ProductionItem {
   events         ProductionItemEvent[]
   timeLogs       ProductionTimeLog[]
 
+  @@unique([organizationId, code])
   @@index([organizationId, status, sector])
   @@index([orderId])
 }
@@ -3627,6 +3649,9 @@ model InstallationWorkOrder {
   // conferência do cliente na conclusão (substitui a assinatura no papel)
   receivedByName  String?
   clientSignature String?                  @db.Text
+  // avaliação da montagem pelo cliente (1 a 5) na conferência
+  clientRating    Int?
+  clientComment   String?                  @db.Text
   completedAt     DateTime?
   createdById     String?
   createdBy       User?                    @relation("WorkOrderCreator", fields: [createdById], references: [id], onDelete: SetNull)

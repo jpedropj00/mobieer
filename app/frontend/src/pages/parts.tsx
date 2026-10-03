@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/states";
 import { PageHeader } from "@/components/page-header";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from "@/services/api";
+import { apiDelete, apiGet, apiObjectUrl, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 import { compressImage } from "@/lib/image";
 import { useAuth } from "@/hooks/use-auth";
@@ -536,9 +536,7 @@ function Detalhe({
                     <div className="grid gap-2 sm:grid-cols-2">
                       {r.photos.map((p) => (
                         <div key={p.id} className="rounded-lg border border-border p-2">
-                          <a href={`/api/parts/photos/${p.id}/file`} target="_blank" rel="noreferrer">
-                            <img src={`/api/parts/photos/${p.id}/file`} alt={p.caption ?? p.fileName} className="h-36 w-full rounded object-cover" />
-                          </a>
+                          <PartPhoto id={p.id} alt={p.caption ?? p.fileName} />
                           <div className="mt-2 flex items-center justify-between gap-2">
                             <span className="truncate text-xs text-muted-foreground">{p.caption ?? p.fileName}</span>
                             {!r.isFinal && (
@@ -652,5 +650,16 @@ function Campo({ label, children, className = "" }: { label: string; children: R
       <Label className="text-xs">{label}</Label>
       {children}
     </div>
+  );
+}
+
+/** Foto da peça: a rota exige login, então a imagem vem pelo fetch com o token. */
+function PartPhoto({ id, alt }: { id: string; alt: string }) {
+  const q = useQuery({ queryKey: ["part-photo", id], queryFn: () => apiObjectUrl(`/parts/photos/${id}/file`), staleTime: 300_000 });
+  if (!q.data) return <div className="h-36 w-full animate-pulse rounded bg-muted" />;
+  return (
+    <a href={q.data} target="_blank" rel="noreferrer">
+      <img src={q.data} alt={alt} className="h-36 w-full rounded object-cover" />
+    </a>
   );
 }

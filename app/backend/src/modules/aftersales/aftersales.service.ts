@@ -10,7 +10,9 @@ import { notifyUsersWithPermission } from "../../lib/notify";
 import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { ROOM_LABEL } from "../contractors/productivity.service";
-import { buildInspectionReport, buildWarrantyCertificate } from "./aftersales.docs";
+import { buildInspectionReport } from "./aftersales.docs";
+import { warrantyManualPdf } from "./warranty-manual";
+import { splitCityFromAddress } from "./warranty-manual.rules";
 import {
   WARRANTY_CONDITIONS,
   WARRANTY_EXCLUSIONS,
@@ -43,26 +45,51 @@ async function projectContext(projectId: string) {
       organization: { select: { name: true, enterprise: { select: { tradeName: true, legalName: true } } } },
       client: {
         select: {
-          id: true, name: true, document: true, phone: true, email: true,
+          id: true, name: true, document: true, phone: true, email: true, address: true,
           street: true, addressNumber: true, district: true, city: true, state: true, zipCode: true,
           seller: { select: { name: true } },
         },
       },
+      // contrato aceito: vendedor, projetista (comissão), data da venda e ambientes
+      quotes: {
+        where: { status: "APPROVED", kind: "PADRAO" },
+        orderBy: { approvedAt: "desc" },
+        take: 1,
+        select: { approvedAt: true, seller: { select: { name: true } }, commissions: { select: { name: true, role: true } }, items: { select: { room: true }, orderBy: { position: "asc" } } },
+      },
+      workOrders: { where: { status: "DONE" }, orderBy: { completedAt: "desc" }, select: { completedAt: true, contractor: { select: { name: true } } } },
       productionOrder: { select: { deliveredAt: true } },
       salesOrders: { orderBy: { orderedAt: "asc" }, take: 1, select: { orderedAt: true } },
       installationTasks: { where: { status: { not: "CANCELLED" } }, select: { roomLabel: true, roomType: true, contractor: { select: { name: true } } } },
     },
   });
   const c = p.client;
-  const address = [c.street && `${c.street}${c.addressNumber ? `, ${c.addressNumber}` : ""}`, c.district].filter(Boolean).join(" — ") || null;
-  const installers = [...new Set(p.installationTasks.map((t) => t.contractor.name))].join(", ") || null;
-  const rooms = [...new Set(p.installationTasks.map((t) => t.roomLabel || ROOM_LABEL[t.roomType]))].join(", ") || null;
+  // endereço estruturado; sem ele, o texto antigo do cadastro (de onde também sai a cidade)
+  const legacy = splitCityFromAddress(c.address);
+  const address = [c.street && `${c.street}${c.addressNumber ? `, ${c.addressNumber}` : ""}`, c.district].filter(Boolean).join(" — ") || legacy.street;
+  const city = c.city ? `${c.city}${c.state ? ` / ${c.state}` : ""}` : legacy.city;
+  const quote = p.quotes[0];
+  const installers =
+    [...new Set(p.installationTasks.map((t) => t.contractor.name))].join(", ") || [...new Set(p.workOrders.map((o) => o.contractor.name))].join(", ") || null;
+  const rooms =
+    [...new Set(p.installationTasks.map((t) => t.roomLabel || ROOM_LABEL[t.roomType]))].join(", ") ||
+    [...new Set((quote?.items ?? []).map((i) => i.room?.trim()).filter((r): r is string => Boolean(r)))].join(", ") ||
+    null;
+  const consultant = c.seller?.name ?? quote?.seller.name ?? null;
+  const designer = quote?.commissions.find((m) => m.role === "PROJETISTA")?.name ?? null;
+  const purchaseDate = p.salesOrders[0]?.orderedAt ?? quote?.approvedAt ?? null;
+  const deliveryDate = p.productionOrder?.deliveredAt ?? p.workOrders[0]?.completedAt ?? null;
   return {
     p,
     company: p.organization.enterprise.tradeName || p.organization.enterprise.legalName || p.organization.name,
     address,
+    city,
     installers,
     rooms,
+    consultant,
+    designer,
+    purchaseDate,
+    deliveryDate,
   };
 }
 
@@ -206,26 +233,25 @@ export async function issueCertificate(warrantyId: string, actorId: string | nul
     generatedFrom: `Warranty:${w.id}`,
     title: `Certificado de garantia — ${ctx.p.code}`,
     fileName: `certificado-garantia-${ctx.p.code}.pdf`,
-    built: buildWarrantyCertificate({
-      company: ctx.company,
+    // o manual da loja, sem mudança, com a página do certificado preenchida
+    buffer: await warrantyManualPdf({
       client: {
         name: c.name,
         document: c.document,
         phone: c.phone,
         email: c.email,
         address: ctx.address,
-        city: c.city ? `${c.city}${c.state ? ` / ${c.state}` : ""}` : null,
+        city: ctx.city,
         zipCode: c.zipCode,
       },
-      project: { code: ctx.p.code, name: ctx.p.name },
-      designer: null,
-      consultant: c.seller?.name ?? null,
-      installers: w.inspection?.installerNames ?? ctx.installers,
-      purchaseDate: ctx.p.salesOrders[0]?.orderedAt ?? null,
-      deliveryDate: ctx.p.productionOrder?.deliveredAt ?? null,
+      project: { code: ctx.p.code },
+      designer: ctx.designer,
+      consultant: ctx.consultant,
+      installers: w.inspection?.installerNames || ctx.installers,
+      purchaseDate: ctx.purchaseDate,
+      deliveryDate: ctx.deliveryDate,
       inspectionDate: w.startsAt,
-      ambientes: w.inspection?.ambientes ?? ctx.rooms,
-      coverage: w.coverage as unknown as CoverageItem[],
+      ambientes: w.inspection?.ambientes || ctx.rooms,
       issuedAt: new Date(),
     }),
     visibleToClient: true,

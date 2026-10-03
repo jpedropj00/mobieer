@@ -7,6 +7,7 @@
  * se um dia existir, entra como mais um adapter sem tocar em quem consome.
  */
 import { parsePromobCsv, type CsvResult } from "./promob.csv";
+import { detectPdfKind, extractPdfLines, parseBudgetLines, parseCutPlanLines } from "./promob.pdf";
 import { decodeXmlBuffer, parsePromobXml, type PromobParsed } from "./promob.service";
 
 export type PromobFormat = "XML" | "CSV" | "PDF" | "OTHER";
@@ -16,14 +17,14 @@ export type PromobRead = {
   status: "PARSED" | "PARSE_FAILED" | "UPLOADED";
   itemCount: number;
   totalValue: number | null;
-  parsed: (PromobParsed & Partial<Pick<CsvResult, "pecas" | "materiais" | "columns" | "warnings">>) | null;
+  parsed: (PromobParsed & Partial<Pick<CsvResult, "pecas" | "columns" | "warnings">> & { materiais?: unknown; kind?: string }) | null;
   notes: string | null;
 };
 
 type Adapter = {
   format: PromobFormat;
   accepts: (fileName: string, mime: string) => boolean;
-  read: (buf: Buffer) => PromobRead;
+  read: (buf: Buffer) => PromobRead | Promise<PromobRead>;
 };
 
 const ADAPTERS: Adapter[] = [
@@ -61,14 +62,28 @@ const ADAPTERS: Adapter[] = [
   {
     format: "PDF",
     accepts: (f, m) => /\.pdf$/i.test(f) || m.includes("pdf"),
-    read: () => ({
-      format: "PDF",
-      status: "UPLOADED",
-      itemCount: 0,
-      totalValue: null,
-      parsed: null,
-      notes: "PDF armazenado. A extração automática é feita no XML de orçamento e no CSV de plano de corte.",
-    }),
+    read: async (buf) => {
+      const lines = await extractPdfLines(buf);
+      const kind = detectPdfKind(lines);
+      if (kind === "BUDGET") {
+        const p = parseBudgetLines(lines);
+        return { format: "PDF", status: p.itens.length ? "PARSED" : "PARSE_FAILED", itemCount: p.itens.length, totalValue: p.totals.valor ?? null, parsed: p, notes: p.warnings.join(" ") || null };
+      }
+      if (kind === "CUT_PLAN") {
+        const p = parseCutPlanLines(lines);
+        return { format: "PDF", status: p.chapas.length ? "PARSED" : "PARSE_FAILED", itemCount: p.totals.itens, totalValue: null, parsed: p, notes: p.warnings.join(" ") || null };
+      }
+      return {
+        format: "PDF",
+        status: "UPLOADED",
+        itemCount: 0,
+        totalValue: null,
+        parsed: null,
+        notes: lines.length
+          ? "PDF armazenado, mas não é o Orçamento nem o Plano de corte do Promob — nada foi lido dele."
+          : "PDF sem texto (provavelmente digitalizado/imagem): armazenado, mas não dá para ler os valores.",
+      };
+    },
   },
 ];
 
@@ -77,13 +92,13 @@ export function detectPromobFormat(fileName: string, mime: string): PromobFormat
 }
 
 /** Lê o arquivo pelo adapter do formato. Nunca lança: erro de leitura vira PARSE_FAILED com o motivo. */
-export function readPromobFile(file: { buffer: Buffer; originalname: string; mimetype: string }): PromobRead {
+export async function readPromobFile(file: { buffer: Buffer; originalname: string; mimetype: string }): Promise<PromobRead> {
   const adapter = ADAPTERS.find((a) => a.accepts(file.originalname, file.mimetype || ""));
   if (!adapter) {
     return { format: "OTHER", status: "UPLOADED", itemCount: 0, totalValue: null, parsed: null, notes: "Formato não reconhecido — arquivo armazenado para conferência manual." };
   }
   try {
-    return adapter.read(file.buffer);
+    return await adapter.read(file.buffer);
   } catch (e) {
     return {
       format: adapter.format,

@@ -111,6 +111,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
   const [editing, setEditing] = useState<MeasurementAttachment | null>(null);
   const [sketchTitle, setSketchTitle] = useState("");
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const getPng = useRef<(() => string | null) | null>(null);
   const registerGetter = useCallback((fn: () => string | null) => {
     getPng.current = fn;
@@ -120,13 +121,29 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
     setEditing(null);
     setSketchTitle("");
     setBaseUrl(null);
+    setPhotoUrl(null);
     setSketchOpen(true);
+  };
+
+  /** Desenhar por cima de uma foto já anexada: vira um desenho novo, a foto original fica intacta. */
+  const openPhotoSketch = async (att: MeasurementAttachment) => {
+    setEditing(null);
+    setSketchTitle(`Anotações — ${att.title}`);
+    setBaseUrl(null);
+    setPhotoUrl(null);
+    setSketchOpen(true);
+    try {
+      setPhotoUrl(await apiObjectUrl(`/measurements/attachments/${att.id}/download`));
+    } catch {
+      toast.error("Não foi possível carregar a foto");
+    }
   };
 
   const openEditSketch = async (att: MeasurementAttachment) => {
     setEditing(att);
     setSketchTitle(att.title);
     setBaseUrl(null);
+    setPhotoUrl(null);
     setSketchOpen(true);
     try {
       setBaseUrl(await apiObjectUrl(`/measurements/attachments/${att.id}/download`));
@@ -141,6 +158,11 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
     URL.revokeObjectURL(baseUrl);
     setBaseUrl(null);
   }, [sketchOpen, baseUrl]);
+  useEffect(() => {
+    if (sketchOpen || !photoUrl) return;
+    URL.revokeObjectURL(photoUrl);
+    setPhotoUrl(null);
+  }, [sketchOpen, photoUrl]);
 
   const saveSketch = useMutation({
     mutationFn: () => {
@@ -160,7 +182,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
     onError: (e) => toast.error(errorMessage(e, "Falha ao salvar o desenho")),
   });
 
-  const row = (att: MeasurementAttachment, onEdit?: () => void) => (
+  const row = (att: MeasurementAttachment, onEdit?: () => void, onAnnotate?: () => void) => (
     <div key={att.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
       <Thumb att={att} />
       <div className="min-w-0 flex-1">
@@ -172,6 +194,11 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
         {att.notes && <p className="mt-1 text-xs text-muted-foreground">{att.notes}</p>}
       </div>
       <div className="flex shrink-0 gap-1">
+        {onAnnotate && canManage && (
+          <Button size="sm" variant="ghost" onClick={onAnnotate} title="Desenhar sobre a foto">
+            <Pencil className="mr-1 h-4 w-4" /> Desenhar
+          </Button>
+        )}
         {onEdit && canManage && (
           <Button size="sm" variant="ghost" onClick={onEdit} title="Continuar desenho">
             <Pencil className="h-4 w-4" />
@@ -215,7 +242,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
           ) : files.length === 0 ? (
             <EmptyState title="Nenhum anexo" description="Fotos do ambiente, plantas e documentos da medição ficam aqui." />
           ) : (
-            <div className="space-y-2">{files.map((a) => row(a))}</div>
+            <div className="space-y-2">{files.map((a) => row(a, undefined, a.mimeType.startsWith("image/") ? () => openPhotoSketch(a) : undefined))}</div>
           )}
         </TabsContent>
 
@@ -232,7 +259,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
           ) : drawings.length === 0 ? (
             <EmptyState
               title="Nenhum desenho"
-              description="Desenhe a medida à mão no tablet — dá para reabrir e continuar depois."
+              description="Desenhe a medida à mão no tablet, ou sobre uma foto do ambiente — dá para reabrir e continuar depois."
             />
           ) : (
             <div className="space-y-2">{drawings.map((a) => row(a, () => openEditSketch(a)))}</div>
@@ -299,7 +326,7 @@ export function MeasurementAttachments({ visitId, canManage }: { visitId: string
                 placeholder="Ex.: Cozinha — parede da pia"
               />
             </div>
-            <SketchPad key={`${editing?.id ?? "novo"}-${baseUrl ?? ""}`} initialImageUrl={baseUrl} registerGetter={registerGetter} />
+            <SketchPad key={`${editing?.id ?? "novo"}-${baseUrl ?? ""}-${photoUrl ?? ""}`} initialImageUrl={baseUrl} initialBackgroundUrl={photoUrl} registerGetter={registerGetter} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSketchOpen(false)}>

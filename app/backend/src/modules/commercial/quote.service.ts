@@ -1,8 +1,9 @@
-import PDFDocument from "pdfkit";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { brl } from "../templates/contract.service";
 import { normalizePricing, paymentText, type PaymentMethod, type PricingConfig, type QuoteCalc } from "./quote.rules";
+import { quoteModelPdf } from "./quote.pdf";
+import { splitCityFromAddress } from "../aftersales/warranty-manual.rules";
 
 export const PRICING_SETTING = "commercial.pricing";
 
@@ -17,7 +18,7 @@ export async function loadPricing(): Promise<PricingConfig> {
 }
 
 export const quoteInclude = {
-  client: { select: { id: true, name: true, document: true, phone: true, email: true, address: true } },
+  client: { select: { id: true, name: true, document: true, phone: true, email: true, address: true, street: true, addressNumber: true, complement: true, district: true, city: true, state: true, zipCode: true } },
   opportunity: { select: { id: true, title: true, status: true } },
   project: { select: { id: true, code: true, name: true } },
   seller: { select: { id: true, name: true } },
@@ -50,6 +51,8 @@ export function serializeQuote(q: QuoteRow) {
     cancelReason: q.cancelReason,
     notes: q.notes,
     paymentTerms: q.paymentTerms,
+    deliveryText: q.deliveryText,
+    deliveryDays: q.deliveryDays,
     client: q.client,
     opportunity: q.opportunity,
     project: q.project,
@@ -58,6 +61,11 @@ export function serializeQuote(q: QuoteRow) {
       id: i.id,
       room: i.room,
       description: i.description,
+      corpo: i.corpo,
+      porta: i.porta,
+      puxador: i.puxador,
+      complemento: i.complemento,
+      modelo: i.modelo,
       quantity: n(i.quantity),
       unitCost: n(i.unitCost),
       unitPrice: n(i.unitPrice),
@@ -125,6 +133,11 @@ export function calcToData(c: QuoteCalc) {
         position,
         room: i.room,
         description: i.description,
+        corpo: i.corpo,
+        porta: i.porta,
+        puxador: i.puxador,
+        complemento: i.complemento,
+        modelo: i.modelo,
         quantity: new Prisma.Decimal(i.quantity.toFixed(3)),
         unitCost: D(i.unitCost),
         unitPrice: D(i.unitPrice),
@@ -149,120 +162,55 @@ export async function nextQuoteNumber(organizationId: string) {
   return `ORC-${String(num).padStart(5, "0")}`;
 }
 
-const brDate = (d: Date | null | undefined) => (d ? d.toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza" }) : "—");
 
-/**
- * PDF do orçamento para o cliente: ambientes e valores de venda, condição de
- * pagamento e a assinatura do responsável pela venda. Custo, mark-up,
- * comissões e resultado nunca entram aqui.
- */
+/** PDF do orçamento para o cliente, no modelo da loja (quote.pdf.ts). */
 export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizationId: string): Promise<Buffer> {
-  const [org, seller] = await Promise.all([
+  const [org, seller, pricing] = await Promise.all([
     prisma.organization.findUnique({ where: { id: organizationId }, include: { enterprise: true } }),
-    prisma.user.findUnique({ where: { id: q.seller.id }, select: { name: true, position: true, signatureImage: true } }),
+    prisma.user.findUnique({ where: { id: q.seller.id }, select: { name: true, signatureImage: true } }),
+    loadPricing(),
   ]);
   const ent = org?.enterprise;
-
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margins: { top: 48, bottom: 48, left: 48, right: 48 } });
-    const chunks: Buffer[] = [];
-    doc.on("data", (c: Buffer) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-    const W = doc.page.width - 96;
-    const L = 48;
-
-    doc.font("Helvetica-Bold").fontSize(13).text(ent?.tradeName ?? ent?.legalName ?? "Orçamento", L, 48);
-    doc.font("Helvetica").fontSize(8.5).fillColor("#555");
-    const contato = [ent?.document ? `CNPJ ${ent.document}` : null, ent?.phone, ent?.email].filter(Boolean).join("  ·  ");
-    if (contato) doc.text(contato);
-    doc.fillColor("#000").moveDown(0.8);
-
-    doc.font("Helvetica-Bold").fontSize(15).text(`ORÇAMENTO ${q.number}${q.version > 1 ? ` — versão ${q.version}` : ""}`);
-    doc.font("Helvetica").fontSize(9.5).text(`Emitido em ${brDate(q.issuedAt)}   ·   Válido até ${brDate(q.validUntil)}`);
-    doc.moveDown(0.8);
-
-    doc.font("Helvetica-Bold").fontSize(10).text("Cliente");
-    doc.font("Helvetica").fontSize(9.5).text(q.client.name);
-    const cli = [q.client.document, q.client.phone, q.client.email].filter(Boolean).join("  ·  ");
-    if (cli) doc.text(cli);
-    if (q.client.address) doc.text(q.client.address);
-    if (q.project) doc.text(`Projeto ${q.project.code} — ${q.project.name}`);
-    doc.moveDown(0.8);
-
-    // Tabela: ambiente/descrição | qtd | valor
-    const colQ = L + W - 150;
-    const colV = L + W - 90;
-    const header = () => {
-      const y = doc.y;
-      doc.rect(L, y, W, 18).fill("#f1f1f1").fillColor("#000");
-      doc.font("Helvetica-Bold").fontSize(9).text("Ambiente / item", L + 6, y + 5, { width: colQ - L - 12 });
-      doc.text("Qtd", colQ, y + 5, { width: 50, align: "right" });
-      doc.text("Valor", colV, y + 5, { width: 84, align: "right" });
-      doc.y = y + 22;
-    };
-    header();
-    doc.font("Helvetica").fontSize(9.5);
-    for (const it of q.items) {
-      const label = it.room ? `${it.room} — ${it.description}` : it.description;
-      const h = Math.max(doc.heightOfString(label, { width: colQ - L - 12 }), 11) + 6;
-      if (doc.y + h > doc.page.height - 160) {
-        doc.addPage();
-        header();
-        doc.font("Helvetica").fontSize(9.5);
-      }
-      const y = doc.y;
-      doc.text(label, L + 6, y, { width: colQ - L - 12 });
-      doc.text(String(it.quantity).replace(".", ","), colQ, y, { width: 50, align: "right" });
-      doc.text(brl(it.total), colV, y, { width: 84, align: "right" });
-      doc.y = y + h;
-      doc.moveTo(L, doc.y - 3).lineTo(L + W, doc.y - 3).strokeColor("#e5e5e5").lineWidth(0.5).stroke();
-    }
-
-    doc.moveDown(0.5);
-    const line = (k: string, v: string, bold = false) => {
-      const y = doc.y;
-      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 11 : 9.5);
-      doc.text(k, colQ - 120, y, { width: 170, align: "right" });
-      doc.text(v, colV, y, { width: 84, align: "right" });
-      doc.moveDown(0.3);
-    };
-    if (q.discount > 0) {
-      line("Subtotal", brl(q.subtotal));
-      line("Desconto", `- ${brl(q.discount)}`);
-    }
-    line("Total", brl(q.total), true);
-    doc.x = L;
-    doc.moveDown(0.8);
-
-    doc.font("Helvetica-Bold").fontSize(10).text("Condição de pagamento", L);
-    const calcPayment = {
-      ...q.payment,
-      financed: Math.max(0, q.total - q.payment.downPayment),
-      installmentValue: q.payment.installments > 0 ? Math.round(((q.total - q.payment.downPayment) / q.payment.installments) * 100) / 100 : 0,
-    };
-    doc.font("Helvetica").fontSize(9.5).text(q.paymentTerms?.trim() || paymentText(calcPayment, brl));
-    if (q.notes) {
-      doc.moveDown(0.6);
-      doc.font("Helvetica-Bold").fontSize(10).text("Observações");
-      doc.font("Helvetica").fontSize(9.5).text(q.notes);
-    }
-
-    // Assinatura do responsável pela venda
-    if (doc.y > doc.page.height - 170) doc.addPage();
-    doc.y = Math.max(doc.y + 30, doc.page.height - 170);
-    const sx = L + W / 2 - 110;
-    if (seller?.signatureImage?.startsWith("data:image/png;base64,")) {
-      try {
-        doc.image(Buffer.from(seller.signatureImage.split(",")[1], "base64"), sx + 30, doc.y, { fit: [160, 55] });
-      } catch {
-        /* imagem inválida: fica só a linha */
-      }
-    }
-    const ly = doc.y + 60;
-    doc.moveTo(sx, ly).lineTo(sx + 220, ly).strokeColor("#000").lineWidth(0.7).stroke();
-    doc.font("Helvetica-Bold").fontSize(9.5).text(seller?.name ?? q.seller.name, sx, ly + 4, { width: 220, align: "center" });
-    doc.font("Helvetica").fontSize(8.5).text(seller?.position || "Responsável pela venda", sx, doc.y, { width: 220, align: "center" });
-    doc.end();
+  const c = q.client;
+  const street = [c.street, c.addressNumber, c.complement].filter(Boolean).join(", ");
+  const legacy = splitCityFromAddress(c.address);
+  const legacyCity = legacy.city ? { city: legacy.city.split(" / ")[0], uf: legacy.city.split(" / ")[1] } : null;
+  const payment = {
+    ...q.payment,
+    financed: Math.max(0, q.total - q.payment.downPayment),
+    installmentValue: q.payment.installments > 0 ? Math.round(((q.total - q.payment.downPayment) / q.payment.installments) * 100) / 100 : 0,
+  };
+  return quoteModelPdf({
+    number: q.number,
+    version: q.version,
+    issuedAt: q.issuedAt,
+    validUntil: q.validUntil,
+    seller: { name: seller?.name ?? q.seller.name, signatureImage: seller?.signatureImage },
+    store: ent?.tradeName ?? "MOBIEER",
+    company: {
+      name: "MOBIEER MÓVEIS SOB MEDIDA",
+      city: [ent?.municipio ?? "Fortaleza", ent?.uf ?? "CE"].join("-"),
+      site: "www.mobieer.com.br",
+      email: ent?.email ?? "contato@mobieer.com.br",
+    },
+    client: {
+      name: c.name,
+      // sem endereço estruturado, cidade/UF saem do fim do endereço digitado ("… — Fortaleza/CE")
+      address: street || legacy.street,
+      district: c.district,
+      city: c.city ?? legacyCity?.city ?? null,
+      state: c.state ?? legacyCity?.uf ?? null,
+      zipCode: c.zipCode,
+      phone: c.phone,
+      email: c.email,
+    },
+    items: q.items,
+    subtotal: q.subtotal,
+    discount: q.discount,
+    total: q.total,
+    payment: q.paymentTerms?.trim() || paymentText(payment, brl),
+    notes: q.notes,
+    // o prazo combinado neste orçamento vale mais que o padrão da configuração
+    config: { ...pricing.document, deliveryText: q.deliveryText?.trim() || pricing.document.deliveryText, deliveryDays: q.deliveryDays ?? pricing.document.deliveryDays },
   });
 }
