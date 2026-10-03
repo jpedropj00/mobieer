@@ -56,9 +56,9 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-sidebar p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center">
-          <Logo />
+          <Logo large />
           <h1 className="mt-6 text-2xl font-bold text-white">Bem-vindo de volta</h1>
-          <p className="mt-1 text-sm text-white/50">Acesse o sistema de gestão de almoxarifado</p>
+          <p className="mt-1 text-sm text-white/50">Acesse o sistema de gestão da Mobieer</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 rounded-2xl bg-white p-6 shadow-2xl sm:p-8">

@@ -39,6 +39,10 @@ import productionRoutes from "./modules/production/production.routes";
 import shopFloorRoutes from "./modules/production/shopfloor.routes";
 import productionLabelRoutes from "./modules/production/labels.routes";
 import installationScheduleRoutes from "./modules/production/installation-schedule.routes";
+import materialsListRoutes from "./modules/production/materials-list.routes";
+import techFolderRoutes from "./modules/techproject/tech-folder.routes";
+import assistantRoutes from "./modules/ai/assistant.routes";
+import renderRoutes from "./modules/render/render.routes";
 import weeklyRoutes from "./modules/weekly/weekly.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
@@ -142,6 +146,7 @@ export function createApp() {
   app.use("/api/automations", automationsRoutes);
   app.use("/api/store", storeRoutes);
   app.use("/api/chat", chatRoutes);
+  app.use("/api/ai", assistantRoutes);
   app.use("/api/parts", partsRoutes);
   app.use("/api/fieldwork", fieldworkRoutes);
   app.use("/api/projects/:projectId", timelineRoutes);
@@ -165,6 +170,9 @@ export function createApp() {
   app.use("/api/production", shopFloorRoutes);
   app.use("/api/production", productionLabelRoutes);
   app.use("/api/production", installationScheduleRoutes);
+  app.use("/api/production", materialsListRoutes);
+  app.use("/api/production", techFolderRoutes);
+  app.use("/api/production", renderRoutes);
   app.use("/api/weekly", weeklyRoutes);
   app.use("/api/production", productionStepsRoutes);
   app.use("/api/fiscal/import", fiscalImportRoutes);

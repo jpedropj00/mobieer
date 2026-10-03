@@ -9,6 +9,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import QRCode from "qrcode";
+import { BRAND } from "../../lib/brand-pdf";
 import { PDFDocument, StandardFonts, rgb, setCharacterSpacing, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import { FIELD_LABELS, MANUAL_ROOMS, dateParts, labelKey, matchRooms, splitPhone } from "./warranty-manual.rules";
 
@@ -134,6 +136,11 @@ export async function warrantyManualPdf(d: WarrantyManualData): Promise<Buffer> 
   // ---------------- página do certificado
   const [cover, welcome, care, terms, support, back] = await doc.copyPages(base, [0, 1, 2, 3, 4, 5]);
   for (const p of [cover, welcome, care, terms, support]) doc.addPage(p);
+
+  // "Fale conosco": o QR da arte original é só ilustração; por cima vai um de verdade, para o WhatsApp da loja
+  const qr = await doc.embedPng(await QRCode.toBuffer(BRAND.whatsappUrl, { errorCorrectionLevel: "M", margin: 0, width: 600, color: { dark: "#1a1a1a", light: "#fdf7f1" } }));
+  support.drawRectangle({ x: 109, y: H - 849, width: 103, height: 101, color: rgb(253 / 255, 247 / 255, 241 / 255) });
+  support.drawImage(qr, { x: 115, y: H - 844, width: 91, height: 91 });
 
   const cert = doc.addPage([layout.page.w, H]);
   await drawTemplate(cert, layout.certificado);

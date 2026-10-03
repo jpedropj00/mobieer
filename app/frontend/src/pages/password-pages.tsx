@@ -15,7 +15,7 @@ function Shell({ title, subtitle, children }: { title: string; subtitle: string;
     <div className="flex min-h-screen items-center justify-center bg-sidebar p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <Logo />
+          <Logo large />
           <h1 className="mt-6 text-2xl font-bold text-white">{title}</h1>
           <p className="mt-1 text-sm text-white/60">{subtitle}</p>
         </div>

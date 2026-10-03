@@ -1,0 +1,38 @@
+# Medição e projeto técnico
+
+## Medições
+Menu **Medições**, ou a aba **Medição** dentro do projeto. Cada visita de medição tem data, horário e responsável.
+
+- O cliente vê a visita no **portal** e pode **confirmar o horário** ou **sugerir outras datas**.
+- Na visita é possível anexar fotos e usar a **prancheta de desenho**: desenhar à mão, tirar uma foto na hora ou escolher da galeria e desenhar por cima, e anotar fotos já anexadas.
+
+## Pasta técnica
+Fica na aba **Projeto técnico** do projeto, no cartão **Pasta técnica**. O sistema monta o PDF do projeto executivo com:
+- **capa** com cliente, projeto, ambientes e índice de folhas;
+- **folha de especificação**, preenchida sozinha com os acabamentos do orçamento do projeto (caixaria, portas e frentes, puxador, complemento, modelo);
+- **pranchas**: as imagens exportadas do Promob (planta baixa, vistas, perspectiva). Cada imagem recebe o carimbo da loja com cliente, ambiente e logotipo, mais o título e a escala.
+
+Como montar:
+1. No cartão Pasta técnica, informe o ambiente e clique em **Enviar pranchas do Promob** (imagens PNG ou JPG, ou o PDF exportado).
+2. Ajuste o título, o ambiente, a escala e a observação de cada prancha; use as setas para mudar a ordem.
+3. Clique em **Gerar PDF** para conferir.
+4. Clique em **Salvar nos documentos** para guardar a pasta nos documentos do projeto.
+
+PDF exportado do Promob entra página por página. Se a página já vem com carimbo, desmarque a opção Carimbo daquela prancha.
+
+## Aprovação do projeto técnico
+Na mesma aba fica a aprovação: a equipe publica o projeto técnico para o cliente, que aprova ou pede ajustes pelo portal. Cada rodada fica registrada com data, quem decidiu e o comentário do cliente. Com a aprovação, o projeto pode ser liberado para produção.
+
+## Render com IA
+Aba **Render** do projeto. Transforma a imagem do ambiente exportada do Promob em um render realista com os acabamentos do projeto, sem mudar os móveis.
+1. Clique em **Escolher imagem do Promob** e selecione a imagem (PNG, JPG ou WEBP).
+2. Informe o ambiente. Os acabamentos do orçamento desse ambiente já vêm preenchidos; ajuste o texto se precisar.
+3. Escolha a iluminação: luz natural do dia, noite ou luz neutra de estúdio.
+4. Clique em **Gerar render**. Pode levar até 1 minuto.
+
+Cada render aparece ao lado da imagem original. Em **Ajustar este render** você descreve uma mudança (por exemplo, trocar o puxador) e a IA gera uma nova versão a partir da anterior. **Baixar** salva a imagem e **Salvar nos documentos** guarda o render nos documentos do projeto.
+
+O render é uma imagem ilustrativa: medidas e detalhes de execução continuam valendo pela pasta técnica. Há um limite de 20 renders por hora por pessoa.
+
+### Render pelo Mobieer AI
+O render também pode ser pedido no chat do Mobieer AI: clique no botão de imagem ao lado do campo de texto, escolha a imagem do Promob, escreva os acabamentos (opcional), escolha a iluminação e envie. O render aparece na conversa, com os botões **Baixar** e **Ajustar este render**. O render feito pelo chat não fica guardado no projeto; para guardar, use a aba Render do projeto.
