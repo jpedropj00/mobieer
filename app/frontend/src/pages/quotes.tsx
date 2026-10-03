@@ -38,6 +38,8 @@ type Quote = {
   validUntil: string | null;
   notes: string | null;
   paymentTerms: string | null;
+  deliveryText?: string | null;
+  deliveryDays?: number | null;
   client: { id: string; name: string };
   opportunity: { id: string; title: string } | null;
   project: { id: string; code: string; name: string } | null;
@@ -209,7 +211,7 @@ export function QuotesTab() {
 type ItemForm = { room: string; description: string; quantity: string; unitCost: string; corpo: string; porta: string; puxador: string; complemento: string; modelo: string };
 /** Acabamentos do ambiente: saem na segunda tabela do orçamento da loja. */
 const FINISHES = [
-  ["corpo", "Corpo", "MDF 15mm Branco TX"],
+  ["corpo", "Caixaria", "MDF 15mm Branco TX"],
   ["porta", "Porta", "MDF 15mm Areia"],
   ["puxador", "Puxador", "Cava usinado"],
   ["complemento", "Complemento", ""],
@@ -235,6 +237,9 @@ type Form = {
   downPayment: string;
   feePercent: string;
   paymentTerms: string;
+  deliveryText: string;
+  deliveryDays: string;
+  validUntil: string;
   notes: string;
   futureSale: boolean;
   futureReleaseDate: string;
@@ -260,6 +265,9 @@ function fromQuote(q: Quote): Form {
     downPayment: toField(q.payment.downPayment),
     feePercent: toField(q.payment.feePercent),
     paymentTerms: q.paymentTerms ?? "",
+    deliveryText: q.deliveryText ?? "",
+    deliveryDays: q.deliveryDays ? String(q.deliveryDays) : "",
+    validUntil: q.validUntil ? q.validUntil.slice(0, 10) : "",
     notes: q.notes ?? "",
     futureSale: Boolean(q.futureSale),
     futureReleaseDate: q.futureReleaseDate ? q.futureReleaseDate.slice(0, 10) : "",
@@ -290,6 +298,10 @@ function toPayload(f: Form, roleLabel: (role: string) => string, addendumOf?: st
       feePercent: parse(f.feePercent),
     },
     paymentTerms: f.paymentTerms || null,
+    deliveryText: f.deliveryText.trim() || null,
+    deliveryDays: parse(f.deliveryDays) > 0 ? Math.round(parse(f.deliveryDays)) : null,
+    // meio-dia: a data não escorrega de dia por causa do fuso
+    validUntil: f.validUntil ? `${f.validUntil}T15:00:00.000Z` : null,
     notes: f.notes || null,
     futureSale: f.futureSale,
     futureReleaseDate: f.futureSale && f.futureReleaseDate ? `${f.futureReleaseDate}T12:00:00.000Z` : null,
@@ -348,6 +360,9 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           downPayment: "",
           feePercent: "",
           paymentTerms: "",
+          deliveryText: "",
+          deliveryDays: "",
+          validUntil: "",
           notes: "",
           futureSale: false,
           futureReleaseDate: "",
@@ -609,7 +624,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
           </div>
 
           <Card>
-            <CardHeader className="py-3"><CardTitle className="text-base">Pagamento</CardTitle></CardHeader>
+            <CardHeader className="py-3"><CardTitle className="text-base">Negociação e condições</CardTitle></CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-4">
               <Field label="Forma">
                 <Select disabled={!canEdit} value={form.method} onValueChange={(v) => pickMethod(v as PaymentMethod)}>
@@ -637,8 +652,17 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
                   )}
                 </>
               )}
-              <Field label="Condição no PDF (opcional)" className="sm:col-span-4">
-                <Input disabled={!canEdit} placeholder="Deixe vazio para montar a partir da forma de pagamento" value={form.paymentTerms} onChange={(e) => set("paymentTerms", e.target.value)} />
+              <Field label="Condição de pagamento no PDF (texto livre — vazio usa a forma escolhida acima)" className="sm:col-span-4">
+                <Textarea disabled={!canEdit} rows={2} maxLength={1000} placeholder="Ex.: Entrada de 30% no fechamento e saldo em 10x no boleto" value={form.paymentTerms} onChange={(e) => set("paymentTerms", e.target.value)} />
+              </Field>
+              <Field label="Prazo de entrega (texto)" className="sm:col-span-2">
+                <Input disabled={!canEdit} placeholder={config?.document?.deliveryText ?? "Em dias úteis conforme ambientes"} value={form.deliveryText} onChange={(e) => set("deliveryText", e.target.value)} />
+              </Field>
+              <Field label="Prazo (dias)">
+                <Input disabled={!canEdit} inputMode="numeric" placeholder={String(config?.document?.deliveryDays ?? 45)} value={form.deliveryDays} onChange={(e) => set("deliveryDays", e.target.value.replace(/[^0-9]/g, ""))} />
+              </Field>
+              <Field label="Proposta válida até">
+                <Input type="date" disabled={!canEdit} value={form.validUntil} onChange={(e) => set("validUntil", e.target.value)} />
               </Field>
               <div className="flex flex-wrap items-end gap-3 sm:col-span-4">
                 <label className="flex items-center gap-2 text-sm">

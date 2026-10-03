@@ -74,7 +74,9 @@ const quoteSchema = calcSchema.extend({
   futureSale: z.boolean().optional(),
   futureReleaseDate: z.coerce.date().optional().nullable(),
   validUntil: z.coerce.date().optional().nullable(),
-  paymentTerms: text(500),
+  paymentTerms: text(1000),
+  deliveryText: text(160),
+  deliveryDays: z.coerce.number().int().min(1).max(365).optional().nullable(),
   notes: text(4000),
 });
 
@@ -296,6 +298,8 @@ router.post(
         sellerId: req.user!.id,
         validUntil: input.validUntil ?? new Date(now.getTime() + config.validityDays * DAY),
         paymentTerms: input.paymentTerms || null,
+        deliveryText: input.deliveryText || null,
+        deliveryDays: input.deliveryDays ?? null,
         notes: input.notes || null,
         approvalStatus: c.needsApproval ? "PENDING" : "NOT_REQUIRED",
         approvalRequestedAt: c.needsApproval ? now : null,
@@ -339,6 +343,8 @@ router.put(
           futureReleaseDate: input.futureSale ? input.futureReleaseDate ?? null : null,
           validUntil: input.validUntil ?? cur.validUntil,
           paymentTerms: input.paymentTerms || null,
+          deliveryText: input.deliveryText || null,
+          deliveryDays: input.deliveryDays ?? null,
           notes: input.notes || null,
           approvalStatus,
           ...(approvalStatus === "PENDING" && cur.approvalStatus !== "PENDING"
@@ -390,6 +396,8 @@ router.post(
         sellerId: cur.sellerId,
         validUntil: new Date(Date.now() + config.validityDays * DAY),
         paymentTerms: cur.paymentTerms,
+        deliveryText: cur.deliveryText,
+        deliveryDays: cur.deliveryDays,
         notes: cur.notes,
         approvalStatus: c.needsApproval ? "PENDING" : "NOT_REQUIRED",
         approvalRequestedAt: c.needsApproval ? new Date() : null,

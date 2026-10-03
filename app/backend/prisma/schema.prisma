@@ -1834,6 +1834,9 @@ model CommercialQuote {
   surcharge      Decimal                @default(0) @db.Decimal(14, 2)
   total          Decimal                @default(0) @db.Decimal(14, 2)
   paymentTerms   String?
+  // negociação deste orçamento: prazo de entrega (texto e dias); vazio = padrão da configuração
+  deliveryText   String?
+  deliveryDays   Int?
   notes          String?                @db.Text
   sentAt         DateTime?
   approvedAt     DateTime?

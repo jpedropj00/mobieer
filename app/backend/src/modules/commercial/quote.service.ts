@@ -51,6 +51,8 @@ export function serializeQuote(q: QuoteRow) {
     cancelReason: q.cancelReason,
     notes: q.notes,
     paymentTerms: q.paymentTerms,
+    deliveryText: q.deliveryText,
+    deliveryDays: q.deliveryDays,
     client: q.client,
     opportunity: q.opportunity,
     project: q.project,
@@ -208,6 +210,7 @@ export async function quotePdf(q: ReturnType<typeof serializeQuote>, organizatio
     total: q.total,
     payment: q.paymentTerms?.trim() || paymentText(payment, brl),
     notes: q.notes,
-    config: pricing.document,
+    // o prazo combinado neste orçamento vale mais que o padrão da configuração
+    config: { ...pricing.document, deliveryText: q.deliveryText?.trim() || pricing.document.deliveryText, deliveryDays: q.deliveryDays ?? pricing.document.deliveryDays },
   });
 }

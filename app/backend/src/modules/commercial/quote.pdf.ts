@@ -1,7 +1,7 @@
 /**
  * PDF do orçamento para o cliente: o visual da marca (faixa escura com
  * MØBIEER, papel claro, laranja) com as informações do orçamento da loja —
- * dados da venda e do cliente, ambientes com valor, acabamentos (corpo, porta,
+ * dados da venda e do cliente, ambientes com valor, acabamentos (caixaria, porta,
  * puxador, complemento, modelo), descrição por ambiente, condição de pagamento,
  * prazo, validade, as observações fixas e a assinatura de quem vendeu.
  * Custo, mark-up, comissões e resultado nunca entram aqui.
@@ -144,7 +144,7 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
   table(
     [
       { label: "AMB", w: 0.07, align: "center", bold: true },
-      { label: "CORPO", w: 0.24, size: 7.5 },
+      { label: "CAIXARIA", w: 0.24, size: 7.5 },
       { label: "PORTA", w: 0.27, size: 7.5 },
       { label: "PUXADOR", w: 0.16, size: 7.5 },
       { label: "COMPLEMENTO", w: 0.14, size: 7.5 },
