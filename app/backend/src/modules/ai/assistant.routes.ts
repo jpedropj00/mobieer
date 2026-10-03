@@ -64,7 +64,7 @@ router.post(
       return ok(res, await chat(toolUser(req.user), input));
     } catch (e) {
       if (e instanceof AiProviderError) {
-        console.warn("[mobieer-ai] provider error", JSON.stringify({ status: e.status ?? null, retryable: e.retryable }));
+        console.warn("[mobieer-ai] provider error", JSON.stringify({ status: e.status ?? null, retryable: e.retryable, detail: e.detail ?? null }));
         throw new ApiError(e.status === 429 ? 429 : 502, e.status === 429 ? "O assistente está com muitas solicitações agora. Tente de novo em instantes." : "Não consegui falar com o assistente agora. Tente de novo em instantes.", undefined, e.status === 429 ? "RATE_LIMITED" : "EXTERNAL_SERVICE_ERROR");
       }
       throw e;

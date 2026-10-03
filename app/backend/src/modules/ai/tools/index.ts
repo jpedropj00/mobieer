@@ -26,6 +26,8 @@ export class ToolError extends Error {}
 
 const PROJECT_STATUS: Record<string, string> = { PLANNING: "Em planejamento", ACTIVE: "Em andamento", ON_HOLD: "Pausado", COMPLETED: "Concluído", CANCELLED: "Cancelado" };
 const PRODUCTION_STAGE: Record<string, string> = { RELEASED: "Liberado para produção", IN_PRODUCTION: "Em produção", PRE_ASSEMBLY: "Pré-montagem", OUT_FOR_DELIVERY: "Em rota de entrega e montagem", DELIVERED: "Entregue e montado" };
+const PRIORITY: Record<string, string> = { LOW: "Baixa", NORMAL: "Normal", HIGH: "Alta", URGENT: "Urgente" };
+const TECH_APPROVAL: Record<string, string> = { DRAFT: "Em preparação pela equipe", IN_REVIEW: "Aguardando o cliente", APPROVED: "Aprovado pelo cliente", CHANGES_REQUESTED: "Cliente pediu ajustes" };
 const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 const MAX_ROWS = 20;
 
@@ -47,8 +49,9 @@ const TOOLS: Tool<unknown>[] = [
     name: "get_user_projects",
     description: "Projetos que o usuário pode ver no Mobieer (a carteira dele, ou todos se o perfil permitir), com total por situação. Use para 'quantos projetos eu tenho', 'quais são meus projetos'.",
     permission: "organization.read",
-    inputSchema: { type: "object", properties: { status: { type: "string", enum: Object.keys(PROJECT_STATUS), description: "Filtra por situação (opcional)" } } },
-    input: z.object({ status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"]).optional() }),
+    inputSchema: { type: "object", properties: { status: { type: ["string", "null"], enum: [...Object.keys(PROJECT_STATUS), null], description: "Filtra por situação; omita ou mande null para todas" } } },
+    // alguns modelos mandam null no parâmetro opcional
+    input: z.object({ status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"]).nullish() }),
     run: async (u, i) => {
       const where = { ...projectScope(u), ...(i.status ? { status: i.status } : {}) };
       const [total, byStatus, rows] = await Promise.all([
@@ -111,7 +114,7 @@ const TOOLS: Tool<unknown>[] = [
         due_date: day(p.dueAt),
         completed_date: day(p.completedAt),
         production_stage: p.productionOrder ? PRODUCTION_STAGE[p.productionOrder.stage] ?? p.productionOrder.stage : "Ainda não liberado para produção",
-        technical_approval: p.technicalApproval?.status ?? null,
+        technical_approval: p.technicalApproval ? TECH_APPROVAL[p.technicalApproval.status] ?? p.technicalApproval.status : "Ainda não iniciada",
         documents: p._count.documents,
         assistance_tickets: p._count.assistances,
       };
@@ -132,7 +135,7 @@ const TOOLS: Tool<unknown>[] = [
       const today = new Date().toISOString().slice(0, 10);
       return {
         total,
-        tasks: rows.map((t) => ({ title: t.title, column: t.column.name, priority: t.priority, due_date: day(t.dueAt), overdue: Boolean(t.dueAt && day(t.dueAt)! < today), project: t.project?.code ?? null })),
+        tasks: rows.map((t) => ({ title: t.title, column: t.column.name, priority: PRIORITY[t.priority] ?? t.priority, due_date: day(t.dueAt), overdue: Boolean(t.dueAt && day(t.dueAt)! < today), project: t.project?.code ?? null })),
         truncated: total > rows.length,
       };
     },

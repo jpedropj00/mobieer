@@ -25,13 +25,16 @@ export type RunOutput = { text: string; toolsUsed: string[] };
 export interface AiProvider {
   readonly name: string;
   readonly enabled: boolean;
+  /** Sem embeddings, a busca na documentação é feita por palavras. */
+  readonly embeddings: boolean;
   run(input: RunInput): Promise<RunOutput>;
   /** `document` para indexar, `query` para buscar. */
   embed(texts: string[], kind: "document" | "query"): Promise<number[][]>;
 }
 
 export class AiProviderError extends Error {
-  constructor(message: string, readonly retryable = false, readonly status?: number) {
+  /** `detail` é só para o log do servidor (motivo informado pelo provedor), nunca para o usuário. */
+  constructor(message: string, readonly retryable = false, readonly status?: number, readonly detail?: string) {
     super(message);
   }
 }

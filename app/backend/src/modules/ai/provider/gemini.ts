@@ -49,6 +49,7 @@ export function geminiProvider(): AiProvider {
   return {
     name: "gemini",
     enabled,
+    embeddings: true,
 
     async run(input: RunInput): Promise<RunOutput> {
       const contents: Content[] = [

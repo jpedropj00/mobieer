@@ -1,15 +1,20 @@
 /**
  * RAG do Mobieer AI: busca os trechos da documentação mais parecidos com a
- * pergunta (pgvector, distância do cosseno) e reindexa knowledge/docs.
+ * pergunta e reindexa knowledge/docs. Com um provedor que tem embeddings a
+ * busca é vetorial (pgvector, distância do cosseno); sem, é por palavras (BM25).
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../../../prisma";
-import { MAX_CONTEXT_CHUNKS, MIN_SIMILARITY, chunkMarkdown, embeddingText, toVectorLiteral, type RetrievedChunk } from "../assistant.rules";
+import { MAX_CONTEXT_CHUNKS, MIN_SIMILARITY, chunkMarkdown, embeddingText, lexicalSearch, toVectorLiteral, type RetrievedChunk } from "../assistant.rules";
 import { aiProvider } from "../provider";
 
 export async function searchKnowledge(question: string): Promise<RetrievedChunk[]> {
+  if (!aiProvider().embeddings) {
+    const rows = await prisma.aiChunk.findMany({ select: { section: true, content: true, document: { select: { slug: true, title: true } } } });
+    return lexicalSearch(question, rows.map((r) => ({ document: r.document.slug, title: r.document.title, section: r.section, content: r.content })));
+  }
   const [vector] = await aiProvider().embed([question], "query");
   const rows = await prisma.$queryRawUnsafe<{ document: string; title: string; section: string; content: string; similarity: number }[]>(
     `SELECT d."slug" AS document, d."title" AS title, c."section" AS section, c."content" AS content,
@@ -53,7 +58,7 @@ export async function reindexKnowledge(opts: { force?: boolean } = {}) {
       continue;
     }
     const { title, chunks } = chunkMarkdown(text);
-    const vectors = await aiProvider().embed(chunks.map((c) => embeddingText(title, c)), "document");
+    const vectors = aiProvider().embeddings ? await aiProvider().embed(chunks.map((c) => embeddingText(title, c)), "document") : null;
 
     await prisma.$transaction(async (tx) => {
       const doc = existing
@@ -62,14 +67,14 @@ export async function reindexKnowledge(opts: { force?: boolean } = {}) {
       await tx.aiChunk.deleteMany({ where: { documentId: doc.id } });
       for (const [i, c] of chunks.entries()) {
         await tx.$executeRawUnsafe(
-          `INSERT INTO "AiChunk" ("id", "documentId", "position", "section", "content", "metadata", "embedding") VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::vector)`,
+          `INSERT INTO "AiChunk" ("id", "documentId", "position", "section", "content", "metadata", "embedding") VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::text::vector)`,
           crypto.randomUUID(),
           doc.id,
           i,
           c.section,
           c.content,
           JSON.stringify({ document: file, section: c.section }),
-          toVectorLiteral(vectors[i])
+          vectors ? toVectorLiteral(vectors[i]) : null
         );
       }
     }, { timeout: 60_000 });

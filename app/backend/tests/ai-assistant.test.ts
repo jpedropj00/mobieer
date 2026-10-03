@@ -13,8 +13,11 @@ import {
   contextBlock,
   conversationTitle,
   finalAnswer,
+  lexicalSearch,
   parseScope,
   sourcesOf,
+  stem,
+  tokenize,
   systemPrompt,
   toVectorLiteral,
   type RetrievedChunk,
@@ -93,4 +96,30 @@ test("título da conversa e vetor para o pgvector", () => {
   assert.equal(toVectorLiteral([0.5, -1, 2]), "[0.5,-1,2]");
   assert.throws(() => toVectorLiteral([]));
   assert.throws(() => toVectorLiteral([1, Number.NaN]));
+});
+
+test("radical das palavras: flexões do mesmo verbo e plural se encontram", () => {
+  assert.equal(stem("crio"), stem("criar"));
+  assert.equal(stem("criando"), stem("criar"));
+  assert.equal(stem("orcamentos"), stem("orcamento"));
+  assert.equal(stem("projetos"), stem("projeto"));
+  assert.equal(stem("402"), "402");
+  assert.deepEqual(tokenize("Como eu crio um Orçamento?"), [stem("crio"), stem("orcamento")]);
+  assert.deepEqual(tokenize("o que é a de para"), []);
+});
+
+test("busca por palavras: acha a seção certa, respeita o limite e volta vazia sem palavra em comum", () => {
+  const docs = [
+    { document: "comercial.md", title: "Comercial e orçamentos", section: "Como criar um orçamento", content: "Em Comercial, abra a oportunidade e crie um orçamento. Preencha os ambientes." },
+    { document: "comercial.md", title: "Comercial e orçamentos", section: "Orçamento vindo do Promob", content: "Quando um arquivo do Promob é importado, o sistema cria um orçamento em rascunho." },
+    { document: "financeiro.md", title: "Financeiro", section: "Ler boleto", content: "O botão Ler boleto cadastra uma conta a pagar a partir do boleto." },
+    { document: "estoque.md", title: "Estoque", section: "Menus", content: "Entrada de Materiais registra o que chegou." },
+  ];
+  const r = lexicalSearch("Como crio um orçamento?", docs);
+  assert.equal(r[0].section, "Como criar um orçamento");
+  assert.ok(r.every((x) => x.document === "comercial.md"));
+  assert.equal(lexicalSearch("como cadastro um boleto", docs)[0].section, "Ler boleto");
+  assert.deepEqual(lexicalSearch("qual a capital da França?", docs), []);
+  assert.deepEqual(lexicalSearch("o que é", docs), []);
+  assert.equal(lexicalSearch("orçamento boleto materiais comercial", docs, 2).length, 2);
 });
