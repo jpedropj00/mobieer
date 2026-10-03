@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /os/
+Disallow: /confirmar-visita/
+
+Sitemap: https://mobieerprojetos.com.br/sitemap.xml

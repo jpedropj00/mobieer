@@ -9,5 +9,11 @@
       "source": "/:path*",
       "destination": "/index.html"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(api|os|confirmar-visita)/:path*",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    }
   ]
 }

@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "./hooks/use-auth";
 import { router } from "./router";
 import { shouldRetry } from "./lib/errors";
+import { applySeo } from "./lib/seo";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -20,6 +21,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// título, descrição e noindex acompanham a rota
+applySeo(window.location.pathname);
+router.subscribe((state) => applySeo(state.location.pathname));
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
