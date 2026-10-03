@@ -9,6 +9,7 @@ import { sendAutomation, getAutomation } from "../lib/automations";
 import { prisma } from "../prisma";
 import { runAssistanceReminders } from "../modules/assistance/assistance.service";
 import { runCommercialReminders } from "../modules/commercial/reminders.service";
+import { runWeeklyBriefing } from "../modules/weekly/weekly.service";
 import { runHolidayNotices } from "../modules/hr/holidays.service";
 import { runVacationAlerts } from "../modules/hr/hr.service";
 import { runMeasurementDeadlineAlerts } from "../modules/measurements/measurements.service";
@@ -51,6 +52,7 @@ export async function runPostSaleFollowups(now = new Date()) {
 export const DAILY_JOBS: { name: string; run: () => Promise<unknown> }[] = [
   { name: "ferias", run: runVacationAlerts },
   { name: "comercial-lembretes", run: () => runCommercialReminders() },
+  { name: "semana-da-mobieer", run: () => runWeeklyBriefing() },
   { name: "prazo-projeto-tecnico", run: runMeasurementDeadlineAlerts },
   { name: "entrega-producao", run: runProductionDeliveryAlerts },
   { name: "venda-futura", run: () => runFutureSaleReminders() },

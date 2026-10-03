@@ -92,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Requisições e produção",
     items: [
       { label: "Organização interna", to: "/organizacao", icon: SquareKanban, permission: "organization.read" },
+      { label: "Semana da Mobieer", to: "/semana", icon: CalendarDays, permission: "organization.read" },
       { label: "Minhas tarefas", to: "/minhas-tarefas", icon: ListTodo, permission: "organization.read" },
       { label: "Meu espaço", to: "/meu-espaco", icon: NotebookPen },
       { label: "Clientes e projetos", to: "/clientes-projetos", icon: Building2, permission: "organization.read" },
