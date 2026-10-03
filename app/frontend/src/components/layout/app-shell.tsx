@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
+import { AiAssistant } from "@/components/ai-assistant";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { Navbar } from "./navbar";
@@ -58,6 +59,7 @@ export function AppShell() {
           </div>
         </main>
       </div>
+      <AiAssistant />
     </div>
   );
 }

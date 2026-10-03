@@ -97,6 +97,15 @@ export const env = {
     timeoutMs: Number(process.env.AI_TIMEOUT_MS || 30000),
   },
 
+  // --- Mobieer AI (assistente da equipe). A chave fica só no backend.
+  //     Sem GEMINI_API_KEY o assistente aparece como indisponível. ---
+  assistant: {
+    apiKey: (process.env.GEMINI_API_KEY || "").trim(),
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001",
+    timeoutMs: Number(process.env.GEMINI_TIMEOUT_MS || 25000),
+  },
+
   // --- Assinatura eletrônica (Clicksign). Sem SIGNATURE_API_TOKEN => segue
   //     valendo só a assinatura desenhada no portal. ---
   signature: {

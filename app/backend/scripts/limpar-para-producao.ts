@@ -42,6 +42,9 @@ const KEEP = new Set([
   "CompanyHoliday",
   "DreCategoryMapping",
   "Setting",
+  // base de conhecimento do Mobieer AI (as conversas, que são de usuários, saem)
+  "AiDocument",
+  "AiChunk",
 ]);
 /** Ajustes que eram de teste (anotações da semana, cronogramas, ponto de equilíbrio de exemplo). */
 const TEST_SETTINGS = ["weekly.%", "installation-schedule.%", "finance.breakeven.%", "materials-list.%", "tech-folder.%"];
