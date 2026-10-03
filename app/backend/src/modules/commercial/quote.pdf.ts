@@ -76,7 +76,7 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
 
   // ---------------------------------------------------------------- tabela: cabeçalho escuro, linhas com fio claro
   type Col = { label: string; w: number; align?: "left" | "center" | "right"; size?: number; bold?: boolean };
-  const table = (cols: Col[], data: string[][], rowH: number) => {
+  const table = (cols: Col[], data: string[][], minRowH: number, wrap = false) => {
     const xs = cols.reduce<number[]>((acc, c, i) => [...acc, i === 0 ? L : acc[i - 1] + cols[i - 1].w * W], []);
     const header = () => {
       const y = doc.y;
@@ -84,15 +84,22 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
       cols.forEach((c, i) => one(c.label, xs[i] + 6, y + 6, c.w * W - 12, { size: 7, bold: true, color: "#FFFFFF", align: c.align }));
       doc.y = y + 18;
     };
-    ensureSpace(doc, 18 + rowH);
+    ensureSpace(doc, 18 + minRowH);
     header();
     for (const row of data) {
+      // com quebra de linha, nada é cortado: a linha cresce com o texto
+      const rowH = wrap
+        ? Math.max(minRowH, ...cols.map((c, i) => doc.font(c.bold ? "Helvetica-Bold" : "Helvetica").fontSize(c.size ?? 8.5).heightOfString(row[i] ?? "", { width: c.w * W - 12 }) + 8))
+        : minRowH;
       if (doc.y + rowH > doc.page.height - doc.page.margins.bottom) {
         doc.addPage();
         header();
       }
       const y = doc.y;
-      cols.forEach((c, i) => one(row[i] ?? "", xs[i] + 6, y + (rowH - (c.size ?? 8.5)) / 2, c.w * W - 12, { size: c.size, bold: c.bold, align: c.align }));
+      cols.forEach((c, i) => {
+        if (!wrap) return one(row[i] ?? "", xs[i] + 6, y + (rowH - (c.size ?? 8.5)) / 2, c.w * W - 12, { size: c.size, bold: c.bold, align: c.align });
+        doc.font(c.bold ? "Helvetica-Bold" : "Helvetica").fontSize(c.size ?? 8.5).fillColor(BRAND.ink).text(row[i] ?? "", xs[i] + 6, y + 4.5, { width: c.w * W - 12, align: c.align ?? "left" });
+      });
       doc.moveTo(L, y + rowH).lineTo(R, y + rowH).strokeColor(BRAND.line).lineWidth(0.5).stroke();
       doc.y = y + rowH;
     }
@@ -144,7 +151,8 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
       { label: "MODELO", w: 0.12, size: 7.5 },
     ],
     d.items.map((it, i) => [codes[i], it.corpo ?? "", it.porta ?? "", it.puxador ?? "", it.complemento ?? "", it.modelo ?? ""]),
-    17
+    17,
+    true
   );
   doc.y += 14;
 
@@ -170,7 +178,11 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
   ensureSpace(doc, 62);
   brandSection(doc, "Condições");
   const days = d.issuedAt && d.validUntil ? Math.max(1, Math.round((d.validUntil.getTime() - d.issuedAt.getTime()) / 86_400_000)) : null;
-  fields([[["Condição de pagamento", d.payment, 0.4], ["Prazo de entrega", d.config.deliveryText, 0.33], ["Validade da proposta", days ? `${days} dias (até ${brDate(d.validUntil)})` : "", 0.27]]]);
+  one("CONDIÇÃO DE PAGAMENTO", L, doc.y, W, { size: 6.5, color: BRAND.muted });
+  doc.font("Helvetica").fontSize(9.5).fillColor(BRAND.ink).text(d.payment.trim() || "—", L, doc.y + 9, { width: W, lineGap: 1.5 });
+  doc.x = L;
+  doc.y += 7;
+  fields([[["Prazo de entrega", d.config.deliveryText, 0.55], ["Validade da proposta", days ? `${days} dias (até ${brDate(d.validUntil)})` : "", 0.45]]]);
   doc.moveDown(0.4);
 
   // ---------------------------------------------------------------- observações fixas

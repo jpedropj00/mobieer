@@ -177,7 +177,9 @@ export async function warrantyManualPdf(d: WarrantyManualData): Promise<Buffer> 
       if (phone.ddd) write(cert, phone.ddd, left + span * 0.1, baseline, span * 0.15, { center: true });
       write(cert, phone.number, left + span * 0.27, baseline, span * 0.7);
     } else if (values[field]?.trim()) {
-      write(cert, values[field]!.trim(), left + 4, baseline, span - 8);
+      // nunca encosta no rótulo (no CEP a linha começa colada nele)
+      const x = Math.max(left + 4, label.x + label.w + 8);
+      write(cert, values[field]!.trim(), x, baseline, left + span - x - 4);
     }
   }
 
