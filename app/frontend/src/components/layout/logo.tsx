@@ -1,17 +1,13 @@
-import { Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function Logo({ collapsed = false, dark = true }: { collapsed?: boolean; dark?: boolean }) {
+/** Marca da Mobieer: o nome completo, ou só o "Ø" quando a barra lateral está recolhida. */
+export function Logo({ collapsed = false }: { collapsed?: boolean; dark?: boolean }) {
   return (
-    <div className={cn("flex items-center overflow-hidden", collapsed ? "justify-center" : "gap-2.5")} aria-label="MOBIEER">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/90 shadow-soft">
-        <Box className="h-5 w-5 text-primary-foreground" />
-      </div>
-      {!collapsed && (
-        <div className="flex flex-col leading-none">
-          <span className={cn("text-lg font-extrabold tracking-tight", dark ? "text-white" : "text-foreground")}>MOBIEER</span>
-          <span className={cn("text-[10px] font-medium uppercase tracking-[0.18em]", dark ? "text-sidebar-muted" : "text-muted-foreground")}>Gestão empresarial</span>
-        </div>
+    <div className={cn("flex items-center overflow-hidden", collapsed && "justify-center")}>
+      {collapsed ? (
+        <img src="/logo-mark.png" alt="Mobieer" className="h-8 w-8 shrink-0 object-contain" />
+      ) : (
+        <img src="/logo.png" alt="Mobieer Planejados — casa com a sua casa" className="h-10 w-auto shrink-0 object-contain" />
       )}
     </div>
   );
