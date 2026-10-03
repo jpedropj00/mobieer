@@ -12,12 +12,9 @@ export function PortalRoot() {
   );
 }
 
-export function PortalWordmark({ className = "" }: { className?: string }) {
-  return (
-    <span className={`font-semibold tracking-[0.2em] ${className}`}>
-      M&Oslash;BIEER
-    </span>
-  );
+/** Logotipo da Mobieer; `large` nas telas de entrada do portal. */
+export function PortalWordmark({ large = false }: { large?: boolean }) {
+  return <img src="/logo.png" alt="Mobieer Planejados" className={large ? "mx-auto h-16 w-auto" : "h-9 w-auto"} />;
 }
 
 function PortalLoader() {

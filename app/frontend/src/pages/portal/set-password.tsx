@@ -64,7 +64,7 @@ export function PortalSetPasswordPage({ mode }: { mode: "invite" | "reset" }) {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <PortalWordmark className="text-2xl text-foreground" />
+          <PortalWordmark large />
           <p className="mt-3 text-sm text-muted-foreground">
             {mode === "invite" ? "Primeiro acesso" : "Redefinir senha"}
           </p>
