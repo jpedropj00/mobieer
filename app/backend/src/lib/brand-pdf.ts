@@ -16,6 +16,8 @@ export const BRAND = {
   soft: "#F1E9E0",
   tagline: "PLANEJADOS   |   CASA COM A SUA CASA",
   contacts: ["(85) 99637-9339", "@mobieer", "www.mobieer.com.br"],
+  /** Para onde vão os QR Codes de contato dos documentos: o WhatsApp da loja. */
+  whatsappUrl: "https://wa.me/5585996379339",
 };
 
 export const PAGE = { left: 56, right: 56, top: 88, bottom: 76, bandHeight: 60 };

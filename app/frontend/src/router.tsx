@@ -34,6 +34,7 @@ const ActivityFormPage = lazy(() => import("@/pages/activity-form").then((m) => 
 const ActivityDetailPage = lazy(() => import("@/pages/activity-detail").then((m) => ({ default: m.ActivityDetailPage })));
 const AgendaPage = lazy(() => import("@/pages/agenda").then((m) => ({ default: m.AgendaPage })));
 const OrganizationPage = lazy(() => import("@/pages/organization").then((m) => ({ default: m.OrganizationPage })));
+const MaterialsPage = lazy(() => import("@/pages/materials").then((m) => ({ default: m.MaterialsPage })));
 const WeeklyPage = lazy(() => import("@/pages/weekly").then((m) => ({ default: m.WeeklyPage })));
 const MyTasksPage = lazy(() => import("@/pages/my-tasks").then((m) => ({ default: m.MyTasksPage })));
 const BusinessPage = lazy(() => import("@/pages/business").then((m) => ({ default: m.BusinessPage })));
@@ -131,6 +132,7 @@ export const router = createBrowserRouter([
           { path: "/organizacao", element: <PermissionGate permission="organization.read"><OrganizationPage /></PermissionGate> },
           { path: "/organizacao/:id", element: <PermissionGate permission="organization.read"><OrganizationPage /></PermissionGate> },
           { path: "/minhas-tarefas", element: <PermissionGate permission="organization.read"><MyTasksPage /></PermissionGate> },
+          { path: "/materiais", element: <PermissionGate permission="organization.read"><MaterialsPage /></PermissionGate> },
           { path: "/semana", element: <PermissionGate permission="organization.read"><WeeklyPage /></PermissionGate> },
           { path: "/meu-espaco", element: <WorkspacePage /> },
           { path: "/clientes-projetos", element: <PermissionGate permission="organization.read"><BusinessPage /></PermissionGate> },
