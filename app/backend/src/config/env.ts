@@ -105,6 +105,9 @@ export const env = {
     model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
     embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001",
     timeoutMs: Number(process.env.GEMINI_TIMEOUT_MS || 25000),
+    // Render com IA (imagem a partir de imagem)
+    imageModel: process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image",
+    imageTimeoutMs: Number(process.env.GEMINI_IMAGE_TIMEOUT_MS || 55000),
   },
 
   // --- Assinatura eletrônica (Clicksign). Sem SIGNATURE_API_TOKEN => segue

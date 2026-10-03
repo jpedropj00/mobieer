@@ -47,7 +47,7 @@ const KEEP = new Set([
   "AiChunk",
 ]);
 /** Ajustes que eram de teste (anotações da semana, cronogramas, ponto de equilíbrio de exemplo). */
-const TEST_SETTINGS = ["weekly.%", "installation-schedule.%", "finance.breakeven.%", "materials-list.%", "tech-folder.%"];
+const TEST_SETTINGS = ["weekly.%", "installation-schedule.%", "finance.breakeven.%", "materials-list.%", "tech-folder.%", "renders.%"];
 
 type Fk = { tbl: string; col: string; ref: string; nullable: boolean };
 

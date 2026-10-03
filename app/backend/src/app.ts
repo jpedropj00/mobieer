@@ -42,6 +42,7 @@ import installationScheduleRoutes from "./modules/production/installation-schedu
 import materialsListRoutes from "./modules/production/materials-list.routes";
 import techFolderRoutes from "./modules/techproject/tech-folder.routes";
 import assistantRoutes from "./modules/ai/assistant.routes";
+import renderRoutes from "./modules/render/render.routes";
 import weeklyRoutes from "./modules/weekly/weekly.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
@@ -171,6 +172,7 @@ export function createApp() {
   app.use("/api/production", installationScheduleRoutes);
   app.use("/api/production", materialsListRoutes);
   app.use("/api/production", techFolderRoutes);
+  app.use("/api/production", renderRoutes);
   app.use("/api/weekly", weeklyRoutes);
   app.use("/api/production", productionStepsRoutes);
   app.use("/api/fiscal/import", fiscalImportRoutes);

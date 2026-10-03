@@ -1,6 +1,7 @@
 import { InstallationSchedulePanel } from "@/components/installation-schedule";
 import { MaterialsListPanel } from "@/components/materials-list";
 import { TechFolderPanel } from "@/components/tech-folder";
+import { AiRenderPanel } from "@/components/ai-render";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -237,6 +238,7 @@ export function ProjectDetailPage() {
           <TabsTrigger value="ficha">Ficha de eletros</TabsTrigger>
           <TabsTrigger value="medicao">Medição</TabsTrigger>
           <TabsTrigger value="projeto">Projeto técnico</TabsTrigger>
+          <TabsTrigger value="render">Render</TabsTrigger>
           <TabsTrigger value="campo">Campo</TabsTrigger>
           <TabsTrigger value="producao">Produção</TabsTrigger>
           <TabsTrigger value="materiais">Materiais</TabsTrigger>
@@ -381,6 +383,10 @@ export function ProjectDetailPage() {
 
         <TabsContent value="producao">
           <ProductionProjectPanel projectId={projectId} canManage={canManageAccounts} />
+        </TabsContent>
+
+        <TabsContent value="render">
+          <AiRenderPanel projectId={projectId} canManage={canManageAccounts} />
         </TabsContent>
 
         <TabsContent value="materiais">
