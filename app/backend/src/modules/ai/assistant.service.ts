@@ -63,6 +63,18 @@ export async function chat(user: ToolUser, input: { message: string; conversatio
   return { answer: out.answer, sources: out.sources, tools_used: out.toolsUsed, conversationId };
 }
 
+/** Registra o pedido de render na conversa (só o texto; a imagem não fica no histórico). */
+export async function recordRender(user: ToolUser, input: { conversationId?: string; message: string; adjust: boolean }) {
+  const asked = `[imagem anexada] ${input.message || "Gerar render deste ambiente."}`;
+  const conversationId = await conversationFor(user, input.conversationId, asked);
+  await prisma.$transaction([
+    prisma.aiMessage.create({ data: { conversationId, role: "user", content: asked } }),
+    prisma.aiMessage.create({ data: { conversationId, role: "assistant", content: input.adjust ? "Gerei uma nova versão do render com o ajuste pedido." : "Gerei o render do ambiente a partir da imagem enviada." } }),
+    prisma.aiConversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } }),
+  ]);
+  return conversationId;
+}
+
 export async function conversationMessages(user: ToolUser, conversationId: string) {
   const c = await prisma.aiConversation.findFirst({
     where: { id: conversationId, userId: user.id },

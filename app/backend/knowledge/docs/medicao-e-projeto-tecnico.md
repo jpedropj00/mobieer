@@ -33,3 +33,6 @@ Aba **Render** do projeto. Transforma a imagem do ambiente exportada do Promob e
 Cada render aparece ao lado da imagem original. Em **Ajustar este render** você descreve uma mudança (por exemplo, trocar o puxador) e a IA gera uma nova versão a partir da anterior. **Baixar** salva a imagem e **Salvar nos documentos** guarda o render nos documentos do projeto.
 
 O render é uma imagem ilustrativa: medidas e detalhes de execução continuam valendo pela pasta técnica. Há um limite de 20 renders por hora por pessoa.
+
+### Render pelo Mobieer AI
+O render também pode ser pedido no chat do Mobieer AI: clique no botão de imagem ao lado do campo de texto, escolha a imagem do Promob, escreva os acabamentos (opcional), escolha a iluminação e envie. O render aparece na conversa, com os botões **Baixar** e **Ajustar este render**. O render feito pelo chat não fica guardado no projeto; para guardar, use a aba Render do projeto.
