@@ -11,14 +11,15 @@
  * 1) Simulação — só mostra o que seria apagado, não altera nada:
  *      npx tsx scripts/limpar-para-producao.ts
  *
- * 2) Para valer — informe o primeiro administrador e confirme:
- *      PowerShell:
- *        $env:ADMIN_NOME="Seu Nome"; $env:ADMIN_EMAIL="voce@empresa.com.br"; $env:ADMIN_SENHA="uma-senha-forte"
- *        npx tsx scripts/limpar-para-producao.ts --confirmar
+ * 2) Para valer — o script pergunta o nome, o e-mail e a senha do primeiro
+ *    administrador (a senha não aparece na tela nem fica no histórico do terminal):
+ *      npx tsx scripts/limpar-para-producao.ts --confirmar
+ *    Também aceita ADMIN_NOME, ADMIN_EMAIL e ADMIN_SENHA no ambiente, para rodar sem perguntas.
  *
  * Tudo roda numa transação: se qualquer passo falhar, nada é apagado.
  */
 import "dotenv/config";
+import readline from "node:readline";
 import bcrypt from "bcryptjs";
 import { sessionModeUrl } from "./apply-migration";
 
@@ -48,6 +49,26 @@ const KEEP = new Set([
 ]);
 /** Ajustes que eram de teste (anotações da semana, cronogramas, ponto de equilíbrio de exemplo). */
 const TEST_SETTINGS = ["weekly.%", "installation-schedule.%", "finance.breakeven.%", "materials-list.%", "tech-folder.%", "renders.%"];
+
+function ask(question: string, hidden = false): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  return new Promise((resolve) => {
+    if (hidden) {
+      // a senha é digitada sem eco: só a pergunta aparece
+      const out = rl as unknown as { _writeToOutput: (s: string) => void };
+      let asked = false;
+      out._writeToOutput = (text: string) => {
+        if (!asked) process.stdout.write(text);
+        asked = true;
+      };
+    }
+    rl.question(question, (answer) => {
+      rl.close();
+      if (hidden) process.stdout.write("\n");
+      resolve(answer);
+    });
+  });
+}
 
 type Fk = { tbl: string; col: string; ref: string; nullable: boolean };
 
@@ -96,16 +117,26 @@ async function main() {
   if (blocked.length) throw new Error("Há vínculo obrigatório para tabela apagada — ajuste a lista KEEP antes de rodar.");
 
   if (!confirm) {
-    console.log("\nNada foi alterado. Para executar: faça o backup, defina ADMIN_NOME, ADMIN_EMAIL e ADMIN_SENHA e rode com --confirmar.\n");
+    console.log("\nNada foi alterado. Para executar: faça o backup e rode com --confirmar (o script pergunta os dados do primeiro administrador).\n");
     await prisma.$disconnect();
     return;
   }
 
-  const nome = (process.env.ADMIN_NOME ?? "").trim();
-  const email = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
-  const senha = process.env.ADMIN_SENHA ?? "";
+  const interactive = Boolean(process.stdin.isTTY);
+  console.log("\nPRIMEIRO ADMINISTRADOR");
+  const nome = (process.env.ADMIN_NOME ?? (interactive ? await ask("  Nome: ") : "")).trim();
+  const email = (process.env.ADMIN_EMAIL ?? (interactive ? await ask("  E-mail: ") : "")).trim().toLowerCase();
+  let senha = process.env.ADMIN_SENHA ?? "";
+  if (!senha && interactive) {
+    senha = await ask("  Senha (mínimo 10 caracteres, não aparece na tela): ", true);
+    if (senha !== (await ask("  Repita a senha: ", true))) throw new Error("As senhas não conferem. Nada foi alterado.");
+  }
   if (nome.length < 2 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Defina ADMIN_NOME e ADMIN_EMAIL (e-mail válido) do primeiro administrador.");
-  if (senha.length < 10) throw new Error("ADMIN_SENHA precisa ter pelo menos 10 caracteres.");
+  if (senha.length < 10) throw new Error("A senha precisa ter pelo menos 10 caracteres. Nada foi alterado.");
+  if (interactive && !process.env.ADMIN_SENHA) {
+    const sure = (await ask(`\n  Isto apaga ${total} registros e NÃO TEM VOLTA. Digite APAGAR para continuar: `)).trim();
+    if (sure !== "APAGAR") throw new Error("Cancelado. Nada foi alterado.");
+  }
 
   await prisma.$transaction(
     async (tx) => {

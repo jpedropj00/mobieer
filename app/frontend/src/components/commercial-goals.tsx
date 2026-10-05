@@ -260,7 +260,7 @@ function GoalSuggestion({ month }: { month: string }) {
             </p>
             {open && (
               <div className="grid gap-4 lg:grid-cols-2">
-                <div>
+                <div className="overflow-x-auto">
                   <p className="mb-1 text-sm font-medium">Despesas fixas consideradas</p>
                   <table className="w-full text-xs">
                     <tbody>
@@ -276,7 +276,7 @@ function GoalSuggestion({ month }: { month: string }) {
                   {d.fixed.count > d.fixed.items.length && <p className="mt-1 text-[11px] text-muted-foreground">e mais {d.fixed.count - d.fixed.items.length}</p>}
                 </div>
                 {s.bySeller.length > 0 && (
-                  <div>
+                  <div className="overflow-x-auto">
                     <p className="mb-1 text-sm font-medium">Divisão da meta recomendada por consultor</p>
                     <table className="w-full text-xs">
                       <tbody>
