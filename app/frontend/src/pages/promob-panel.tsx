@@ -93,7 +93,7 @@ function ParsedSummary({ d }: { d: Parsed }) {
         </p>
       )}
       {d.valoresPorAmbiente && d.valoresPorAmbiente.length > 0 && (
-        <div>
+        <div className="overflow-x-auto">
           <p className="mb-1 font-medium">Valores por ambiente (viram o custo no orçamento)</p>
           <table className="w-full text-xs">
             <tbody>
@@ -119,7 +119,7 @@ function ParsedSummary({ d }: { d: Parsed }) {
         </div>
       )}
       {d.materiais && d.materiais.length > 0 && (
-        <div>
+        <div className="overflow-x-auto">
           <p className="mb-1 font-medium">Chapas por material</p>
           <table className="w-full text-xs">
             <thead className="text-muted-foreground">

@@ -1048,7 +1048,7 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
           <p className="text-sm text-muted-foreground">Carregando…</p>
         ) : (
           <div className="space-y-5 text-sm">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Field label="Mark-up padrão"><NumInput value={c.defaultMarkup} onChange={(v) => setC({ ...c, defaultMarkup: v })} /></Field>
               <Field label="Pontuação mínima"><NumInput value={c.minScore} onChange={(v) => setC({ ...c, minScore: v })} /></Field>
               <Field label="Validade (dias)"><NumInput value={c.validityDays} onChange={(v) => setC({ ...c, validityDays: Math.round(v) })} /></Field>
