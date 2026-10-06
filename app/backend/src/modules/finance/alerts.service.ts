@@ -8,6 +8,7 @@
  * derivados na leitura (documents.service.ts), então a tela está certa mesmo se
  * este job atrasar ou não rodar. O job só existe para avisar.
  */
+import { whereHasPermission } from "../../lib/user-roles";
 import { FinanceStatus, NotificationType } from "@prisma/client";
 import { prisma } from "../../prisma";
 import { sendAutomation } from "../../lib/automations";
@@ -80,7 +81,7 @@ export async function runFinanceDueAlerts(now = new Date()) {
       where: {
         organizationId: d.organizationId,
         status: "ACTIVE",
-        role: { permissions: { some: { permission: { code: { in: ["finance.documents.read", "finance.read"] } } } } },
+        ...whereHasPermission(["finance.documents.read", "finance.read"]),
       },
       select: { id: true },
     });
@@ -173,7 +174,7 @@ export async function runReceivableReminders(now = new Date()) {
       where: {
         organizationId: d.organizationId,
         status: "ACTIVE",
-        role: { permissions: { some: { permission: { code: { in: ["finance.documents.read", "finance.read"] } } } } },
+        ...whereHasPermission(["finance.documents.read", "finance.read"]),
       },
       select: { id: true },
     });

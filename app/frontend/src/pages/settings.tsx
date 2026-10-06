@@ -87,7 +87,7 @@ function AccountTab() {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-4 w-4" />
-              Perfil: {user.role}
+              Perfil: {user.roleLabel}
             </span>
           </div>
         </CardContent>

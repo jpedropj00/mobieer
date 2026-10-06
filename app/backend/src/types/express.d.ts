@@ -4,7 +4,10 @@ export type AuthUser = {
   id: string;
   name: string;
   email: string;
+  /** cargo principal */
   role: string;
+  /** todos os cargos (principal + adicionais) */
+  roles: string[];
   roleLabel: string;
   organizationId: string;
   enterpriseId: string;

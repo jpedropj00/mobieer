@@ -4,7 +4,8 @@ import jwt from "jsonwebtoken";
 import { env } from "../../config/env";
 import { prisma } from "../../prisma";
 import { ApiError, BadRequestError, NotFoundError, UnauthorizedError } from "../../utils/ApiError";
-import { accessAllowed, passwordExpired } from "../../lib/security-policy";
+import { accessAllowedAny, passwordExpired } from "../../lib/security-policy";
+import { allRoles, effectivePermissions, roleNames, rolesInclude, rolesLabel } from "../../lib/user-roles";
 import { assertStrongPassword, loadSecurityPolicy, setUserPassword } from "../../lib/security";
 import { notifyUsersWithPermission } from "../../lib/notify";
 import { renderResetEmail, sendMail } from "../../lib/mailer";
@@ -35,7 +36,7 @@ export function readMfaToken(token: string): string {
 
 /** Conclui o login depois do segundo fator: registra o acesso e entrega a sessão. */
 export async function issueSession(userId: string, ip?: string) {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, include: { role: { include: { permissions: { include: { permission: true } } } } } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, include: rolesInclude });
   const policy = await loadSecurityPolicy();
   await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date(), failedLoginCount: 0 } });
   await prisma.auditLog.create({ data: { userId: user.id, action: "LOGIN", entity: "User", entityId: user.id, ip: ip ?? null, details: { mfa: true } } });
@@ -52,6 +53,7 @@ function serializeUser(user: {
   imageUrl: string | null;
   status: string;
   role: { id: string; name: string; label: string; permissions: { permission: { code: string } }[] };
+  extraRoles?: { role: { id: string; name: string; label: string; permissions: { permission: { code: string } }[] } }[];
   mustChangePassword?: boolean;
   passwordChangeRequired?: boolean;
   mfaEnabledAt?: Date | null;
@@ -65,13 +67,16 @@ function serializeUser(user: {
     imageUrl: user.imageUrl,
     status: user.status,
     role: user.role.name,
-    roleLabel: user.role.label,
-    permissions: user.role.permissions.map((rp) => rp.permission.code),
+    // todos os cargos da pessoa; as permissões são a soma deles
+    roles: roleNames(user),
+    extraRoles: allRoles(user).slice(1).map((r) => ({ id: r.id, name: r.name, label: r.label })),
+    roleLabel: rolesLabel(user),
+    permissions: effectivePermissions(user),
     // senha provisória (definida pelo admin) ou vencida: a tela manda trocar antes de tudo
     passwordChangeRequired: Boolean(user.passwordChangeRequired ?? user.mustChangePassword),
     // verificação em duas etapas: se está ativa e se o perfil é dos que deveriam ativar
     mfaEnabled: Boolean(user.mfaEnabledAt),
-    mfaRecommended: !user.mfaEnabledAt && MFA_RECOMMENDED_ROLES.includes(user.role.name),
+    mfaRecommended: !user.mfaEnabledAt && roleNames(user).some((r) => MFA_RECOMMENDED_ROLES.includes(r)),
   };
 }
 
@@ -79,7 +84,7 @@ export async function login(email: string, password: string, ip?: string) {
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
     include: {
-      role: { include: { permissions: { include: { permission: true } } } }, organization: { include: { enterprise: true } },
+      ...rolesInclude, organization: { include: { enterprise: true } },
     },
   });
 
@@ -110,7 +115,7 @@ export async function login(email: string, password: string, ip?: string) {
     throw new UnauthorizedError(left != null && left <= 2 ? `Credenciais inválidas — mais ${left} tentativa(s) antes do bloqueio` : "Credenciais inválidas");
   }
 
-  const access = accessAllowed(policy, { role: user.role.name, ip });
+  const access = accessAllowedAny(policy, { roles: roleNames(user), ip });
   if (!access.ok) {
     await prisma.auditLog.create({ data: { userId: user.id, action: `LOGIN_DENIED_${access.reason}`, entity: "User", entityId: user.id, ip: ip ?? null } });
     throw new ApiError(403, access.message, undefined, "ACCESS_RESTRICTED");
@@ -157,9 +162,7 @@ export async function logout(userId: string, ip?: string) {
 export async function me(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: {
-      role: { include: { permissions: { include: { permission: true } } } },
-    },
+    include: rolesInclude,
   });
   if (!user) throw new NotFoundError("Usuário não encontrado");
   const policy = await loadSecurityPolicy();

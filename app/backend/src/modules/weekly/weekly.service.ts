@@ -1,6 +1,7 @@
 /**
  * Busca no banco o que entra na "Semana da Mobieer" e entrega às regras.
  */
+import { whereHasPermission } from "../../lib/user-roles";
 import { prisma } from "../../prisma";
 import { buildReminders } from "../commercial/reminders.rules";
 import { loadReminderData } from "../commercial/reminders.service";
@@ -90,7 +91,7 @@ export async function runWeeklyBriefing(now = new Date()) {
   for (const o of orgs) {
     const w = await weeklyFor(o.id, weekStart, now);
     const users = await prisma.user.findMany({
-      where: { organizationId: o.id, status: "ACTIVE", role: { permissions: { some: { permission: { code: "organization.manage" } } } } },
+      where: { organizationId: o.id, status: "ACTIVE", ...whereHasPermission("organization.manage") },
       select: { id: true },
     });
     for (const u of users) {

@@ -7,6 +7,8 @@ export const createUserSchema = z.object({
   position: z.string().optional().nullable(),
   sector: z.string().optional().nullable(),
   roleId: z.string().min(1, "Perfil obrigatório"),
+  // cargos além do principal; as permissões são a soma de todos
+  extraRoleIds: z.array(z.string().min(1)).max(20).optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).default("ACTIVE"),
   imageUrl: z.string().optional().nullable(),
 });

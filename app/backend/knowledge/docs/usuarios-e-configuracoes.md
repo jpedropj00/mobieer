@@ -36,3 +36,10 @@ Perdeu o celular e não tem código de recuperação: peça a um administrador. 
 ## Avisos de erro do sistema
 Quem tem a permissão de auditoria recebe no sino um aviso quando o sistema dá um erro interno ou quando uma tela quebra no navegador de alguém, com a rota e um código de rastreio. O mesmo erro avisa no máximo uma vez a cada 15 minutos.
 
+## Mais de um cargo por usuário
+No cadastro do usuário (menu **Usuários**), além do **Perfil** principal, o campo **Cargos adicionais** permite marcar outros perfis para a mesma pessoa. Ela passa a ter as permissões de todos os cargos marcados, somadas. Exemplo: perfil principal Financeiro, com os adicionais Recursos Humanos e Comercial.
+- Na lista de usuários, os cargos adicionais aparecem ao lado do perfil principal, com um "+".
+- Os avisos enviados por permissão (financeiro, RH, auditoria) chegam para a pessoa por qualquer um dos cargos.
+- Se a loja usa restrição de horário por perfil, a pessoa entra quando pelo menos um dos cargos dela está liberado.
+- Para tirar um cargo, edite o usuário e desmarque.
+

@@ -145,6 +145,15 @@ const toMin = (hhmm: string) => {
 
 export type AccessDecision = { ok: true } | { ok: false; reason: "IP" | "SCHEDULE"; message: string };
 
+/**
+ * Com mais de um cargo, a pessoa entra se pelo menos um deles estiver liberado
+ * agora; se nenhum estiver, vale a recusa do cargo principal (o primeiro).
+ */
+export function accessAllowedAny(p: SecurityPolicy, u: { roles: string[]; ip: string | null | undefined }, now = new Date()): AccessDecision {
+  const decisions = u.roles.map((role) => accessAllowed(p, { role, ip: u.ip }, now));
+  return decisions.find((d) => d.ok) ?? decisions[0] ?? { ok: true };
+}
+
 /** Pode entrar agora, deste IP? Chamado no login e a cada requisição. */
 export function accessAllowed(p: SecurityPolicy, u: { role: string; ip: string | null | undefined }, now = new Date()): AccessDecision {
   if (u.role === ALWAYS_ALLOWED_ROLE) return { ok: true };

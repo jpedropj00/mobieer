@@ -1,3 +1,4 @@
+import { whereHasPermission } from "../../lib/user-roles";
 import { prisma } from "../../prisma";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -105,7 +106,7 @@ export async function runVacationAlerts() {
       where: {
         organizationId: org.id,
         status: "ACTIVE",
-        role: { permissions: { some: { permission: { code: "hr.read" } } } },
+        ...whereHasPermission("hr.read"),
       },
       select: { id: true },
     });

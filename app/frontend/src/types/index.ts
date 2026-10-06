@@ -342,7 +342,11 @@ export type AuthUser = {
   sector: string | null;
   imageUrl: string | null;
   status: string;
+  /** cargo principal */
   role: Role;
+  /** todos os cargos (principal + adicionais) */
+  roles?: Role[];
+  extraRoles?: { id: string; name: Role; label: string }[];
   roleLabel: string;
   permissions: string[];
   /** senha provisória ou vencida: só entra depois de trocar */
@@ -614,6 +618,8 @@ export type User = {
   lastLogin: string | null;
   createdAt: string;
   role: { id: string; name: Role; label: string };
+  /** cargos além do principal; as permissões são a soma de todos */
+  extraRoles?: { id: string; name: Role; label: string }[];
   locked?: boolean;
   failedLoginCount?: number;
   mustChangePassword?: boolean;

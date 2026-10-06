@@ -2,6 +2,7 @@
  * Avisos de erro para quem administra o sistema (permissão de auditoria) e a
  * checagem de saúde usada por monitores de disponibilidade.
  */
+import { whereHasPermission } from "./user-roles";
 import { prisma } from "../prisma";
 import { clientAlertText, newAlertStore, routeKey, serverAlertText, shouldAlert } from "./monitoring.rules";
 
@@ -9,7 +10,7 @@ const store = newAlertStore();
 
 async function notifyAdmins(organizationId: string | null | undefined, title: string, message: string) {
   const users = await prisma.user.findMany({
-    where: { status: "ACTIVE", ...(organizationId ? { organizationId } : {}), role: { permissions: { some: { permission: { code: "audit.read" } } } } },
+    where: { status: "ACTIVE", ...(organizationId ? { organizationId } : {}), ...whereHasPermission("audit.read") },
     select: { id: true },
     take: 50,
   });

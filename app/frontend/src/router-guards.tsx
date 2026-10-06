@@ -43,7 +43,8 @@ export function GuestRoute() {
 export function HomeRoute({ dashboard }: { dashboard: React.ReactNode }) {
   const { user, can } = useAuth();
   if (can("dashboard.read")) return <>{dashboard}</>;
-  if (user?.role === "MONTADOR") return <Navigate to="/montador" replace />;
+  // só quem é apenas montador cai direto na tela da montagem
+  if (user && (user.roles ?? [user.role]).every((r) => r === "MONTADOR")) return <Navigate to="/montador" replace />;
   if (can("finance.read") || can("commercial.read")) return <Navigate to="/painel-loja" replace />;
   if (can("chat.use")) return <Navigate to="/chat" replace />;
   return <>{dashboard}</>;
