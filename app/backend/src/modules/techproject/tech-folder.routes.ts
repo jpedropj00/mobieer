@@ -11,6 +11,7 @@
  *   GET/PUT/DELETE /sheets/:sheetId/overlay   anotações por cima da prancha
  *   GET  /sheets/:sheetId/ai-brief   o móvel em dados + a instrução para a IA
  *   POST /sheets/:sheetId/ai-image   a IA gera a imagem 3D a partir da vista cotada
+ *   GET  /sheets/:sheetId/preview.pdf   só esta prancha, já com o carimbo
  *   GET  .pdf      gera a pasta
  *   POST /publish  guarda nos documentos do projeto (Projeto técnico)
  */
@@ -188,6 +189,8 @@ const drawingInput = z.object({
     depth: mmNum.nullable().optional(),
     top: mmNum.default(0),
     base: mmNum.default(0),
+    sideLeft: mmNum.max(1000).optional(),
+    sideRight: mmNum.max(1000).optional(),
     columns: z
       .array(
         z.object({
@@ -434,6 +437,32 @@ router.delete(
     await save(p.id, data);
     if (old.overlay) await storage.remove(old.overlay.storageKey).catch(() => undefined);
     return ok(res, view(p, data), "Anotações removidas");
+  })
+);
+
+// Uma prancha só, do jeito que sai na pasta (carimbo, título e escala) — para conferir sem gerar tudo.
+router.get(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/preview.pdf",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const s = (await load(p.id)).sheets.find((x) => x.id === req.params.sheetId);
+    if (!s) throw new NotFoundError("Prancha não encontrada");
+    const full = await techFolderPdf({
+      client: p.client.name,
+      project: { code: p.code, name: p.name },
+      sheets: [{ ...s, bytes: await storage.getBytes(s.storageKey), overlayBytes: s.overlay ? await storage.getBytes(s.overlay.storageKey).catch(() => null) : null }],
+      specs: [],
+      notes: [],
+      issuedAt: new Date(),
+      hideSheetNumber: true,
+    });
+    // a primeira página é a capa: aqui interessa só a prancha
+    const doc = await PDFDocument.load(full);
+    doc.removePage(0);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="prancha-${p.code}.pdf"`);
+    return res.send(Buffer.from(await doc.save()));
   })
 );
 

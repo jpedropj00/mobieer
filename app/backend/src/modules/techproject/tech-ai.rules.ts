@@ -19,10 +19,12 @@ export type TechAiBrief = {
   cliente: string;
   ambiente: string;
   movel: string;
-  medidas_mm: { largura: number; altura: number; profundidade: number | null; topo: number; rodape: number; espessura_chapa: number | null };
+  medidas_mm: { largura: number; altura: number; profundidade: number | null; roda_teto: number; rodape: number; fechamento_esquerdo: number; fechamento_direito: number; espessura_chapa: number };
   colunas: {
     posicao: number;
-    tipo: "prateleiras" | "portas" | "gavetas" | "vao_livre";
+    tipo: "prateleiras" | "portas" | "gavetas" | "vao_livre" | "sapateira" | "maleiro" | "outros";
+    /** nome escrito pela pessoa, quando o tipo é "outros" */
+    nome: string | null;
     largura_mm: number;
     portas: number;
     prateleiras: number;
@@ -34,7 +36,7 @@ export type TechAiBrief = {
   especificacoes: string[];
 };
 
-const KIND = { PRATELEIRAS: "prateleiras", PORTAS: "portas", GAVETAS: "gavetas", VAO: "vao_livre" } as const;
+const KIND = { PRATELEIRAS: "prateleiras", PORTAS: "portas", GAVETAS: "gavetas", VAO: "vao_livre", SAPATEIRA: "sapateira", MALEIRO: "maleiro", OUTROS: "outros" } as const;
 const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -44,10 +46,11 @@ export function techAiBrief(spec: DrawingSpec, ctx: { client: string; room: stri
     cliente: clean(ctx.client),
     ambiente: clean(ctx.room),
     movel: clean(spec.description) || "Móvel planejado",
-    medidas_mm: { largura: L.width, altura: L.height, profundidade: spec.depth && spec.depth > 0 ? spec.depth : null, topo: L.top, rodape: L.base, espessura_chapa: spec.thickness && spec.thickness > 0 ? spec.thickness : null },
+    medidas_mm: { largura: L.width, altura: L.height, profundidade: spec.depth && spec.depth > 0 ? spec.depth : null, roda_teto: L.top, rodape: L.base, fechamento_esquerdo: L.sideLeft, fechamento_direito: L.sideRight, espessura_chapa: L.thickness },
     colunas: L.columns.map((c, i) => ({
       posicao: i + 1,
       tipo: KIND[c.kind],
+      nome: c.kind === "OUTROS" ? clean(spec.columns[i]?.label) || null : null,
       largura_mm: r1(c.width),
       portas: c.doors,
       prateleiras: c.kind === "GAVETAS" ? 0 : c.lines.length,
@@ -69,7 +72,13 @@ export function describeColumns(brief: TechAiBrief): string[] {
           ? `nicho aberto com ${c.prateleiras} ${c.prateleiras > 1 ? "prateleiras" : "prateleira"}`
           : c.tipo === "gavetas"
             ? `${c.gavetas} ${c.gavetas > 1 ? "gavetas" : "gaveta"}`
-            : "vão livre, sem frente";
+            : c.tipo === "sapateira"
+              ? `sapateira com ${c.prateleiras} ${c.prateleiras === 1 ? "prateleira inclinada" : "prateleiras inclinadas"} para sapatos`
+              : c.tipo === "maleiro"
+                ? `maleiro (compartimento alto para malas)${c.prateleiras ? `, com ${c.prateleiras} ${c.prateleiras > 1 ? "divisões" : "divisão"}` : ""}`
+                : c.tipo === "outros"
+                  ? `${c.nome ?? "outro compartimento"}${c.prateleiras ? `, com ${c.prateleiras} ${c.prateleiras > 1 ? "divisões" : "divisão"}` : ""}`
+                  : "vão livre, sem frente";
     return `Coluna ${c.posicao} (${mm(c.largura_mm)} mm de largura): ${what}${c.observacao ? ` — ${c.observacao}` : ""}.`;
   });
 }
@@ -84,7 +93,10 @@ export function techAiPrompt(spec: DrawingSpec, ctx: { client: string; room: str
     "Medidas reais:",
     `- Largura ${mm(m.largura)} mm, altura ${mm(m.altura)} mm${m.profundidade ? `, profundidade ${mm(m.profundidade)} mm` : ""}.`,
     ...(m.rodape > 0 ? [`- Rodapé de ${mm(m.rodape)} mm.`] : []),
-    ...(m.topo > 0 ? [`- Faixa superior de ${mm(m.topo)} mm.`] : []),
+    ...(m.roda_teto > 0 ? [`- Roda-teto (faixa de acabamento em cima) de ${mm(m.roda_teto)} mm.`] : []),
+    ...(m.fechamento_esquerdo > 0 ? [`- Fechamento lateral esquerdo de ${mm(m.fechamento_esquerdo)} mm, na altura toda.`] : []),
+    ...(m.fechamento_direito > 0 ? [`- Fechamento lateral direito de ${mm(m.fechamento_direito)} mm, na altura toda.`] : []),
+    `- Chapas e prateleiras com ${mm(m.espessura_chapa)} mm de espessura.`,
     "",
     "Composição, da esquerda para a direita:",
     ...describeColumns(b).map((l) => `- ${l}`),

@@ -23,9 +23,9 @@ const ctx = { client: "Cliente de Exemplo", room: "Suíte" };
 
 test("IA do projeto técnico: o resumo traz medidas e colunas como foram digitadas", () => {
   const b = techAiBrief(spec, ctx);
-  assert.deepEqual(b.medidas_mm, { largura: 2540, altura: 2380, profundidade: 550, topo: 50, rodape: 70, espessura_chapa: null });
+  assert.deepEqual(b.medidas_mm, { largura: 2540, altura: 2380, profundidade: 550, roda_teto: 50, rodape: 70, fechamento_esquerdo: 0, fechamento_direito: 0, espessura_chapa: 15.5 });
   assert.equal(b.colunas.length, 2);
-  assert.deepEqual({ ...b.colunas[0], alturas_mm: b.colunas[0].alturas_mm.length }, { posicao: 1, tipo: "prateleiras", largura_mm: 1360, portas: 0, prateleiras: 5, gavetas: 0, alturas_mm: 6, observacao: null });
+  assert.deepEqual({ ...b.colunas[0], alturas_mm: b.colunas[0].alturas_mm.length }, { posicao: 1, tipo: "prateleiras", nome: null, largura_mm: 1360, portas: 0, prateleiras: 5, gavetas: 0, alturas_mm: 6, observacao: null });
   assert.deepEqual({ tipo: b.colunas[1].tipo, largura: b.colunas[1].largura_mm, portas: b.colunas[1].portas, prateleiras: b.colunas[1].prateleiras, obs: b.colunas[1].observacao }, { tipo: "portas", largura: 1180, portas: 2, prateleiras: 3, obs: "Portas de giro em alumínio prata" });
   assert.deepEqual(describeColumns(b), [
     "Coluna 1 (1360 mm de largura): nicho aberto com 5 prateleiras.",

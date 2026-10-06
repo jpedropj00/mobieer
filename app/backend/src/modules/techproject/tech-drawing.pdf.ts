@@ -4,7 +4,7 @@
  * na prancha e põe o carimbo, o título e a escala.
  */
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from "pdf-lib";
-import { layoutDrawing, mm, wrapWords, type DrawingSpec } from "./tech-drawing.rules";
+import { SHELF_LIKE, layoutDrawing, mm, wrapWords, type DrawingSpec } from "./tech-drawing.rules";
 
 export type BoardImage = { bytes: Buffer; mime: string };
 /** imagens 3D que entram ao lado da vista, na mesma folha */
@@ -64,7 +64,15 @@ export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): P
   if (L.top > 0) p.drawRectangle({ x: X(0), y: Y(L.height - L.top), width: L.width * k, height: L.top * k, color: BAND });
   if (L.base > 0) p.drawRectangle({ x: X(0), y: Y(0), width: L.width * k, height: L.base * k, color: BAND });
 
+  // fechamentos (vistas) laterais: a tira de acabamento de cada lado, na altura toda
+  for (const [x, w] of [[0, L.sideLeft], [L.width - L.sideRight, L.sideRight]] as const) {
+    if (w > 0) p.drawRectangle({ x: X(x), y: Y(0), width: w * k, height: L.height * k, color: BAND, borderColor: rgb(0.4, 0.4, 0.4), borderWidth: 0.4 });
+  }
+
   const innerH = L.height - L.top - L.base;
+  // espessura da chapa: prateleiras e laterais saem com as duas linhas, como no Promob
+  const t = L.thickness;
+  const EDGE = rgb(0.4, 0.4, 0.4);
   for (const c of L.columns) {
     const cx = X(c.x);
     const cw = c.width * k;
@@ -77,13 +85,22 @@ export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): P
     } else if (c.kind === "VAO") {
       p.drawRectangle({ x: cx, y: Y(L.base), width: cw, height: innerH * k, color: EMPTY });
     }
+    const open = SHELF_LIKE.includes(c.kind) || c.kind === "VAO";
+    if (open && c.width > 4 * t && innerH > 4 * t) {
+      // laterais, teto e base da caixaria com a espessura da chapa
+      p.drawRectangle({ x: cx + t * k, y: Y(L.base + t), width: cw - 2 * t * k, height: (innerH - 2 * t) * k, borderColor: EDGE, borderWidth: 0.4 });
+    }
     // prateleira atrás de porta não aparece na vista de fora
-    for (const y of c.hidden ? [] : c.lines) line(cx, Y(y), cx + cw, Y(y), c.kind === "GAVETAS" ? 0.6 : 1.1, rgb(0.45, 0.45, 0.45));
+    for (const y of c.hidden ? [] : c.lines) {
+      if (c.kind === "GAVETAS") line(cx, Y(y), cx + cw, Y(y), 0.6, rgb(0.45, 0.45, 0.45));
+      // a chapa da prateleira: duas linhas, afastadas pela espessura
+      else p.drawRectangle({ x: cx + t * k, y: Y(y) - (t * k) / 2, width: cw - 2 * t * k, height: Math.max(t * k, 1.4), color: rgb(0.9, 0.9, 0.9), borderColor: EDGE, borderWidth: 0.4 });
+    }
     for (const b of c.hidden ? [] : c.bands) {
       const h = (b.y1 - b.y0) * k;
-      if (b.label && h >= 10 && cw >= 40) center(b.label, cx + cw / 2, c.kind === "PRATELEIRAS" ? Y(b.y1) - 9 : Y((b.y0 + b.y1) / 2) - 2.5, 6, RED);
+      if (b.label && h >= 10 && cw >= 40) center(b.label, cx + cw / 2, c.kind !== "GAVETAS" && c.bands.length > 1 ? Y(b.y1) - 9 : Y((b.y0 + b.y1) / 2) - 2.5, 6, RED);
     }
-    if (c.x > 0) line(cx, Y(L.base), cx, Y(L.height - L.top), 0.7, rgb(0.4, 0.4, 0.4));
+    if (c.x > L.sideLeft) line(cx, Y(L.base), cx, Y(L.height - L.top), 0.7, rgb(0.4, 0.4, 0.4));
   }
   p.drawRectangle({ x: X(0), y: Y(0), width: L.width * k, height: L.height * k, borderColor: INK, borderWidth: 0.8 });
 
@@ -108,14 +125,16 @@ export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): P
 
   // cotas horizontais: larguras das colunas e a largura total
   const wy = Y(0) - 14;
-  if (L.columns.length > 1) {
+  // larguras: fechamento esquerdo, colunas, fechamento direito
+  const parts = [...(L.sideLeft > 0 ? [{ x: 0, width: L.sideLeft }] : []), ...L.columns, ...(L.sideRight > 0 ? [{ x: L.width - L.sideRight, width: L.sideRight }] : [])];
+  if (parts.length > 1) {
     line(X(0), wy, X(L.width), wy, 0.4, DIM);
-    for (const c of L.columns) {
+    for (const c of parts) {
       for (const v of [c.x, c.x + c.width]) line(X(v), wy - 3, X(v), wy + 3, 0.4, DIM);
       center(mm(c.width), X(c.x + c.width / 2), wy + 3, 6.5, DIM);
     }
   }
-  const ty = L.columns.length > 1 ? wy - 16 : wy;
+  const ty = parts.length > 1 ? wy - 16 : wy;
   line(X(0), ty, X(L.width), ty, 0.4, DIM);
   for (const v of [0, L.width]) line(X(v), ty - 3, X(v), ty + 3, 0.4, DIM);
   center(mm(L.width), X(L.width / 2), ty + 3, 7, DIM);

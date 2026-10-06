@@ -23,10 +23,20 @@ PDF exportado do Promob entra página por página. Se a página já vem com cari
 ## Desenhar por medidas (vista cotada sem o Promob)
 No cartão **Pasta técnica** há o botão **Desenhar por medidas**. Você digita as medidas em milímetros e o sistema desenha a vista frontal do móvel com as cotas, e coloca como uma prancha da pasta:
 1. Informe o ambiente, o título da prancha (ex.: VISTA A INTERNA) e a escala.
-2. Escreva a descrição do móvel (sai na chamada, junto com L x A x P) e informe largura, altura, profundidade, topo e rodapé.
+2. Escreva a descrição do móvel (sai na chamada, junto com L x A x P) e informe largura, altura, profundidade, roda-teto e rodapé.
 3. Monte as colunas, da esquerda para a direita. Cada coluna pode ter **prateleiras**, **portas**, **gavetas** ou ser um **vão livre**. Largura em branco fica com o que sobrar.
 4. Em prateleiras e gavetas, digite as alturas de cima para baixo, separadas por ponto e vírgula. Em branco, o sistema divide por igual. Se faltar a última, ela fica com o resto.
 5. Clique em **Salvar e ver o desenho**.
+
+Tipos de coluna: **Prateleiras**, **Portas**, **Gavetas**, **Sapateira**, **Maleiro**, **Vão livre** e **Outros (escrever)** — em Outros você digita o nome (ex.: Cabideiro) e ele sai escrito dentro da coluna.
+
+Medidas gerais do móvel:
+- **Roda-teto**: a faixa de acabamento em cima.
+- **Rodapé**: a faixa de baixo.
+- **Fechamento / vista esquerda e direita**: a tira de acabamento ao lado do móvel. As colunas ocupam a largura que sobra.
+- **Espessura da chapa**: 15,5 mm por padrão. As prateleiras saem desenhadas com essa espessura e ela entra na cota (vão, 15,5, vão…). As alturas que você digita são os vãos livres; a espessura o sistema desconta sozinho.
+
+O botão **Salvar e ver o desenho** abre a prancha como ela sai na pasta, com o carimbo, o título e a escala.
 
 A folha sai no modelo da loja: a vista cotada, o título (ex.: VISTA B), a escala e o carimbo com cliente, ambiente e logotipo. Dois recursos opcionais:
 - **Imagem 3D ao lado**: envie uma ou duas imagens 3D (PNG ou JPG) e elas entram à direita da vista, na mesma folha. Sem imagem, a vista ocupa a folha inteira. O sistema não desenha o 3D, só posiciona a imagem enviada.

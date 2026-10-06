@@ -11,7 +11,9 @@ import { apiOpen, apiPost, apiPostForm, apiPut, getToken } from "@/services/api"
 import { pdfPageToDataUrl } from "@/lib/pdf-preview";
 import { errorMessage } from "@/lib/errors";
 
-type Kind = "PRATELEIRAS" | "PORTAS" | "GAVETAS" | "VAO";
+type Kind = "PRATELEIRAS" | "PORTAS" | "GAVETAS" | "VAO" | "SAPATEIRA" | "MALEIRO" | "OUTROS";
+/** divididas por prateleiras: N divisões dão N + 1 vãos */
+const SHELF_LIKE: Kind[] = ["PRATELEIRAS", "SAPATEIRA", "MALEIRO", "OUTROS"];
 export type DrawingSpec = {
   description: string;
   width: number;
@@ -19,6 +21,8 @@ export type DrawingSpec = {
   depth: number | null;
   top: number;
   base: number;
+  sideLeft?: number;
+  sideRight?: number;
   columns: { kind: Kind; width: number | null; count: number; heights: number[]; label: string | null; shelves?: number; note?: string | null }[];
   layout?: "VISTA" | "PRANCHA";
   images?: { closed?: Img | null; open?: Img | null };
@@ -32,11 +36,11 @@ type Finish = "MADEIRA" | "BRANCO" | "CINZA" | "PRETO";
 const FINISH_LABEL: Record<Finish, string> = { MADEIRA: "Madeira", BRANCO: "Branco", CINZA: "Cinza", PRETO: "Preto" };
 export type DrawingSheet = { id: string; room: string; title: string; scale: string | null; drawing?: DrawingSpec };
 
-const KIND_LABEL: Record<Kind, string> = { PRATELEIRAS: "Prateleiras", PORTAS: "Portas", GAVETAS: "Gavetas", VAO: "Vão livre" };
-const COUNT_LABEL: Record<Kind, string> = { PRATELEIRAS: "Nº de prateleiras", PORTAS: "Nº de portas", GAVETAS: "Nº de gavetas", VAO: "" };
+const KIND_LABEL: Record<Kind, string> = { PRATELEIRAS: "Prateleiras", PORTAS: "Portas", GAVETAS: "Gavetas", SAPATEIRA: "Sapateira", MALEIRO: "Maleiro", VAO: "Vão livre", OUTROS: "Outros (escrever)" };
+const COUNT_LABEL: Record<Kind, string> = { PRATELEIRAS: "Nº de prateleiras", PORTAS: "Nº de portas", GAVETAS: "Nº de gavetas", VAO: "", SAPATEIRA: "Nº de prateleiras", MALEIRO: "Nº de divisões", OUTROS: "Nº de divisões" };
 
-type Col = { kind: Kind; width: string; count: string; heights: string; shelves: string; note: string };
-type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; columns: Col[]; layout: "VISTA" | "PRANCHA"; closed: Img | null; open: Img | null; thickness: string; finish: Finish; shelfDepth: string; specs: string };
+type Col = { kind: Kind; width: string; count: string; heights: string; shelves: string; note: string; label: string };
+type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; sideLeft: string; sideRight: string; columns: Col[]; layout: "VISTA" | "PRANCHA"; closed: Img | null; open: Img | null; thickness: string; finish: Finish; shelfDepth: string; specs: string };
 
 const num = (s: string) => Number(s.trim().replace(/\.(?=\d{3}\b)/g, "").replace(",", ".")) || 0;
 const show = (n: number | null | undefined) => (n ? String(n).replace(".", ",") : "");
@@ -50,7 +54,7 @@ const emptyForm = (room: string): Form => ({
   layout: "PRANCHA",
   closed: null,
   open: null,
-  thickness: "15",
+  thickness: "15,5",
   finish: "MADEIRA",
   shelfDepth: "",
   specs: "",
@@ -60,7 +64,9 @@ const emptyForm = (room: string): Form => ({
   depth: "",
   top: "",
   base: "",
-  columns: [{ kind: "PRATELEIRAS", width: "", count: "5", heights: "", shelves: "0", note: "" }],
+  sideLeft: "",
+  sideRight: "",
+  columns: [{ kind: "PRATELEIRAS", width: "", count: "5", heights: "", shelves: "0", note: "", label: "" }],
 });
 
 const fromSheet = (s: DrawingSheet): Form => ({
@@ -73,11 +79,13 @@ const fromSheet = (s: DrawingSheet): Form => ({
   depth: show(s.drawing!.depth),
   top: show(s.drawing!.top),
   base: show(s.drawing!.base),
-  columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; "), shelves: String(c.shelves ?? 0), note: c.note ?? "" })),
+  sideLeft: show(s.drawing!.sideLeft),
+  sideRight: show(s.drawing!.sideRight),
+  columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; "), shelves: String(c.shelves ?? 0), note: c.note ?? "", label: c.label ?? "" })),
   layout: s.drawing!.layout ?? "VISTA",
   closed: s.drawing!.images?.closed ?? null,
   open: s.drawing!.images?.open ?? null,
-  thickness: show(s.drawing!.thickness) || "15",
+  thickness: show(s.drawing!.thickness) || "15,5",
   finish: s.drawing!.finish ?? "MADEIRA",
   shelfDepth: show(s.drawing!.shelfDepth),
   specs: (s.drawing!.specs ?? []).join("\n"),
@@ -149,10 +157,12 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
           depth: num(f.depth) || null,
           top: num(f.top),
           base: num(f.base),
-          columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0, note: c.note.trim() || null })),
+          sideLeft: num(f.sideLeft) || 0,
+          sideRight: num(f.sideRight) || 0,
+          columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: c.kind === "OUTROS" ? c.label.trim() || null : null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0, note: c.note.trim() || null })),
           layout: f.layout,
           images: { closed: f.closed, open: f.open },
-          thickness: num(f.thickness) || 15,
+          thickness: num(f.thickness) || 15.5,
           finish: f.finish,
           shelfDepth: num(f.shelfDepth) || null,
           specs: f.specs.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10),
@@ -165,7 +175,8 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
       toast.success(r.message ?? "Desenho salvo");
       for (const w of r.data.warnings ?? []) toast.warning(w, { duration: 12_000 });
       onSaved(r.data);
-      if (view) void apiOpen(`${base}/sheets/${r.data.sheetId}/file`).catch((e) => toast.error(errorMessage(e, "Não foi possível abrir o desenho")));
+      // abre a prancha como ela sai na pasta: com o carimbo, o título e a escala
+      if (view) void apiOpen(`${base}/sheets/${r.data.sheetId}/preview.pdf`).catch((e) => toast.error(errorMessage(e, "Não foi possível abrir o desenho")));
       onClose();
     },
     onError: (e) => toast.error(errorMessage(e, "Não foi possível gerar o desenho")),
@@ -226,19 +237,22 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
             <Input value={f.description} placeholder="Ex.: Armário com caixaria em MDF cinza urban" onChange={(e) => set("description", e.target.value)} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="space-y-1"><Label className="text-xs">Largura</Label><Input inputMode="decimal" value={f.width} placeholder="1360" onChange={(e) => set("width", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Altura</Label><Input inputMode="decimal" value={f.height} placeholder="2380" onChange={(e) => set("height", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Profundidade</Label><Input inputMode="decimal" value={f.depth} placeholder="550" onChange={(e) => set("depth", e.target.value)} /></div>
-            <div className="space-y-1"><Label className="text-xs">Topo</Label><Input inputMode="decimal" value={f.top} placeholder="50" onChange={(e) => set("top", e.target.value)} /></div>
+            <div className="space-y-1"><Label className="text-xs" title="A faixa de acabamento em cima do móvel">Roda-teto</Label><Input inputMode="decimal" value={f.top} placeholder="50" onChange={(e) => set("top", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Rodapé</Label><Input inputMode="decimal" value={f.base} placeholder="70" onChange={(e) => set("base", e.target.value)} /></div>
+            <div className="space-y-1"><Label className="text-xs" title="As prateleiras saem desenhadas e cotadas com essa espessura">Espessura da chapa</Label><Input inputMode="decimal" value={f.thickness} placeholder="15,5" onChange={(e) => set("thickness", e.target.value)} /></div>
+            <div className="space-y-1"><Label className="text-xs" title="Tira de acabamento ao lado do móvel (fechamento ou vista)">Fechamento / vista esq.</Label><Input inputMode="decimal" value={f.sideLeft} placeholder="0" onChange={(e) => set("sideLeft", e.target.value)} /></div>
+            <div className="space-y-1"><Label className="text-xs" title="Tira de acabamento ao lado do móvel (fechamento ou vista)">Fechamento / vista dir.</Label><Input inputMode="decimal" value={f.sideRight} placeholder="0" onChange={(e) => set("sideRight", e.target.value)} /></div>
           </div>
-          {inner > 0 && <p className="text-xs text-muted-foreground">Vão interno (altura menos topo e rodapé): <span className="font-medium text-foreground">{String(Math.round(inner * 10) / 10).replace(".", ",")} mm</span></p>}
+          {inner > 0 && <p className="text-xs text-muted-foreground">Vão interno (altura menos roda-teto e rodapé): <span className="font-medium text-foreground">{String(Math.round(inner * 10) / 10).replace(".", ",")} mm</span></p>}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs">Colunas, da esquerda para a direita</Label>
-              <Button type="button" size="sm" variant="outline" disabled={f.columns.length >= 8} onClick={() => set("columns", [...f.columns, { kind: "PORTAS", width: "", count: "2", heights: "", shelves: "0", note: "" }])}>
+              <Button type="button" size="sm" variant="outline" disabled={f.columns.length >= 8} onClick={() => set("columns", [...f.columns, { kind: "PORTAS", width: "", count: "2", heights: "", shelves: "0", note: "", label: "" }])}>
                 <Plus className="mr-1 h-3.5 w-3.5" /> Coluna
               </Button>
             </div>
@@ -247,7 +261,7 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1.1fr_1fr_1fr_auto]">
                   <div className="space-y-1">
                     <Label className="text-xs">O que tem</Label>
-                    <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={c.kind} onChange={(e) => setCol(i, { kind: e.target.value as Kind })}>
+                    <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={c.kind} onChange={(e) => { const kind = e.target.value as Kind; setCol(i, { kind, ...(kind === "MALEIRO" || kind === "OUTROS" ? { count: "0" } : {}) }); }}>
                       {(Object.keys(KIND_LABEL) as Kind[]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
                     </select>
                   </div>
@@ -257,6 +271,12 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                   ) : <div />}
                   <Button type="button" variant="ghost" size="icon" className="h-9 w-9 self-end" disabled={f.columns.length === 1} title="Remover coluna" onClick={() => set("columns", f.columns.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
                 </div>
+                {c.kind === "OUTROS" && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">O que é (sai escrito dentro da coluna)</Label>
+                    <Input value={c.label} maxLength={24} placeholder="Ex.: Cabideiro, Nicho, Adega" onChange={(e) => setCol(i, { label: e.target.value })} />
+                  </div>
+                )}
                 {i > 0 && (
                   <div className="space-y-1">
                     <Label className="text-xs">Chamada desta coluna (opcional) — sai ao lado do móvel, com a linha apontando para ela</Label>
@@ -271,12 +291,12 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                     )}
                   </div>
                 )}
-                {(c.kind === "PRATELEIRAS" || c.kind === "GAVETAS") && (
+                {(SHELF_LIKE.includes(c.kind) || c.kind === "GAVETAS") && (c.kind === "PRATELEIRAS" || c.kind === "SAPATEIRA" || c.kind === "GAVETAS" || Math.round(num(c.count)) > 0) && (
                   <div className="space-y-1">
-                    <Label className="text-xs">{c.kind === "PRATELEIRAS" ? "Alturas dos vãos, de cima para baixo" : "Alturas das gavetas, de cima para baixo"} (separadas por ponto e vírgula)</Label>
+                    <Label className="text-xs">{c.kind === "GAVETAS" ? "Alturas das gavetas, de cima para baixo" : "Alturas dos vãos, de cima para baixo"} (separadas por ponto e vírgula)</Label>
                     <Input value={c.heights} placeholder="Ex.: 378,5; 378,5; 378,5 — em branco divide por igual" onChange={(e) => setCol(i, { heights: e.target.value })} />
                     <p className="text-xs text-muted-foreground">
-                      {c.kind === "PRATELEIRAS" ? `${Math.max(0, Math.round(num(c.count))) + 1} vãos para ${Math.max(0, Math.round(num(c.count)))} prateleiras.` : `${Math.max(0, Math.round(num(c.count)))} alturas.`} Se faltar a última, ela fica com o que sobrar.
+                      {c.kind !== "GAVETAS" ? `${Math.max(0, Math.round(num(c.count))) + 1} vãos para ${Math.max(0, Math.round(num(c.count)))} ${c.kind === "PRATELEIRAS" || c.kind === "SAPATEIRA" ? "prateleiras" : "divisões"}.` : `${Math.max(0, Math.round(num(c.count)))} alturas.`} São os vãos livres: a espessura das prateleiras o sistema desconta e cota sozinho. Se faltar a última, ela fica com o que sobrar.
                     </p>
                   </div>
                 )}
