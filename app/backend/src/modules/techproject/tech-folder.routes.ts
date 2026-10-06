@@ -333,9 +333,10 @@ router.get(
     const p = await projectFor(req.params.projectId, req.user!.organizationId);
     const s = (await load(p.id)).sheets.find((x) => x.id === req.params.sheetId);
     if (!s) throw new NotFoundError("Prancha não encontrada");
+    const bytes = (await sheetBytes(s)) ?? lostSheet(s.title);
     res.setHeader("Content-Type", s.mime);
     res.setHeader("Cache-Control", "private, max-age=300");
-    return res.send(await storage.getBytes(s.storageKey));
+    return res.send(bytes);
   })
 );
 
@@ -462,7 +463,7 @@ router.get(
     const full = await techFolderPdf({
       client: p.client.name,
       project: { code: p.code, name: p.name },
-      sheets: [{ ...s, bytes: await storage.getBytes(s.storageKey), overlayBytes: s.overlay ? await storage.getBytes(s.overlay.storageKey).catch(() => null) : null }],
+      sheets: [{ ...s, bytes: (await sheetBytes(s)) ?? lostSheet(s.title), overlayBytes: s.overlay ? await storage.getBytes(s.overlay.storageKey).catch(() => null) : null }],
       specs: [],
       notes: [],
       issuedAt: new Date(),
@@ -477,13 +478,41 @@ router.get(
   })
 );
 
+/**
+ * O arquivo de uma prancha. Se ele sumiu do armazenamento e a prancha foi desenhada
+ * por medidas, o desenho é refeito na hora (as medidas estão guardadas); imagem
+ * enviada não tem como refazer, e aí volta nulo.
+ */
+async function sheetBytes(s: TechSheet): Promise<Buffer | null> {
+  try {
+    return await storage.getBytes(s.storageKey);
+  } catch (e) {
+    if (!(e instanceof NotFoundError)) throw e;
+    if (!s.drawing) return null;
+    const img = async (i: DrawingImage | null | undefined) => (i ? await storage.getBytes(i.storageKey).then((bytes) => ({ bytes, mime: i.mime })).catch(() => null) : null);
+    return (await drawingPdf(s.drawing, { closed: await img(s.drawing.images?.closed), open: await img(s.drawing.images?.open) })).pdf;
+  }
+}
+const lostSheet = (title: string): never => {
+  throw new BadRequestError(lostMessage([title]));
+};
+const lostMessage = (titles: string[]) =>
+  `${titles.length > 1 ? "Os arquivos destas pranchas não estão" : "O arquivo desta prancha não está"} mais no servidor: ${titles.join(", ")}. Remova e envie de novo.`;
+
 async function pdfFor(projectId: string, organizationId: string) {
   const p = await projectFor(projectId, organizationId);
   const data = await load(p.id);
   const specs = data.includeSpecs ? specBlocks(p.quotes[0]?.items ?? []) : [];
   if (!data.sheets.length && !specs.length) throw new BadRequestError("A pasta ainda está vazia: envie as pranchas do Promob ou preencha os acabamentos no orçamento.");
   const files = new Map<string, Buffer>();
-  for (const s of data.sheets) if (!files.has(s.storageKey)) files.set(s.storageKey, await storage.getBytes(s.storageKey));
+  const lost: string[] = [];
+  for (const s of data.sheets) {
+    if (files.has(s.storageKey)) continue;
+    const bytes = await sheetBytes(s);
+    if (bytes) files.set(s.storageKey, bytes);
+    else lost.push(s.title);
+  }
+  if (lost.length) throw new BadRequestError(lostMessage(lost));
   const pdf = await techFolderPdf({
     client: p.client.name,
     project: { code: p.code, name: p.name },

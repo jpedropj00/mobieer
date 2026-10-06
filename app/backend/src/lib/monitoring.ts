@@ -50,7 +50,9 @@ export async function healthCheck() {
   const started = Date.now();
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return { ok: true, database: "ok", ms: Date.now() - started, assistant: Boolean(env.ai.apiKey || env.assistant.apiKey) ? "configurado" : "sem chave" };
+    // "disco" na Vercel é a pasta temporária da função: o arquivo some a cada deploy ou reinício
+    const storage = env.storage.driver === "supabase" ? "supabase" : process.env.VERCEL ? "disco temporário (arquivos enviados se perdem)" : "disco";
+    return { ok: true, database: "ok", ms: Date.now() - started, assistant: Boolean(env.ai.apiKey || env.assistant.apiKey) ? "configurado" : "sem chave", storage };
   } catch {
     return { ok: false, database: "fora do ar", ms: Date.now() - started };
   }
