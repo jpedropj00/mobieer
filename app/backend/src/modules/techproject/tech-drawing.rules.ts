@@ -20,7 +20,12 @@ export type DrawingColumn = {
   heights: number[];
   /** texto dentro da coluna (padrão: PRATELEIRA / GAVETA) */
   label: string | null;
+  /** coluna de portas: nº de prateleiras atrás delas (as alturas vão em `heights`) */
+  shelves?: number;
 };
+
+export const DRAWING_LAYOUTS = ["VISTA", "PRANCHA"] as const;
+export const DRAWING_FINISHES = ["MADEIRA", "BRANCO", "CINZA", "PRETO"] as const;
 
 export type DrawingSpec = {
   /** texto da chamada, ex.: "ARMÁRIO COM CAIXARIA EM MDF CINZA URBAN" */
@@ -33,6 +38,16 @@ export type DrawingSpec = {
   /** rodapé em mm */
   base: number;
   columns: DrawingColumn[];
+  /** VISTA = só a vista cotada; PRANCHA = folha completa (perspectivas, vistas, especificações) */
+  layout?: (typeof DRAWING_LAYOUTS)[number];
+  /** espessura das chapas em mm (prancha completa) */
+  thickness?: number;
+  /** cor de fora do móvel na prancha completa */
+  finish?: (typeof DRAWING_FINISHES)[number];
+  /** profundidade da prateleira; sem ela a peça sai sem essa cota */
+  shelfDepth?: number | null;
+  /** linhas do quadro de especificações */
+  specs?: string[];
 };
 
 export class DrawingError extends Error {}
@@ -47,6 +62,8 @@ export type LaidColumn = {
   bands: { y0: number; y1: number; value: number; label: string | null }[];
   /** nº de portas (divisões verticais) */
   doors: number;
+  /** as faixas ficam atrás das portas: só aparecem na vista interna */
+  hidden: boolean;
 };
 
 export type DrawingLayout = {
@@ -103,9 +120,10 @@ export function layoutDrawing(spec: DrawingSpec): DrawingLayout {
     const w = c.width && c.width > 0 ? c.width : share;
     const count = Math.max(0, Math.floor(c.count || 0));
     const label = c.label?.trim() || DEFAULT_LABEL[c.kind];
-    const col: LaidColumn = { kind: c.kind, x, width: w, lines: [], bands: [], doors: c.kind === "PORTAS" ? Math.max(1, count) : 0 };
+    const inside = c.kind === "PORTAS" ? Math.max(0, Math.floor(c.shelves || 0)) : 0;
+    const col: LaidColumn = { kind: c.kind, x, width: w, lines: [], bands: [], doors: c.kind === "PORTAS" ? Math.max(1, count) : 0, hidden: c.kind === "PORTAS" };
     x += w;
-    const parts = c.kind === "PRATELEIRAS" ? count + 1 : c.kind === "GAVETAS" ? count : 0;
+    const parts = c.kind === "PRATELEIRAS" ? count + 1 : c.kind === "GAVETAS" ? count : inside ? inside + 1 : 0;
     if (parts < 1) return col;
 
     // alturas de cima para baixo; faltando a última, ela fica com o resto
@@ -126,15 +144,15 @@ export function layoutDrawing(spec: DrawingSpec): DrawingLayout {
     let y = base;
     for (const h of [...hs].reverse()) {
       const y1 = y + h * k;
-      col.bands.push({ y0: y, y1, value: h, label });
+      col.bands.push({ y0: y, y1, value: h, label: c.kind === "PORTAS" ? "PRATELEIRA" : label });
       if (y1 < base + inner - 0.01) col.lines.push(y1);
       y = y1;
     }
     return col;
   });
 
-  // cotas da esquerda: a primeira coluna que tem vãos
-  const ref = columns.find((c) => c.bands.length);
+  // cotas da esquerda: a primeira coluna que tem vãos (de preferência, à vista)
+  const ref = columns.find((c) => c.bands.length && !c.hidden) ?? columns.find((c) => c.bands.length);
   const chain = [
     ...(base > 0 ? [{ y0: 0, y1: base, value: base }] : []),
     ...(ref ? ref.bands.map((b) => ({ y0: b.y0, y1: b.y1, value: b.value })) : [{ y0: base, y1: base + inner, value: inner }]),

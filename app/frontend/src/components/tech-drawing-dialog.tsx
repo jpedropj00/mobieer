@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { apiOpen, apiPost, apiPut } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 
@@ -17,15 +18,22 @@ export type DrawingSpec = {
   depth: number | null;
   top: number;
   base: number;
-  columns: { kind: Kind; width: number | null; count: number; heights: number[]; label: string | null }[];
+  columns: { kind: Kind; width: number | null; count: number; heights: number[]; label: string | null; shelves?: number }[];
+  layout?: "VISTA" | "PRANCHA";
+  thickness?: number;
+  finish?: Finish;
+  shelfDepth?: number | null;
+  specs?: string[];
 };
+type Finish = "MADEIRA" | "BRANCO" | "CINZA" | "PRETO";
+const FINISH_LABEL: Record<Finish, string> = { MADEIRA: "Madeira", BRANCO: "Branco", CINZA: "Cinza", PRETO: "Preto" };
 export type DrawingSheet = { id: string; room: string; title: string; scale: string | null; drawing?: DrawingSpec };
 
 const KIND_LABEL: Record<Kind, string> = { PRATELEIRAS: "Prateleiras", PORTAS: "Portas", GAVETAS: "Gavetas", VAO: "Vão livre" };
 const COUNT_LABEL: Record<Kind, string> = { PRATELEIRAS: "Nº de prateleiras", PORTAS: "Nº de portas", GAVETAS: "Nº de gavetas", VAO: "" };
 
-type Col = { kind: Kind; width: string; count: string; heights: string };
-type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; columns: Col[] };
+type Col = { kind: Kind; width: string; count: string; heights: string; shelves: string };
+type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; columns: Col[]; layout: "VISTA" | "PRANCHA"; thickness: string; finish: Finish; shelfDepth: string; specs: string };
 
 const num = (s: string) => Number(s.trim().replace(/\.(?=\d{3}\b)/g, "").replace(",", ".")) || 0;
 const show = (n: number | null | undefined) => (n ? String(n).replace(".", ",") : "");
@@ -34,15 +42,20 @@ const heightsOf = (s: string) => s.split(/[;/\n|]+|\s+(?=\d)/).map((p) => num(p)
 
 const emptyForm = (room: string): Form => ({
   room,
-  title: "VISTA A INTERNA",
-  scale: "1:20",
+  title: "PROJETO EXECUTIVO",
+  scale: "1:10",
+  layout: "PRANCHA",
+  thickness: "15",
+  finish: "MADEIRA",
+  shelfDepth: "",
+  specs: "",
   description: "",
   width: "",
   height: "",
   depth: "",
   top: "",
   base: "",
-  columns: [{ kind: "PRATELEIRAS", width: "", count: "5", heights: "" }],
+  columns: [{ kind: "PORTAS", width: "", count: "2", heights: "", shelves: "1" }],
 });
 
 const fromSheet = (s: DrawingSheet): Form => ({
@@ -55,7 +68,12 @@ const fromSheet = (s: DrawingSheet): Form => ({
   depth: show(s.drawing!.depth),
   top: show(s.drawing!.top),
   base: show(s.drawing!.base),
-  columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; ") })),
+  columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; "), shelves: String(c.shelves ?? 0) })),
+  layout: s.drawing!.layout ?? "VISTA",
+  thickness: show(s.drawing!.thickness) || "15",
+  finish: s.drawing!.finish ?? "MADEIRA",
+  shelfDepth: show(s.drawing!.shelfDepth),
+  specs: (s.drawing!.specs ?? []).join("\n"),
 });
 
 /**
@@ -87,7 +105,12 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
           depth: num(f.depth) || null,
           top: num(f.top),
           base: num(f.base),
-          columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null })),
+          columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0 })),
+          layout: f.layout,
+          thickness: num(f.thickness) || 15,
+          finish: f.finish,
+          shelfDepth: num(f.shelfDepth) || null,
+          specs: f.specs.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10),
         },
       };
       const call = sheet?.drawing ? apiPut<{ data: T & { sheetId: string; warnings: string[] }; message?: string }>(`${base}/drawings/${sheet.id}`, body) : apiPost<{ data: T & { sheetId: string; warnings: string[] }; message?: string }>(`${base}/drawings`, body);
@@ -110,10 +133,17 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{sheet?.drawing ? "Editar medidas do desenho" : "Desenhar por medidas"}</DialogTitle>
-          <DialogDescription>Informe as medidas em milímetros. O sistema desenha a vista frontal com as cotas e coloca como uma prancha da pasta técnica.</DialogDescription>
+          <DialogDescription>Informe as medidas em milímetros. O sistema desenha a prancha do projeto executivo e coloca na pasta técnica.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 text-sm">
+          <div className="space-y-1">
+            <Label className="text-xs">Formato</Label>
+            <div className="flex rounded-md border text-xs">
+              <button type="button" className={`flex-1 px-3 py-2 ${f.layout === "PRANCHA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "PRANCHA")}>Prancha completa (perspectivas, vistas e especificações)</button>
+              <button type="button" className={`flex-1 border-l px-3 py-2 ${f.layout === "VISTA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "VISTA")}>Só a vista frontal cotada</button>
+            </div>
+          </div>
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_90px]">
             <div className="space-y-1"><Label className="text-xs">Ambiente</Label><Input value={f.room} placeholder="Ex.: Suíte master" onChange={(e) => set("room", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Título da prancha</Label><Input value={f.title} onChange={(e) => set("title", e.target.value)} /></div>
@@ -132,12 +162,24 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
             <div className="space-y-1"><Label className="text-xs">Topo</Label><Input inputMode="decimal" value={f.top} placeholder="50" onChange={(e) => set("top", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Rodapé</Label><Input inputMode="decimal" value={f.base} placeholder="70" onChange={(e) => set("base", e.target.value)} /></div>
           </div>
+          {f.layout === "PRANCHA" && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="space-y-1"><Label className="text-xs">Espessura das chapas</Label><Input inputMode="decimal" value={f.thickness} placeholder="15" onChange={(e) => set("thickness", e.target.value)} /></div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cor do móvel no desenho</Label>
+                <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={f.finish} onChange={(e) => set("finish", e.target.value as Finish)}>
+                  {(Object.keys(FINISH_LABEL) as Finish[]).map((k) => <option key={k} value={k}>{FINISH_LABEL[k]}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1"><Label className="text-xs">Profundidade da prateleira</Label><Input inputMode="decimal" value={f.shelfDepth} placeholder="opcional" onChange={(e) => set("shelfDepth", e.target.value)} /></div>
+            </div>
+          )}
           {inner > 0 && <p className="text-xs text-muted-foreground">Vão interno (altura menos topo e rodapé): <span className="font-medium text-foreground">{String(Math.round(inner * 10) / 10).replace(".", ",")} mm</span></p>}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs">Colunas, da esquerda para a direita</Label>
-              <Button type="button" size="sm" variant="outline" disabled={f.columns.length >= 8} onClick={() => set("columns", [...f.columns, { kind: "PORTAS", width: "", count: "2", heights: "" }])}>
+              <Button type="button" size="sm" variant="outline" disabled={f.columns.length >= 8} onClick={() => set("columns", [...f.columns, { kind: "PORTAS", width: "", count: "2", heights: "", shelves: "0" }])}>
                 <Plus className="mr-1 h-3.5 w-3.5" /> Coluna
               </Button>
             </div>
@@ -156,6 +198,14 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                   ) : <div />}
                   <Button type="button" variant="ghost" size="icon" className="h-9 w-9 self-end" disabled={f.columns.length === 1} title="Remover coluna" onClick={() => set("columns", f.columns.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
                 </div>
+                {c.kind === "PORTAS" && (
+                  <div className="grid gap-2 sm:grid-cols-[150px_1fr]">
+                    <div className="space-y-1"><Label className="text-xs">Prateleiras atrás das portas</Label><Input inputMode="numeric" value={c.shelves} onChange={(e) => setCol(i, { shelves: e.target.value })} /></div>
+                    {Math.round(num(c.shelves)) > 0 && (
+                      <div className="space-y-1"><Label className="text-xs">Alturas dos vãos, de cima para baixo</Label><Input value={c.heights} placeholder="em branco divide por igual" onChange={(e) => setCol(i, { heights: e.target.value })} /></div>
+                    )}
+                  </div>
+                )}
                 {(c.kind === "PRATELEIRAS" || c.kind === "GAVETAS") && (
                   <div className="space-y-1">
                     <Label className="text-xs">{c.kind === "PRATELEIRAS" ? "Alturas dos vãos, de cima para baixo" : "Alturas das gavetas, de cima para baixo"} (separadas por ponto e vírgula)</Label>
@@ -168,6 +218,13 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
               </div>
             ))}
           </div>
+
+          {f.layout === "PRANCHA" && (
+            <div className="space-y-1">
+              <Label className="text-xs">Especificações (uma por linha) — entram no quadro, depois das que saem das medidas</Label>
+              <Textarea rows={4} value={f.specs} placeholder={"Ex.: MDF Carvalho Treviso 15mm\nInterno em MDF Branco\nPuxador fornecido pelo cliente"} onChange={(e) => set("specs", e.target.value)} />
+            </div>
+          )}
         </div>
 
         <DialogFooter>

@@ -5,6 +5,7 @@
  */
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from "pdf-lib";
 import { layoutDrawing, mm, type DrawingSpec } from "./tech-drawing.rules";
+import { boardPdf } from "./tech-board.pdf";
 
 const PW = 802;
 const PH = 453;
@@ -30,6 +31,7 @@ function safe(font: PDFFont, text: string) {
 }
 
 export async function drawingPdf(spec: DrawingSpec): Promise<{ pdf: Buffer; warnings: string[] }> {
+  if (spec.layout === "PRANCHA") return boardPdf(spec);
   const L = layoutDrawing(spec);
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -67,8 +69,9 @@ export async function drawingPdf(spec: DrawingSpec): Promise<{ pdf: Buffer; warn
     } else if (c.kind === "VAO") {
       p.drawRectangle({ x: cx, y: Y(L.base), width: cw, height: innerH * k, color: EMPTY });
     }
-    for (const y of c.lines) line(cx, Y(y), cx + cw, Y(y), c.kind === "GAVETAS" ? 0.6 : 1.1, rgb(0.45, 0.45, 0.45));
-    for (const b of c.bands) {
+    // prateleira atrás de porta não aparece na vista de fora
+    for (const y of c.hidden ? [] : c.lines) line(cx, Y(y), cx + cw, Y(y), c.kind === "GAVETAS" ? 0.6 : 1.1, rgb(0.45, 0.45, 0.45));
+    for (const b of c.hidden ? [] : c.bands) {
       const h = (b.y1 - b.y0) * k;
       if (b.label && h >= 10 && cw >= 40) center(b.label, cx + cw / 2, c.kind === "PRATELEIRAS" ? Y(b.y1) - 9 : Y((b.y0 + b.y1) / 2) - 2.5, 6, RED);
     }

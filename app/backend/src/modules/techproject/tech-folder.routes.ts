@@ -26,7 +26,7 @@ import { ok } from "../../utils/response";
 import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { techFolderPdf } from "./tech-folder.pdf";
 import { drawingPdf } from "./tech-drawing.pdf";
-import { COLUMN_KINDS, DrawingError, type DrawingSpec } from "./tech-drawing.rules";
+import { COLUMN_KINDS, DRAWING_FINISHES, DRAWING_LAYOUTS, DrawingError, type DrawingSpec } from "./tech-drawing.rules";
 import { SCALES, SHEET_TITLES, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
 
 const router = Router();
@@ -178,10 +178,16 @@ const drawingInput = z.object({
           count: z.coerce.number().int().min(0).max(30).default(0),
           heights: z.array(mmNum.positive()).max(31).default([]),
           label: z.string().trim().max(24).nullable().optional(),
+          shelves: z.coerce.number().int().min(0).max(30).optional(),
         })
       )
       .min(1, "Adicione pelo menos uma coluna")
       .max(8),
+    layout: z.enum(DRAWING_LAYOUTS).default("VISTA"),
+    thickness: mmNum.max(100).optional(),
+    finish: z.enum(DRAWING_FINISHES).optional(),
+    shelfDepth: mmNum.nullable().optional(),
+    specs: z.array(z.string().trim().max(90)).max(10).optional(),
   }),
 });
 
@@ -189,7 +195,9 @@ async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: str
   const spec: DrawingSpec = {
     ...input.spec,
     depth: input.spec.depth || null,
-    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null })),
+    shelfDepth: input.spec.shelfDepth || null,
+    specs: (input.spec.specs ?? []).filter(Boolean),
+    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0 })),
   };
   let out: Awaited<ReturnType<typeof drawingPdf>>;
   try {
