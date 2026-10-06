@@ -3,6 +3,7 @@
  * checagem de saúde usada por monitores de disponibilidade.
  */
 import { whereHasPermission } from "./user-roles";
+import { env } from "../config/env";
 import { prisma } from "../prisma";
 import { clientAlertText, newAlertStore, routeKey, serverAlertText, shouldAlert } from "./monitoring.rules";
 
@@ -49,7 +50,7 @@ export async function healthCheck() {
   const started = Date.now();
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return { ok: true, database: "ok", ms: Date.now() - started };
+    return { ok: true, database: "ok", ms: Date.now() - started, assistant: Boolean(env.ai.apiKey || env.assistant.apiKey) ? "configurado" : "sem chave" };
   } catch {
     return { ok: false, database: "fora do ar", ms: Date.now() - started };
   }

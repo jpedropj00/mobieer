@@ -3,12 +3,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { BookOpen, Download, ImagePlus, Loader2, Plus, SendHorizontal, Sparkles, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/use-auth";
 import { apiGet, apiPost, apiPostForm } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
 type Source = { title: string; document: string };
 type Message = { id: string; role: "user" | "assistant"; content: string; sources?: Source[]; error?: boolean; image?: string; render?: boolean };
+type Diagnosis = { provider?: string; model?: string; missing?: string | null; endpointAdjusted?: boolean; check?: { ok: boolean; ms: number; status?: number | null; reason?: string } };
 type Lighting = "DIA" | "NOITE" | "ESTUDIO";
 type Attachment = { file: File; url: string; adjust: boolean };
 type RenderResponse = { data: { image: string; mime: string; conversationId: string } };
@@ -42,7 +44,12 @@ export function AiAssistant() {
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const status = useQuery({ queryKey: ["ai-status"], queryFn: () => apiGet<{ data: { enabled: boolean; render: boolean } }>("/ai/status"), enabled: open, staleTime: 5 * 60_000 });
+  const { can } = useAuth();
+  const isAdmin = can("settings.manage");
+  const status = useQuery({ queryKey: ["ai-status"], queryFn: () => apiGet<{ data: { enabled: boolean; render: boolean; diagnosis?: Diagnosis } }>("/ai/status"), enabled: open, staleTime: 5 * 60_000 });
+  // teste de conexão com o provedor, só para quem administra
+  const check = useMutation({ mutationFn: () => apiGet<{ data: { diagnosis?: Diagnosis } }>("/ai/status", { check: "1" }) });
+  const diagnosis = check.data?.data.diagnosis ?? status.data?.data.diagnosis;
   const enabled = status.data?.data.enabled;
   const canRender = status.data?.data.render === true;
 
@@ -52,7 +59,11 @@ export function AiAssistant() {
       setConversationId(r.data.conversationId);
       setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", content: r.data.answer, sources: r.data.sources }]);
     },
-    onError: (e) => setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", content: errorMessage(e, "Não consegui responder agora. Tente de novo."), error: true }]),
+    onError: (e) => {
+      setMessages((m) => [...m, { id: crypto.randomUUID(), role: "assistant", content: errorMessage(e, "Não consegui responder agora. Tente de novo."), error: true }]);
+      // para quem administra, descobre na hora por que o provedor recusou
+      if (isAdmin) check.mutate();
+    },
   });
 
   // Render pelo chat: a imagem anexada + o texto (acabamentos ou ajuste) viram um render
@@ -145,6 +156,20 @@ export function AiAssistant() {
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {enabled === false && (
           <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">O Mobieer AI ainda não está configurado neste ambiente. Peça ao administrador para definir a chave do assistente no servidor.</p>
+        )}
+        {isAdmin && diagnosis && (enabled === false || check.data || check.isPending) && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            <p className="font-medium">Diagnóstico (só administradores veem)</p>
+            {diagnosis.missing ? (
+              <p className="mt-1">{diagnosis.missing}</p>
+            ) : (
+              <>
+                <p className="mt-1">Provedor: {diagnosis.provider} · modelo: {diagnosis.model}{diagnosis.endpointAdjusted ? " · o endereço configurado era de outro provedor e foi corrigido pela chave" : ""}</p>
+                {check.isPending && <p className="mt-1">Testando a conexão…</p>}
+                {diagnosis.check && (diagnosis.check.ok ? <p className="mt-1">Conexão com o provedor: funcionando ({diagnosis.check.ms} ms).</p> : <p className="mt-1">O provedor recusou{diagnosis.check.status ? ` (HTTP ${diagnosis.check.status})` : ""}: {diagnosis.check.reason}</p>)}
+              </>
+            )}
+          </div>
         )}
         {enabled !== false && !messages.length && (
           <div className="pt-6 text-center">

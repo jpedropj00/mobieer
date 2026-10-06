@@ -17,6 +17,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError, BadRequestError } from "../../utils/ApiError";
 import { hitLimit, type RateStore } from "../../utils/rate-limit";
 import { ok } from "../../utils/response";
+import { env } from "../../config/env";
 import { MAX_MESSAGE_CHARS } from "./assistant.rules";
 import { chat, conversationMessages, recordRender } from "./assistant.service";
 import { imageProvider } from "./provider/image";
@@ -46,10 +47,32 @@ const toolUser = (u: Express.Request["user"]): ToolUser => ({ id: u!.id, organiz
 
 router.get(
   "/status",
-  asyncHandler(async (_req, res) => {
-    const enabled = aiProvider().enabled;
+  asyncHandler(async (req, res) => {
+    const provider = aiProvider();
+    const enabled = provider.enabled;
     const knowledge = enabled ? await knowledgeStats().catch(() => ({ documents: 0, chunks: 0 })) : { documents: 0, chunks: 0 };
-    return ok(res, { enabled, knowledge, render: imageProvider().enabled });
+    const base = { enabled, knowledge, render: imageProvider().enabled };
+    // o diagnóstico (qual provedor, qual modelo, por que falhou) é só para quem administra
+    if (!req.user!.permissions.includes("settings.manage")) return ok(res, base);
+    const gemini = provider.name === "gemini";
+    const diagnosis: Record<string, unknown> = {
+      provider: gemini ? "Gemini" : env.ai.providerName,
+      model: gemini ? env.assistant.model : env.ai.model,
+      missing: enabled ? null : "Nenhuma chave de IA no servidor: defina AI_API_KEY (ou GEMINI_API_KEY) nas variáveis de ambiente do backend e publique de novo.",
+      endpointAdjusted: !gemini && env.ai.endpointAdjusted,
+    };
+    // ?check=1 faz uma chamada mínima ao provedor para dizer se a chave e o modelo funcionam
+    if (enabled && req.query.check === "1") {
+      const started = Date.now();
+      try {
+        await provider.run({ system: "Responda apenas com a palavra OK.", history: [], message: "teste de conexão", tools: [], executeTool: async () => null });
+        diagnosis.check = { ok: true, ms: Date.now() - started };
+      } catch (e) {
+        const err = e as AiProviderError;
+        diagnosis.check = { ok: false, ms: Date.now() - started, status: err.status ?? null, reason: err.detail || err.message };
+      }
+    }
+    return ok(res, { ...base, diagnosis });
   })
 );
 
