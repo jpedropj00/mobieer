@@ -24,7 +24,21 @@ export type TechSheet = {
   stamp: boolean;
   /** Prancha desenhada pelo sistema a partir das medidas (dá para editar e gerar de novo). */
   drawing?: DrawingSpec;
+  /** Anotações feitas por cima da prancha (traço à mão e texto): PNG transparente do tamanho da área do desenho. */
+  overlay?: { storageKey: string } | null;
 };
+
+/** Proporção da área do desenho na folha (largura / altura): a tela de anotar usa a mesma. */
+export const SHEET_AREA = { w: 801.92, h: 453.32 };
+
+/** "data:image/png;base64,..." → bytes, só se for mesmo um PNG. */
+export function pngFromDataUrl(dataUrl: string): Buffer | null {
+  const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!m) return null;
+  const buf = Buffer.from(m[1], "base64");
+  const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  return buf.length > 8 && sig.every((b, i) => buf[i] === b) ? buf : null;
+}
 
 export type TechFolderData = { sheets: TechSheet[]; includeSpecs: boolean; notes: string[] };
 

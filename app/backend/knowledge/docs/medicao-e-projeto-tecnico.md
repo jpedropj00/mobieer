@@ -36,6 +36,11 @@ O sistema não desenha o 3D: ele só posiciona as imagens enviadas. Sem imagem, 
 
 Se as alturas não fecharem com o vão interno (altura menos topo e rodapé), o sistema desenha mesmo assim e avisa a diferença. Para mudar as medidas depois, use o botão de lápis e régua na prancha. O desenho é só a vista frontal em 2D: perspectiva e planta continuam vindo do Promob.
 
+## Desenhar e escrever na prancha
+Cada prancha da pasta técnica tem o botão **Anotar** (o lápis). Ele abre a prancha em tela grande para você desenhar à mão e escrever por cima: marcar um ponto, riscar, escrever "maleiro", avisar de uma tomada. Há três ferramentas (**Desenhar**, **Escrever** e **Borracha**), cinco cores e três espessuras, além de desfazer e limpar. Em **Escrever**, clique no ponto da prancha, digite e aperte Enter.
+
+As anotações ficam numa camada separada: a borracha nunca apaga o desenho, e dá para reabrir e continuar depois. Elas saem no PDF da pasta técnica no mesmo lugar. Funciona em imagem, em PDF e nas pranchas desenhadas por medidas; só não vale para página de PDF que entra sem o carimbo da loja.
+
 ## Aprovação do projeto técnico
 Na mesma aba fica a aprovação: a equipe publica o projeto técnico para o cliente, que aprova ou pede ajustes pelo portal. Cada rodada fica registrada com data, quem decidiu e o comentário do cliente. Com a aprovação, o projeto pode ser liberado para produção.
 

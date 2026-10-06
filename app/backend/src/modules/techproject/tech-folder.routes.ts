@@ -8,6 +8,7 @@
  *   GET  /sheets/:sheetId/file   o arquivo da prancha
  *   POST /drawings            desenha uma vista cotada a partir das medidas
  *   PUT  /drawings/:sheetId   refaz o desenho com medidas novas
+ *   GET/PUT/DELETE /sheets/:sheetId/overlay   anotações por cima da prancha
  *   GET  .pdf      gera a pasta
  *   POST /publish  guarda nos documentos do projeto (Projeto técnico)
  */
@@ -27,7 +28,7 @@ import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { techFolderPdf } from "./tech-folder.pdf";
 import { drawingPdf } from "./tech-drawing.pdf";
 import { COLUMN_KINDS, DRAWING_FINISHES, DRAWING_LAYOUTS, DrawingError, type DrawingImage, type DrawingSpec } from "./tech-drawing.rules";
-import { SCALES, SHEET_TITLES, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
+import { SCALES, SHEET_AREA, SHEET_TITLES, pngFromDataUrl, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
 
 const router = Router();
 router.use(authenticate);
@@ -73,7 +74,9 @@ function view(p: Awaited<ReturnType<typeof projectFor>>, data: TechFolderData) {
   const quote = p.quotes[0] ?? null;
   const specs = specBlocks(quote?.items ?? []);
   const rooms = [...new Set([...specs.map((s) => s.room), ...(quote?.items ?? []).map((i) => i.room?.trim()).filter((r): r is string => Boolean(r))])];
-  return { ...data, specs, rooms, quote: quote ? { number: quote.number, status: quote.status } : null, titles: SHEET_TITLES, scales: SCALES };
+  // a tela só precisa saber se a prancha tem anotação, não onde o arquivo está
+  const sheets = data.sheets.map((s) => ({ ...s, overlay: undefined, annotated: Boolean(s.overlay) }));
+  return { ...data, sheets, specs, rooms, quote: quote ? { number: quote.number, status: quote.status } : null, titles: SHEET_TITLES, scales: SCALES, area: SHEET_AREA };
 }
 
 router.get(
@@ -283,6 +286,7 @@ router.delete(
     await save(p.id, { ...cur, sheets });
     // o arquivo só sai quando nenhuma outra prancha (outra página do mesmo PDF) usa
     if (!sheets.some((s) => s.storageKey === target.storageKey)) await storage.remove(target.storageKey).catch(() => undefined);
+    if (target.overlay) await storage.remove(target.overlay.storageKey).catch(() => undefined);
     // as imagens 3D da prancha completa saem junto
     for (const img of [target.drawing?.images?.closed, target.drawing?.images?.open]) if (img) await storage.remove(img.storageKey).catch(() => undefined);
     return ok(res, view(p, { ...cur, sheets }), "Prancha removida");
@@ -302,6 +306,55 @@ router.get(
   })
 );
 
+// ---- anotações por cima da prancha (desenho à mão e texto)
+router.get(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/overlay",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const s = (await load(p.id)).sheets.find((x) => x.id === req.params.sheetId);
+    if (!s?.overlay) throw new NotFoundError("Esta prancha não tem anotações");
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.send(await storage.getBytes(s.overlay.storageKey));
+  })
+);
+
+router.put(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/overlay",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const { dataUrl } = z.object({ dataUrl: z.string().max(4_500_000) }).parse(req.body);
+    const png = pngFromDataUrl(dataUrl);
+    if (!png) throw new BadRequestError("Anotação inválida. Tente salvar de novo.");
+    const cur = await load(p.id);
+    const old = cur.sheets.find((s) => s.id === req.params.sheetId);
+    if (!old) throw new NotFoundError("Prancha não encontrada");
+    const storageKey = buildStorageKey(`${p.id}/pasta-tecnica`, `anotacao-${old.id}.png`);
+    await storage.put(storageKey, png, "image/png");
+    const data = { ...cur, sheets: cur.sheets.map((s) => (s.id === old.id ? { ...s, overlay: { storageKey } } : s)) };
+    await save(p.id, data);
+    if (old.overlay) await storage.remove(old.overlay.storageKey).catch(() => undefined);
+    return ok(res, view(p, data), "Anotações salvas na prancha");
+  })
+);
+
+router.delete(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/overlay",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const cur = await load(p.id);
+    const old = cur.sheets.find((s) => s.id === req.params.sheetId);
+    if (!old) throw new NotFoundError("Prancha não encontrada");
+    const data = { ...cur, sheets: cur.sheets.map((s) => (s.id === old.id ? { ...s, overlay: null } : s)) };
+    await save(p.id, data);
+    if (old.overlay) await storage.remove(old.overlay.storageKey).catch(() => undefined);
+    return ok(res, view(p, data), "Anotações removidas");
+  })
+);
+
 async function pdfFor(projectId: string, organizationId: string) {
   const p = await projectFor(projectId, organizationId);
   const data = await load(p.id);
@@ -312,7 +365,7 @@ async function pdfFor(projectId: string, organizationId: string) {
   const pdf = await techFolderPdf({
     client: p.client.name,
     project: { code: p.code, name: p.name },
-    sheets: data.sheets.map((s) => ({ ...s, bytes: files.get(s.storageKey)! })),
+    sheets: await Promise.all(data.sheets.map(async (s) => ({ ...s, bytes: files.get(s.storageKey)!, overlayBytes: s.overlay ? await storage.getBytes(s.overlay.storageKey).catch(() => null) : null }))),
     specs,
     notes: data.notes,
     issuedAt: new Date(),

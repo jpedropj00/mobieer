@@ -94,3 +94,27 @@ test("prancha completa: entra com a imagem 3D enviada e sai em uma página", asy
   assert.equal((await PDFDocument.load(ruim.pdf)).getPageCount(), 1);
   assert.ok(com.pdf.length > ruim.pdf.length);
 });
+
+test("anotações da prancha: só PNG de verdade é aceito e a anotação entra no PDF da pasta", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { pngFromDataUrl } = await import("../src/modules/techproject/tech-folder.rules");
+  const { techFolderPdf } = await import("../src/modules/techproject/tech-folder.pdf");
+  const png = fs.readFileSync(path.join(process.cwd(), "assets", "cronograma", "logo.png"));
+  const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+  assert.deepEqual(pngFromDataUrl(dataUrl), png);
+  assert.equal(pngFromDataUrl("data:image/png;base64," + Buffer.from("<svg onload=alert(1)>").toString("base64")), null);
+  assert.equal(pngFromDataUrl("data:text/html;base64,AAAA"), null);
+  assert.equal(pngFromDataUrl("https://exemplo.com/a.png"), null);
+
+  const { pdf: vista } = await drawingPdf(armario);
+  const sheet = { id: "1", room: "Suíte", title: "VISTA A", scale: "1:20", note: null, storageKey: "k", fileName: "d.pdf", mime: "application/pdf", page: 0, stamp: true, bytes: vista };
+  const base = { client: "Cliente", project: { code: "P-1", name: "Suíte" }, specs: [], notes: [], issuedAt: new Date("2026-10-06T12:00:00Z") };
+  const sem = await techFolderPdf({ ...base, sheets: [sheet] });
+  const com = await techFolderPdf({ ...base, sheets: [{ ...sheet, overlayBytes: png }] });
+  assert.equal((await PDFDocument.load(com)).getPageCount(), 2);
+  assert.ok(com.length > sem.length + 1000);
+  // anotação corrompida não derruba a pasta
+  const ruim = await techFolderPdf({ ...base, sheets: [{ ...sheet, overlayBytes: Buffer.from("x") }] });
+  assert.equal((await PDFDocument.load(ruim)).getPageCount(), 2);
+});

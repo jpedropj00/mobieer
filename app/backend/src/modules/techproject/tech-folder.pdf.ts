@@ -55,7 +55,7 @@ function wrap(font: PDFFont, text: string, size: number, max: number): string[] 
 export type TechFolderPdfInput = {
   client: string;
   project: { code: string; name: string };
-  sheets: (TechSheet & { bytes: Buffer })[];
+  sheets: (TechSheet & { bytes: Buffer; overlayBytes?: Buffer | null })[];
   specs: SpecBlock[];
   notes: string[];
   issuedAt: Date;
@@ -162,7 +162,7 @@ export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
   });
 
   // ---------------- pranchas
-  const ordered = sheetsByRoom(d.sheets).flatMap((g) => g.sheets) as (TechSheet & { bytes: Buffer })[];
+  const ordered = sheetsByRoom(d.sheets).flatMap((g) => g.sheets) as (TechSheet & { bytes: Buffer; overlayBytes?: Buffer | null })[];
   const pdfCache = new Map<string, PDFDocument>();
   for (const [i, s] of ordered.entries()) {
     const folha = `FOLHA ${String(index[i].n).padStart(2, "0")}/${String(total).padStart(2, "0")}`;
@@ -187,6 +187,14 @@ export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
       const img = /png/i.test(s.mime) ? await doc.embedPng(s.bytes) : await doc.embedJpg(s.bytes);
       const r = fitRect(img.width, img.height, area);
       p.drawImage(img, { x: r.x, y: r.y, width: r.w, height: r.h });
+    }
+    // anotações (traço e texto) por cima do desenho, na mesma área
+    if (s.overlayBytes) {
+      try {
+        p.drawImage(await doc.embedPng(s.overlayBytes), { x: area.x, y: area.y, width: area.w, height: area.h });
+      } catch {
+        /* anotação ilegível fica de fora; a prancha sai */
+      }
     }
     const baseY = STAMP.y + STAMP.h + 10;
     right(p, s.title.toUpperCase(), W - M - 22, baseY, 10);
