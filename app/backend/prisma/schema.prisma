@@ -2592,6 +2592,8 @@ model FinanceTransaction {
 
   payments    FinancePayment[]
   attachments FinanceAttachment[]
+  // compras de dentro de uma fatura de cartão (data, loja, valor)
+  items       FinanceDocumentItem[]
 
   createdById String?
   createdBy   User?    @relation("FinanceCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -3841,6 +3843,22 @@ model FinancePayment {
 }
 
 /// Arquivos do documento financeiro (o boleto/NF e os comprovantes).
+/// Linha de uma fatura de cartão: onde foi gasto e quanto.
+model FinanceDocumentItem {
+  id            String             @id @default(cuid())
+  transactionId String
+  transaction   FinanceTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  position      Int                @default(0)
+  date          DateTime?
+  store         String
+  description   String?
+  installment   String? // "2/3"
+  amount        Decimal            @db.Decimal(12, 2)
+  createdAt     DateTime           @default(now())
+
+  @@index([transactionId])
+}
+
 model FinanceAttachment {
   id                        String                @id @default(cuid())
   transactionId             String

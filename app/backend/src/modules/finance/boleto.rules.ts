@@ -176,3 +176,72 @@ export function dueDateFromText(text: string): string | null {
   }
   return null;
 }
+
+/** Uma compra de dentro da fatura de cartão. */
+export type InvoiceItem = {
+  /** aaaa-mm-dd */
+  date: string | null;
+  /** onde foi gasto (estabelecimento) */
+  store: string;
+  /** o lançamento como veio na fatura */
+  description: string;
+  /** "2/3" quando é parcela */
+  installment: string | null;
+  amount: number;
+};
+
+const ITEM_LINE = /^(\d{2})\/(\d{2})\/(\d{4})\s+(.+?)\s+(-?\d{1,3}(?:\.\d{3})*,\d{2})$/;
+// "Compra a Vista sem Juros Visa LOJA" / "Parcela de compra lojista Visa - Parc.1/2 LOJA"
+const ITEM_PREFIX = /^(?:compra\s+(?:a\s+vista|parcelada)(?:\s+(?:sem|com)\s+juros)?|parcela\s+de\s+compra(?:\s+lojista)?)\s*(?:visa|master(?:card)?|elo|hiper(?:card)?|amex)?\s*/i;
+const ITEM_PARC = /\s*-?\s*parc(?:ela)?\.?\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*/i;
+
+/**
+ * Lançamentos de uma fatura de cartão: uma linha por compra, com a loja.
+ * Vale o trecho dos lançamentos do período; o quadro de "próximas faturas"
+ * fica de fora (são parcelas que ainda vão cair). Pagamento da fatura anterior
+ * não é gasto e também fica de fora.
+ */
+export function invoiceItemsFromText(text: string): InvoiceItem[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  const start = lines.findIndex((l) => /lan[cç]amentos/i.test(l));
+  const items: InvoiceItem[] = [];
+  for (let i = Math.max(0, start); i < lines.length; i++) {
+    if (/pr[oó]ximas?\s+faturas?/i.test(lines[i]) && items.length) break;
+    const m = ITEM_LINE.exec(lines[i]);
+    if (!m) continue;
+    const [, d, mo, y, raw, val] = m;
+    const description = raw.replace(/\s+/g, " ").trim();
+    if (/^pagamento\b/i.test(description)) continue;
+    const parc = ITEM_PARC.exec(description);
+    const store =
+      description
+        .replace(ITEM_PREFIX, "")
+        .replace(ITEM_PARC, " ")
+        // "DL"/"PG" na frente é só a marca do intermediador de pagamento
+        .replace(/^(?:DL|PG)\s+/i, "")
+        .replace(/\s+/g, " ")
+        .trim() || description;
+    const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+    items.push({
+      date: date.getUTCDate() === Number(d) ? iso(date) : null,
+      store: store.slice(0, 160),
+      description: description.slice(0, 300),
+      installment: parc ? `${Number(parc[1])}/${Number(parc[2])}` : null,
+      amount: Number(val.replace(/\./g, "").replace(",", ".")),
+    });
+  }
+  return items;
+}
+
+/** Total por loja, do maior para o menor. */
+export function invoiceTotalsByStore(items: { store: string; amount: number }[]): { store: string; count: number; total: number }[] {
+  const map = new Map<string, { store: string; count: number; total: number }>();
+  for (const it of items) {
+    const key = it.store.toUpperCase();
+    const cur = map.get(key) ?? { store: it.store, count: 0, total: 0 };
+    cur.count += 1;
+    cur.total = Math.round((cur.total + it.amount) * 100) / 100;
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
+}

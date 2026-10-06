@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/states";
 import { apiDelete, apiDownload, apiGet, apiOpen, apiPatch, apiPost, apiPostForm } from "@/services/api";
 import { BoletoReader } from "@/components/boleto-reader";
+import { InvoiceItems, type InvoiceItem } from "@/components/invoice-items";
 import { errorMessage } from "@/lib/errors";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -66,6 +67,8 @@ type DocDetail = FinanceDoc & {
     issuedReceiptId: string | null;
   }[];
   attachments: { id: string; kind: string; fileName: string; size: number | null; uploadedBy: { name: string } | null; createdAt: string }[];
+  /** compras de dentro da fatura de cartão */
+  items?: InvoiceItem[];
 };
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -674,6 +677,8 @@ function DocumentoDetalhe({
               </div>
 
               {d.notes && <p className="whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-sm">{d.notes}</p>}
+
+              {d.items && d.items.length > 0 && <InvoiceItems items={d.items} />}
 
               {/* Pagamentos */}
               <section>
