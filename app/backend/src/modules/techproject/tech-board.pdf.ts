@@ -160,8 +160,8 @@ export async function boardPdf(spec: DrawingSpec): Promise<{ pdf: Buffer; warnin
 
   // ---------------------------------------------------------------- grade da prancha
   const m = 10;
-  const rowTop = { y: 268, h: PH - 268 - m };
-  const rowMid = { y: 144, h: 102 };
+  const rowTop = { y: 290, h: PH - 290 - m };
+  const rowMid = { y: 142, h: 122 };
   const rowBot = { y: m + 12, h: 84 };
 
   // linha de cima: perspectivas e especificações
@@ -203,12 +203,12 @@ export async function boardPdf(spec: DrawingSpec): Promise<{ pdf: Buffer; warnin
   }
   {
     const c = cell(1);
-    const k = fit(c, L.width, L.height, 62, 34);
-    const ox = c.x + 46 + (c.w - 62 - L.width * k) / 2;
+    const k = fit(c, L.width, L.height, 78, 34);
+    const ox = c.x + 62 + (c.w - 78 - L.width * k) / 2;
     const oy = c.y + 16;
     front(ox, oy, k, true);
     for (const s of L.chain) dimV(ox, oy + s.y0 * k, oy + s.y1 * k, mm(s.value), -9);
-    dimV(ox, oy, oy + L.height * k, mm(L.height), -27);
+    dimV(ox, oy, oy + L.height * k, mm(L.height), -44);
     dimH(ox, ox + L.width * k, oy, mm(L.width), -10);
     const first = L.columns.find((x) => x.kind !== "GAVETAS") ?? L.columns[0];
     center(mm(first.width - 2 * t), ox + (first.x + first.width / 2) * k, oy + (L.base + t) * k + 4, 6.5, font, DIM);
@@ -250,7 +250,7 @@ export async function boardPdf(spec: DrawingSpec): Promise<{ pdf: Buffer; warnin
     for (const col of L.columns) if (col.x > 0) rect(ox + (col.x - t / 2) * k, oy, Math.max(t * k, 1), (depth - t) * k, tone.front, tone.edge, 0.3);
     dimH(ox, ox + L.width * k, oy + depth * k, mm(L.width), 9);
     dimV(ox, oy, oy + depth * k, mm(depth), -11);
-    center(mm(L.width - 2 * t), ox + (L.width * k) / 2, oy + (depth * k) / 2 - 2, 6.5, font, DIM);
+    center(mm(L.width - 2 * t), ox + (L.columns[0].x + L.columns[0].width / 2) * k, oy + (depth * k) / 2 - 2, 6.5, font, DIM);
     text(mm(t), ox + t * k + 2, oy + 3, 5.5, font, DIM);
     caption("PLANTA BAIXA (INTERNA)", c.x + c.w / 2, c.y - 8);
   }
