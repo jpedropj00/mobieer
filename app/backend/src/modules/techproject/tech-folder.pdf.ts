@@ -55,7 +55,7 @@ function wrap(font: PDFFont, text: string, size: number, max: number): string[] 
 export type TechFolderPdfInput = {
   client: string;
   project: { code: string; name: string };
-  sheets: (TechSheet & { bytes: Buffer })[];
+  sheets: (TechSheet & { bytes: Buffer; overlayBytes?: Buffer | null })[];
   specs: SpecBlock[];
   notes: string[];
   issuedAt: Date;
@@ -72,16 +72,11 @@ export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
   const text = (p: PDFPage, s: string, x: number, y: number, size: number, f = font, color = INK) => p.drawText(safe(f, s), { x, y, size, font: f, color });
   const right = (p: PDFPage, s: string, x: number, y: number, size: number, f = font, color = INK) => text(p, s, x - f.widthOfTextAtSize(safe(f, s), size), y, size, f, color);
 
-  const stamp = (p: PDFPage, room: string, project?: string | null) => {
+  const stamp = (p: PDFPage, room: string) => {
     p.drawRectangle({ x: M, y: STAMP.y, width: W - 2 * M, height: STAMP.h, borderColor: ORANGE, borderWidth: 0.6 });
     p.drawRectangle({ x: M + 3, y: STAMP.y + 3, width: W - 2 * M - 6, height: STAMP.h - 6, borderColor: ORANGE, borderWidth: 0.4 });
     text(p, `CLIENTE:  ${d.client.toUpperCase()}`, M + 22, STAMP.y + 26, 12, font, GRAY);
     text(p, `AMBIENTE:  ${room.toUpperCase()}`, M + 22, STAMP.y + 11, 12, font, GRAY);
-    // prancha completa: o que é o móvel, no meio do carimbo
-    if (project) {
-      text(p, "PROJETO EXECUTIVO", W / 2 - 20, STAMP.y + 26, 11, font, GRAY);
-      text(p, safe(font, project.toUpperCase()).slice(0, 44), W / 2 - 20, STAMP.y + 12, 9, font, GRAY);
-    }
     if (logo) {
       const lh = 30;
       const lw = (logo.width / logo.height) * lh;
@@ -162,7 +157,7 @@ export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
   });
 
   // ---------------- pranchas
-  const ordered = sheetsByRoom(d.sheets).flatMap((g) => g.sheets) as (TechSheet & { bytes: Buffer })[];
+  const ordered = sheetsByRoom(d.sheets).flatMap((g) => g.sheets) as (TechSheet & { bytes: Buffer; overlayBytes?: Buffer | null })[];
   const pdfCache = new Map<string, PDFDocument>();
   for (const [i, s] of ordered.entries()) {
     const folha = `FOLHA ${String(index[i].n).padStart(2, "0")}/${String(total).padStart(2, "0")}`;
@@ -188,11 +183,19 @@ export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
       const r = fitRect(img.width, img.height, area);
       p.drawImage(img, { x: r.x, y: r.y, width: r.w, height: r.h });
     }
+    // anotações (traço e texto) por cima do desenho, na mesma área
+    if (s.overlayBytes) {
+      try {
+        p.drawImage(await doc.embedPng(s.overlayBytes), { x: area.x, y: area.y, width: area.w, height: area.h });
+      } catch {
+        /* anotação ilegível fica de fora; a prancha sai */
+      }
+    }
     const baseY = STAMP.y + STAMP.h + 10;
     right(p, s.title.toUpperCase(), W - M - 22, baseY, 10);
     if (s.scale) text(p, s.scale, W / 2 - font.widthOfTextAtSize(s.scale, 8) / 2, baseY, 8);
     if (s.note) right(p, s.note, W - M - 22, baseY + 16, 9, font, RED);
-    stamp(p, s.room, s.drawing?.layout === "PRANCHA" ? s.drawing.description || s.title : null);
+    stamp(p, s.room);
     right(p, folha, W - M, STAMP.y - 14, 8, font, GRAY);
   }
 

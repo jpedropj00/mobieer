@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, FileDown, FileText, FolderUp, ImagePlus, Loader2, PencilRuler, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileDown, FileText, FolderUp, ImagePlus, Loader2, PencilLine, PencilRuler, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,91 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiDelete, apiGet, apiObjectUrl, apiOpen, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 import { TechDrawingDialog, type DrawingSpec } from "@/components/tech-drawing-dialog";
+import { SheetAnnotator } from "@/components/sheet-annotator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { pdfPageToDataUrl } from "@/lib/pdf-preview";
+import { getToken } from "@/services/api";
 
-type Sheet = { id: string; room: string; title: string; scale: string | null; note: string | null; fileName: string; mime: string; page: number | null; stamp: boolean; drawing?: DrawingSpec };
+type Sheet = { id: string; room: string; title: string; scale: string | null; note: string | null; fileName: string; mime: string; page: number | null; stamp: boolean; drawing?: DrawingSpec; annotated?: boolean };
 type Spec = { room: string; rows: { label: string; value: string }[]; description: string | null };
-type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[] };
+type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[]; area?: { w: number; h: number } };
+
+/** Tela de anotar uma prancha: carrega a prancha de fundo e as anotações já salvas. */
+function AnnotateDialog({ base, sheet, aspect, onClose, onSaved }: { base: string; sheet: Sheet | null; aspect: number; onClose: () => void; onSaved: (d: Folder) => void }) {
+  const [bg, setBg] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const getter = useRef<() => string | null>(() => null);
+  const register = useRef((fn: () => string | null) => { getter.current = fn; }).current;
+
+  useEffect(() => {
+    if (!sheet) return;
+    let alive = true;
+    const made: string[] = [];
+    setBg(null); setOverlay(null); setReady(false);
+    const headers = { Authorization: `Bearer ${getToken() ?? ""}` };
+    (async () => {
+      try {
+        const r = await fetch(`/api${base}/sheets/${sheet.id}/file`, { headers });
+        if (r.ok) {
+          if (sheet.mime === "application/pdf") {
+            const url = await pdfPageToDataUrl(await r.arrayBuffer(), sheet.page ?? 0);
+            if (alive) setBg(url);
+          } else {
+            const url = URL.createObjectURL(await r.blob());
+            made.push(url);
+            if (alive) setBg(url);
+          }
+        }
+      } catch {
+        // sem fundo dá para anotar do mesmo jeito
+      }
+      if (sheet.annotated) {
+        try {
+          const r = await fetch(`/api${base}/sheets/${sheet.id}/overlay`, { headers });
+          if (r.ok) {
+            const url = URL.createObjectURL(await r.blob());
+            made.push(url);
+            if (alive) setOverlay(url);
+          }
+        } catch {
+          // começa em branco
+        }
+      }
+      if (alive) setReady(true);
+    })();
+    return () => { alive = false; made.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [base, sheet]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const dataUrl = getter.current();
+      return dataUrl ? apiPut<{ data: Folder; message?: string }>(`${base}/sheets/${sheet!.id}/overlay`, { dataUrl }) : apiDelete<{ data: Folder; message?: string }>(`${base}/sheets/${sheet!.id}/overlay`);
+    },
+    onSuccess: (r) => { toast.success(r.message ?? "Anotações salvas"); onSaved(r.data); onClose(); },
+    onError: (e) => toast.error(errorMessage(e, "Não foi possível salvar as anotações")),
+  });
+
+  return (
+    <Dialog open={sheet !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[94vh] max-w-5xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Anotar — {sheet?.title}</DialogTitle>
+          <DialogDescription>Desenhe e escreva por cima da prancha. As anotações saem no PDF da pasta técnica, no mesmo lugar.</DialogDescription>
+        </DialogHeader>
+        {sheet && ready ? (
+          <SheetAnnotator key={`${sheet.id}-${overlay ?? ""}`} backgroundUrl={bg} initialOverlayUrl={overlay} aspect={aspect} registerGetter={register} />
+        ) : (
+          <div className="flex justify-center py-16"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={!ready || save.isPending} onClick={() => save.mutate()}>{save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Salvar anotações</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function SheetThumb({ projectId, sheet }: { projectId: string; sheet: Sheet }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -58,6 +139,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
   const [dirty, setDirty] = useState(false);
   // desenho por medidas: null = fechado; "new" = novo; ou a prancha em edição
   const [drawing, setDrawing] = useState<Sheet | "new" | null>(null);
+  const [annotating, setAnnotating] = useState<Sheet | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const apply = (d: Folder) => {
@@ -179,6 +261,10 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
               </div>
               {canManage && (
                 <div className="flex shrink-0 gap-0.5">
+                  {/* página de PDF que entra sem carimbo vai como veio do Promob: não tem área para anotar */}
+                  {(s.stamp || s.mime !== "application/pdf") && (
+                    <Button variant={s.annotated ? "secondary" : "ghost"} size="icon" className="h-8 w-8" disabled={dirty} onClick={() => setAnnotating(s)} title={dirty ? "Salve as alterações antes de anotar" : s.annotated ? "Editar anotações" : "Desenhar e escrever na prancha"}><PencilLine className="h-4 w-4" /></Button>
+                  )}
                   {s.drawing && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={dirty} onClick={() => setDrawing(s)} title={dirty ? "Salve as alterações antes de editar" : "Editar medidas"}><PencilRuler className="h-4 w-4" /></Button>}
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === 0} onClick={() => move(i, -1)} title="Subir"><ArrowUp className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === sheets.length - 1} onClick={() => move(i, 1)} title="Descer"><ArrowDown className="h-4 w-4" /></Button>
@@ -196,6 +282,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
           <Textarea rows={2} disabled={!canManage} placeholder="Ex.: Prateleira e fechamento maiores para galgar in loco." value={notes} onChange={(e) => { setNotes(e.target.value); setDirty(true); }} />
         </div>
       </CardContent>
+      <AnnotateDialog base={base} sheet={annotating} aspect={d.area ? d.area.w / d.area.h : 801.92 / 453.32} onClose={() => setAnnotating(null)} onSaved={apply} />
       <TechDrawingDialog<Folder> base={base} open={drawing !== null} onClose={() => setDrawing(null)} onSaved={apply} sheet={drawing && drawing !== "new" ? drawing : null} defaultRoom={room.trim() || d.rooms[0] || ""} />
     </Card>
   );
