@@ -14,3 +14,14 @@ O botão **Ler boleto** cadastra uma conta a pagar a partir do boleto. Dá para 
 
 ## Solicitar ao financeiro
 Menu **Solicitar ao financeiro**: quem tem essa permissão registra um pedido (por exemplo, uma compra ou um reembolso) e acompanha a resposta.
+
+## Categorias do lançamento
+No formulário de lançamento, o campo Categoria traz as categorias do sistema e as criadas pela loja. Para criar uma, escolha **＋ Nova categoria…** no fim da lista e digite o nome; ela passa a aparecer para todos, separada por receita ou despesa.
+
+## Metas de investimento
+Aba **Investimentos** do Financeiro. É a lista do que a loja quer implantar e quanto custa.
+1. Em **Nova meta de investimento**, informe o que quer implantar, quanto custa, quanto já está reservado e, se quiser, para quando.
+2. Cada meta mostra a barra do quanto já foi reservado e quanto falta.
+3. Toque no círculo da meta para marcar como implantada.
+
+No topo ficam os totais: planejado em aberto, já reservado e quanto falta. As metas não geram lançamentos: são um quadro de planejamento.

@@ -22,6 +22,7 @@ import { EmptyState, PageSkeleton } from "@/components/ui/states";
 import { apiDelete, apiDownload, apiGet, apiPatch, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { useAuth } from "@/hooks/use-auth";
 import { errorMessage, formatCurrency, localIsoDate } from "@/lib/utils";
+import { FinanceInvestments, useCustomCategories } from "@/components/finance-investments";
 import type { BreakEven, CardAnalysis, CardStatementDetail, CashflowPoint, CostCenter, CreditCard, Dre, FinanceSummary, FinanceTransaction, InstallmentGroup, RegimeTributario, TaxApuracao, TaxCompany, TaxRule } from "@/types";
 
 const REGIME_LABEL: Record<RegimeTributario, string> = {
@@ -49,6 +50,8 @@ export function FinancePage() {
   const qc = useQueryClient();
   const { can } = useAuth();
   const canManage = can("finance.manage");
+  // categorias criadas pela loja, além das que já vêm no sistema
+  const { custom: customCategories, add: addCategory } = useCustomCategories();
   const canExport = can("reports.export");
 
   const [filters, setFilters] = useState({ type: "", status: "", costCenterId: "" });
@@ -303,7 +306,13 @@ export function FinancePage() {
           <TabsTrigger value="fluxo">Fluxo de caixa</TabsTrigger>
           <TabsTrigger value="dre">DRE</TabsTrigger>
           <TabsTrigger value="impostos">Impostos</TabsTrigger>
+          <TabsTrigger value="investimentos">Investimentos</TabsTrigger>
         </TabsList>
+
+        {/* ---- Metas de investimento ---- */}
+        <TabsContent value="investimentos" className="space-y-4">
+          <FinanceInvestments canManage={canManage} />
+        </TabsContent>
 
         {/* ---- Resumo ---- */}
         <TabsContent value="resumo" className="space-y-5">
@@ -1049,17 +1058,27 @@ export function FinancePage() {
               </Select>
             </Field>
             <Field label="Categoria">
-              <Select value={form.category || "NONE"} onValueChange={(v) => setForm({ ...form, category: v === "NONE" ? "" : v })}>
+              <Select
+                value={form.category || "NONE"}
+                onValueChange={(v) => {
+                  if (v !== "__NOVA__") return setForm({ ...form, category: v === "NONE" ? "" : v });
+                  const type = form.type as "RECEITA" | "DESPESA";
+                  const name = window.prompt(`Nome da nova categoria de ${type === "RECEITA" ? "receita" : "despesa"}:`)?.trim();
+                  if (!name) return;
+                  addCategory.mutate({ type, name, builtin: CATEGORIES[type] }, { onSuccess: () => setForm((f) => ({ ...f, category: name })) });
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="NONE">Selecione</SelectItem>
-                  {CATEGORIES[form.type as "RECEITA" | "DESPESA"].map((c) => (
+                  {[...new Set([...CATEGORIES[form.type as "RECEITA" | "DESPESA"], ...customCategories[form.type as "RECEITA" | "DESPESA"], ...(form.category ? [form.category] : [])])].map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>
                   ))}
+                  {canManage && <SelectItem value="__NOVA__">＋ Nova categoria…</SelectItem>}
                 </SelectContent>
               </Select>
             </Field>

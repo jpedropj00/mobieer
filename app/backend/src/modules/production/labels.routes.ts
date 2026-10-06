@@ -5,6 +5,7 @@
  *   GET  /projects/:projectId/checklist      conferência (sem baixa em vermelho na tela)
  *   POST /scan { code, mode }                leitura do código de barras
  */
+import { syncPartRequestFromItem } from "../parts/parts-production.service";
 import { Router } from "express";
 import { z } from "zod";
 import { authenticate } from "../../middlewares/auth";
@@ -111,6 +112,7 @@ router.post(
           events: { create: { action: outcome.event, sector: outcome.eventSector as never, note: "Leitura do código de barras", createdById: req.user!.id } },
         },
       });
+      if (outcome.status === "DONE") await syncPartRequestFromItem(item.id, req.user!.id).catch(() => undefined);
     }
 
     const list = await checklistFor(item.orderId);

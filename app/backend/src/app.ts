@@ -43,6 +43,9 @@ import materialsListRoutes from "./modules/production/materials-list.routes";
 import techFolderRoutes from "./modules/techproject/tech-folder.routes";
 import assistantRoutes from "./modules/ai/assistant.routes";
 import renderRoutes from "./modules/render/render.routes";
+import financeExtrasRoutes from "./modules/finance/finance-extras.routes";
+import contractorAttendanceRoutes from "./modules/contractors/attendance.routes";
+import projectStartAtRoutes from "./modules/timeline/start-at.routes";
 import weeklyRoutes from "./modules/weekly/weekly.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
@@ -138,6 +141,8 @@ export function createApp() {
   app.use("/api/portal/finance", portalFinanceRoutes);
   app.use("/api/portal", portalRoutes);
   app.use("/api/hr", hrRoutes);
+  // antes das rotas do montador: "/attendance" não pode cair em "/:id"
+  app.use("/api/contractors", contractorAttendanceRoutes);
   app.use("/api/contractors", contractorsRoutes);
   app.use("/api/assistance", assistanceRoutes);
   app.use("/api/public/os", publicWorkOrderRoutes);
@@ -149,11 +154,13 @@ export function createApp() {
   app.use("/api/ai", assistantRoutes);
   app.use("/api/parts", partsRoutes);
   app.use("/api/fieldwork", fieldworkRoutes);
+  app.use("/api/projects/:projectId", projectStartAtRoutes);
   app.use("/api/projects/:projectId", timelineRoutes);
   app.use("/api/installations", installationRoutes);
   app.use("/api/me/contractor", meContractorRoutes);
   app.use("/api/integrations", whatsappWebhookRoutes);
   app.use("/api/integrations", integrationsRoutes);
+  app.use("/api/finance", financeExtrasRoutes);
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial/goals", goalsRoutes);

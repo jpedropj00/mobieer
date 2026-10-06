@@ -1,3 +1,4 @@
+import { syncPartRequestFromItem } from "../parts/parts-production.service";
 import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -590,6 +591,7 @@ router.post(
         events: { create: { action: eventAction, sector: eventSector as never, note: nn(input.note), createdById: req.user!.id } },
       },
     });
+    if (data.status === "DONE") await syncPartRequestFromItem(cur.id, req.user!.id).catch(() => undefined);
     const fresh = await prisma.productionItem.findUniqueOrThrow({ where: { id: cur.id }, include: itemInclude });
     return ok(res, serializeItem(fresh), "Item atualizado");
   })
