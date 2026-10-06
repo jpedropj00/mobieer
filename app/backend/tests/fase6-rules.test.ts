@@ -31,7 +31,6 @@ import {
 } from "../src/modules/contractors/productivity.service";
 import { cronAuthorized } from "../src/modules/cron/cron.routes";
 import { generateIntegrationToken, hashToken, tokenFromHeaders } from "../src/modules/integrations/integration-token";
-import { extractInboundMessages, validMetaSignature } from "../src/modules/integrations/whatsapp-webhook.routes";
 import {
   MIN_ORDERS_FOR_ESTIMATE,
   durationStats,
@@ -148,45 +147,7 @@ test("estado do agendamento para as telas", () => {
   assert.equal(serializeSchedule({ ...base, rescheduleRequestedAt: now }).stage, "REMARCAR");
 });
 
-// ============================ Webhook e cron ============================
-
-test("assinatura do webhook da Meta", () => {
-  const body = Buffer.from('{"entry":[]}');
-  const sig = `sha256=${crypto.createHmac("sha256", "segredo").update(body).digest("hex")}`;
-  assert.equal(validMetaSignature(body, sig, "segredo"), true);
-  assert.equal(validMetaSignature(body, sig, "outro"), false);
-  assert.equal(validMetaSignature(body, "sha256=abc", "segredo"), false);
-  assert.equal(validMetaSignature(undefined, sig, "segredo"), false);
-  assert.equal(validMetaSignature(body, undefined, ""), true, "sem segredo configurado não valida");
-});
-
-test("mensagens recebidas: texto, botão e resposta interativa", () => {
-  const payload = {
-    entry: [
-      {
-        changes: [
-          {
-            value: {
-              messages: [
-                { from: "5585999990000", type: "text", text: { body: "CONFIRMAR" } },
-                { from: "5585988880000", type: "button", button: { payload: "REMARCAR", text: "Remarcar" } },
-                { from: "5585977770000", type: "interactive", interactive: { button_reply: { id: "CONFIRMAR", title: "Confirmar" } } },
-                { from: "5585966660000", type: "image" },
-              ],
-            },
-          },
-        ],
-      },
-    ],
-  };
-  assert.deepEqual(extractInboundMessages(payload), [
-    { from: "5585999990000", text: "CONFIRMAR" },
-    { from: "5585988880000", text: "REMARCAR" },
-    { from: "5585977770000", text: "CONFIRMAR" },
-  ]);
-  assert.deepEqual(extractInboundMessages({}), []);
-  assert.deepEqual(extractInboundMessages(null), []);
-});
+// ============================ Cron ============================
 
 test("cron: exige o segredo em produção", () => {
   assert.equal(cronAuthorized("Bearer abc", "abc", true), true);

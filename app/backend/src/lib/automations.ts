@@ -1,11 +1,13 @@
 /**
- * Automações de mensagem para o cliente (WhatsApp).
+ * Automações de mensagem para o cliente.
  *
  * Cada evento do fluxo (cliente cadastrado, medição agendada, datas da
  * assistência, lembrete de véspera...) tem um texto padrão com marcadores que a
  * loja pode editar ou desligar em Configurações. Todo envio fica registrado em
- * MessageLog — inclusive quando o WhatsApp ainda não está configurado (status
- * LOGGED) — e um `dedupeKey` impede mandar a mesma mensagem duas vezes.
+ * MessageLog (status LOGGED) e um `dedupeKey` impede registrar a mesma mensagem
+ * duas vezes. Hoje não há canal externo de envio: a integração com o WhatsApp
+ * foi retirada e as mensagens ficam só registradas, prontas para alimentar o
+ * chat com o cliente dentro da plataforma.
  *
  * Nunca lança: falha de canal não pode quebrar o fluxo que disparou a mensagem.
  */
@@ -13,7 +15,7 @@ import type { MessageEvent, MessageStatus } from "@prisma/client";
 import { env } from "../config/env";
 import { prisma } from "../prisma";
 import { firstName, renderTemplate, templateKeys } from "../utils/template";
-import { sendWhatsAppTemplate, sendWhatsAppText, toWhatsAppNumber } from "./whatsapp";
+import { normalizePhoneBR } from "../utils/phone";
 
 export type AutomationDef = {
   label: string;
@@ -202,7 +204,7 @@ export async function sendAutomation(event: MessageEvent, input: SendAutomationI
 
     const values = { ...(await baseVars(input.organizationId, name)), ...(input.vars ?? {}) };
     const { text } = renderTemplate(cfg.body, values);
-    const to = toWhatsAppNumber(phone);
+    const to = normalizePhoneBR(phone);
 
     const log = async (status: MessageStatus, extra: { error?: string; providerMessageId?: string } = {}) => {
       try {
@@ -237,15 +239,8 @@ export async function sendAutomation(event: MessageEvent, input: SendAutomationI
     }
 
     if (!cfg.enabled) return { status: "SKIPPED", reason: "automação desligada", logId: await log("SKIPPED", { error: "automação desligada" }) };
-    if (!to) return { status: "SKIPPED", reason: "sem telefone válido", logId: await log("SKIPPED", { error: "sem telefone válido" }) };
-
-    const result = cfg.metaTemplateName
-      ? await sendWhatsAppTemplate(to, cfg.metaTemplateName, templateParams(cfg.body, values))
-      : await sendWhatsAppText(to, text);
-
-    if (result.delivered) return { status: "SENT", logId: await log("SENT", { providerMessageId: result.id }) };
-    if (result.skipped) return { status: "LOGGED", logId: await log("LOGGED") };
-    return { status: "FAILED", reason: result.error, logId: await log("FAILED", { error: result.error }) };
+    // sem canal externo: a mensagem fica registrada para a equipe (e para o futuro chat com o cliente)
+    return { status: "LOGGED", logId: await log("LOGGED") };
   } catch (e) {
     console.error(`[automations] ${event} falhou:`, e instanceof Error ? e.message : e);
     return { status: "FAILED", reason: e instanceof Error ? e.message : String(e) };

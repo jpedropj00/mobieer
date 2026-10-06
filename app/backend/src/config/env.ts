@@ -18,8 +18,6 @@ const mailDriver = (process.env.MAIL_DRIVER || "console").toLowerCase();
 const bool = (v: string | undefined, dflt = false) =>
   v === undefined || v === "" ? dflt : ["1", "true", "yes", "on"].includes(v.toLowerCase());
 
-const whatsappToken = process.env.WHATSAPP_TOKEN || "";
-const whatsappPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
 const aiApiKey = process.env.AI_API_KEY || "";
 const signatureToken = process.env.SIGNATURE_API_TOKEN || "";
 const nfeToken = process.env.NFE_API_TOKEN || "";
@@ -62,23 +60,6 @@ export const env = {
   },
 
   clientFeedbackFormUrl: process.env.CLIENT_FEEDBACK_FORM_URL || "",
-
-  // --- WhatsApp Business (Meta Cloud API) ---
-  // Sem WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID => mensagens só vão para o log.
-  whatsapp: {
-    enabled: bool(process.env.WHATSAPP_ENABLED, Boolean(whatsappToken && whatsappPhoneId)),
-    provider: (process.env.WHATSAPP_PROVIDER || "meta").toLowerCase() as "meta",
-    token: whatsappToken,
-    phoneNumberId: whatsappPhoneId,
-    graphVersion: process.env.WHATSAPP_GRAPH_VERSION || "v21.0",
-    // idioma padrão dos templates aprovados na Meta
-    templateLang: process.env.WHATSAPP_TEMPLATE_LANG || "pt_BR",
-    // id da conta do WhatsApp Business (WABA) - usado para listar os templates aprovados
-    accountId: (process.env.WHATSAPP_ACCOUNT_ID || process.env.WHATSAPP_PHONE_ACCOUNT_ID || "").trim(),
-    // webhook de mensagens recebidas (confirmação da assistência pelo WhatsApp)
-    webhookVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_MY_TOKEN || "",
-    appSecret: process.env.WHATSAPP_APP_SECRET || "",
-  },
 
   // --- Agendador (Vercel Cron). O Vercel envia "Authorization: Bearer CRON_SECRET".
   //     Sem CRON_SECRET o endpoint /api/cron/* fica bloqueado em produção. ---

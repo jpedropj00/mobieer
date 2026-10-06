@@ -128,7 +128,7 @@ export function PortalBriefingPage() {
             <p className="text-muted-foreground">
               {readOnly
                 ? "Nossa equipe já está com suas respostas."
-                : "Nossa equipe vai entrar em contato pelo WhatsApp. Enquanto isso, você pode ajustar as respostas aqui. Quando completarmos seu cadastro, o portal completo é liberado."}
+                : "Nossa equipe vai entrar em contato. Enquanto isso, você pode ajustar as respostas aqui. Quando completarmos seu cadastro, o portal completo é liberado."}
             </p>
           </div>
         </div>

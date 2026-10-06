@@ -77,7 +77,6 @@ import chatRoutes from "./modules/chat/chat.routes";
 import installationRoutes from "./modules/contractors/installation.routes";
 import meContractorRoutes from "./modules/contractors/me-contractor.routes";
 import automationsRoutes from "./modules/automations/automations.routes";
-import whatsappWebhookRoutes from "./modules/integrations/whatsapp-webhook.routes";
 import integrationsRoutes from "./modules/integrations/integrations.routes";
 import { errorHandler, notFound, setErrorReporter } from "./middlewares/errorHandler";
 import { healthCheck, reportClientError, reportServerError } from "./lib/monitoring";
@@ -104,13 +103,7 @@ export function createApp() {
     })
   );
   app.use(
-    express.json({
-      limit: "5mb",
-      // corpo cru guardado para validar a assinatura do webhook do WhatsApp
-      verify: (req, _res, buf) => {
-        if (req.url?.startsWith("/api/integrations/")) (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
-      },
-    })
+    express.json({ limit: "5mb" })
   );
   app.use(express.urlencoded({ extended: true }));
 
@@ -173,7 +166,6 @@ export function createApp() {
   app.use("/api/projects/:projectId", timelineRoutes);
   app.use("/api/installations", installationRoutes);
   app.use("/api/me/contractor", meContractorRoutes);
-  app.use("/api/integrations", whatsappWebhookRoutes);
   app.use("/api/integrations", integrationsRoutes);
   app.use("/api/finance", financeExtrasRoutes);
   app.use("/api/finance", financeRoutes);

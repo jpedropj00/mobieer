@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, MessageSquare, RotateCcw, Send } from "lucide-react";
+import { Loader2, MessageSquare, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { apiDelete, apiGet, apiPost, apiPut } from "@/services/api";
+import { apiDelete, apiGet, apiPut } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 
 type Automation = {
@@ -26,41 +26,25 @@ type Automation = {
   customized: boolean;
   preview: string;
 };
-type WhatsAppTemplate = { name: string; language: string; status: string; category: string };
-type WhatsAppStatus = {
-  configured: boolean;
-  number: { displayPhoneNumber: string; verifiedName: string; qualityRating: string | null; verified: boolean; isTestNumber: boolean } | null;
-  templates: WhatsAppTemplate[];
-  token: { valid: boolean; expiresAt: string | null; expired: boolean; daysLeft: number | null };
-  webhook: { verifyTokenSet: boolean; appSecretSet: boolean; url: string };
-  warnings: string[];
-  error?: string;
-};
 type LogRow = { id: string; event: string; label: string; status: string; to: string | null; clientName: string | null; body: string; error: string | null; createdAt: string };
 
 const STATUS_LABEL: Record<string, { label: string; variant: "success" | "muted" | "warning" | "danger" }> = {
   SENT: { label: "Enviada", variant: "success" },
-  LOGGED: { label: "Só no log", variant: "muted" },
-  SKIPPED: { label: "Não enviada", variant: "warning" },
+  LOGGED: { label: "Registrada", variant: "muted" },
+  SKIPPED: { label: "Não registrada", variant: "warning" },
   FAILED: { label: "Falhou", variant: "danger" },
 };
 
-/** Configuração das mensagens automáticas de WhatsApp. */
+/** Configuração das mensagens automáticas para o cliente (hoje ficam só registradas; não há canal de envio). */
 export function AutomationsSettings() {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["automations"],
-    queryFn: () => apiGet<{ data: { whatsappConfigured: boolean; automations: Automation[] } }>("/automations"),
+    queryFn: () => apiGet<{ data: { automations: Automation[] } }>("/automations"),
   });
   const logs = useQuery({ queryKey: ["automations", "logs"], queryFn: () => apiGet<{ data: LogRow[] }>("/automations/logs", { limit: 30 }) });
-  const status = useQuery({
-    queryKey: ["automations", "whatsapp-status"],
-    queryFn: () => apiGet<{ data: WhatsAppStatus }>("/automations/whatsapp/status"),
-    staleTime: 5 * 60_000,
-  });
   const [editing, setEditing] = useState<Automation | null>(null);
   const [draft, setDraft] = useState({ body: "", enabled: true, metaTemplateName: "", delayDays: 0 });
-  const [testPhone, setTestPhone] = useState("");
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["automations"] });
@@ -96,13 +80,7 @@ export function AutomationsSettings() {
     onSuccess: refresh,
     onError: (e) => toast.error(errorMessage(e, "Não foi possível alterar")),
   });
-  const test = useMutation({
-    mutationFn: () => apiPost<{ message?: string }>(`/automations/${editing!.event}/test`, { phone: testPhone }),
-    onSuccess: (r) => toast.success(r.message ?? "Teste enviado"),
-    onError: (e) => toast.error(errorMessage(e, "Falha no teste")),
-  });
 
-  const approved = (status.data?.data.templates ?? []).filter((t) => t.status === "APPROVED");
 
   if (q.isLoading) return <p className="text-sm text-muted-foreground">Carregando…</p>;
   const data = q.data?.data;
@@ -110,7 +88,7 @@ export function AutomationsSettings() {
 
   return (
     <div className="space-y-4">
-      <WhatsAppStatusCard status={status.data?.data} loading={status.isLoading} />
+      <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">As mensagens abaixo são montadas a cada etapa e ficam registradas no histórico. No momento elas não são enviadas ao cliente: a integração com o WhatsApp foi retirada e o envio vai passar a ser feito pelo chat com o cliente dentro da plataforma.</p>
 
       <div className="grid gap-3 md:grid-cols-2">
         {data.automations.map((a) => (
@@ -211,41 +189,6 @@ export function AutomationsSettings() {
                   <Input type="number" min={0} max={90} value={draft.delayDays} onChange={(e) => setDraft({ ...draft, delayDays: Number(e.target.value) })} />
                 </div>
               )}
-              <div className="space-y-2">
-                <Label>Template aprovado na Meta (opcional)</Label>
-                {approved.length > 0 ? (
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={draft.metaTemplateName}
-                    onChange={(e) => setDraft({ ...draft, metaTemplateName: e.target.value })}
-                  >
-                    <option value="">Sem template (só dentro da janela de 24h)</option>
-                    {approved.map((t) => (
-                      <option key={`${t.name}-${t.language}`} value={t.name}>
-                        {t.name} ({t.language})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    value={draft.metaTemplateName}
-                    onChange={(e) => setDraft({ ...draft, metaTemplateName: e.target.value })}
-                    placeholder="ex.: visita_assistencia"
-                  />
-                )}
-                <p className="text-xs text-muted-foreground">
-                  O WhatsApp só deixa iniciar conversa com template aprovado. Sem isso, a mensagem só chega se o cliente falou com a loja nas últimas 24h.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Testar em um número</Label>
-                <div className="flex gap-2">
-                  <Input value={testPhone} onChange={(e) => setTestPhone(e.target.value)} placeholder="(85) 9...." />
-                  <Button variant="outline" disabled={testPhone.trim().length < 8 || test.isPending} onClick={() => test.mutate()}>
-                    {test.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
             </div>
           )}
           <DialogFooter className="gap-2">
@@ -264,74 +207,5 @@ export function AutomationsSettings() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function WhatsAppStatusCard({ status, loading }: { status?: WhatsAppStatus; loading: boolean }) {
-  if (loading) return <p className="text-sm text-muted-foreground">Verificando a conta do WhatsApp…</p>;
-  if (!status) return null;
-
-  if (!status.configured) {
-    return (
-      <p className="rounded-md bg-warning/10 p-3 text-sm">
-        O WhatsApp ainda não está configurado. As mensagens continuam sendo montadas e ficam registradas no log, mas não saem para o cliente.
-      </p>
-    );
-  }
-
-  const approved = status.templates.filter((t) => t.status === "APPROVED");
-  const tokenBad = status.token.expired || !status.token.valid;
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
-          <span>Conta do WhatsApp</span>
-          {tokenBad ? (
-            <Badge variant="danger">{status.token.expired ? "token expirado" : "token inválido"}</Badge>
-          ) : (
-            status.number && (
-              <Badge variant={status.number.isTestNumber ? "warning" : "success"}>
-                {status.number.isTestNumber ? "número de teste" : "conectado"}
-              </Badge>
-            )
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 text-sm">
-        {status.error ? (
-          <p className="text-destructive">{status.error}</p>
-        ) : (
-          status.number && (
-            <p>
-              <strong>{status.number.displayPhoneNumber}</strong> · {status.number.verifiedName}
-              {status.number.qualityRating && status.number.qualityRating !== "UNKNOWN" && ` · qualidade ${status.number.qualityRating.toLowerCase()}`}
-            </p>
-          )
-        )}
-        <p className="text-xs text-muted-foreground">
-          Templates aprovados: {approved.length === 0 ? "nenhum" : approved.map((t) => `${t.name} (${t.language})`).join(", ")}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Token de acesso:{" "}
-          {status.token.expiresAt
-            ? `temporário, ${status.token.expired ? "venceu em" : "vence em"} ${new Date(status.token.expiresAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
-            : status.token.valid
-              ? "permanente (System User)"
-              : status.token.expired
-                ? "recusado pela Meta (vencido)"
-                : "revogado na Meta"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Webhook de respostas: <span className="font-mono">{status.webhook.url}</span> ·{" "}
-          {status.webhook.verifyTokenSet ? "token de verificação definido" : "sem token de verificação"} ·{" "}
-          {status.webhook.appSecretSet ? "assinatura conferida" : "sem App Secret"}
-        </p>
-        {status.warnings.map((w) => (
-          <p key={w} className={`rounded-md p-2 text-xs ${tokenBad && /token/i.test(w) ? "bg-destructive/10 font-medium" : "bg-warning/10"}`}>
-            {w}
-          </p>
-        ))}
-      </CardContent>
-    </Card>
   );
 }

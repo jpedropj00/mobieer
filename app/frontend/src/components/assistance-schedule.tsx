@@ -182,7 +182,7 @@ export function AssistanceSchedulePanel({ ticketId, canManage }: { ticketId: str
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                O cliente escolhe pelo portal e recebe um lembrete no WhatsApp na véspera para confirmar.
+                O cliente escolhe e confirma pelo portal.
               </p>
             </>
           ) : (
