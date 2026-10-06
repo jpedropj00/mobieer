@@ -53,6 +53,9 @@ const calcSchema = z.object({
     .max(10)
     .default([]),
   discount: money.optional(),
+  // alternativas ao desconto em R$: percentual sobre o preço, ou o valor final combinado
+  discountPercent: z.coerce.number().min(0).max(100).optional().nullable(),
+  targetTotal: money.optional().nullable(),
   freight: money.optional(),
   otherCosts: money.optional(),
   payment: z.object({
@@ -376,7 +379,7 @@ router.post(
     const s = serializeQuote(cur);
     const config = await loadPricing();
     const c = calc(
-      { items: s.items, markup: s.markup, commissions: s.commissions, discount: s.discount, freight: s.freight, otherCosts: s.otherCosts, payment: { ...s.payment, planId: config.financingPlans.some((p) => p.id === s.payment.planId) ? s.payment.planId : null } },
+      { items: s.items, markup: s.markup, commissions: s.commissions, discount: s.discount, discountPercent: s.discountPercent, targetTotal: s.targetTotal, freight: s.freight, otherCosts: s.otherCosts, payment: { ...s.payment, planId: config.financingPlans.some((p) => p.id === s.payment.planId) ? s.payment.planId : null } },
       config
     );
     const copy = await prisma.commercialQuote.create({

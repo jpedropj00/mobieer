@@ -24,3 +24,16 @@ O mínimo (2) e os textos fixos do PDF podem ser alterados na configuração do 
 
 ## Orçamento vindo do Promob
 Quando um arquivo do Promob com valores é importado no projeto, o sistema cria ou atualiza um orçamento em rascunho ligado ao projeto.
+
+## Desconto: em R$, em % ou fechando no valor final
+No cartão **Preço** do orçamento, o campo de desconto tem três modos, escolhidos na caixinha ao lado:
+- **em R$**: o desconto é um valor fixo.
+- **em %**: o desconto é um percentual do preço de venda e acompanha o preço se o mark-up mudar.
+- **fechar em**: você informa o **valor final combinado com o cliente** e o sistema calcula o desconto sozinho.
+
+## Como melhorar a pontuação sem mudar o valor do cliente
+A comissão é acrescentada ao preço. Por isso, com o desconto em R$ ou em %, reduzir a comissão só baixa o preço e a pontuação quase não muda. Para a pontuação subir, use o modo **fechar em** com o valor combinado: aí o cliente continua pagando o mesmo, e reduzir comissão, frete ou outros custos aumenta a pontuação. Também melhora a pontuação: dar menos desconto ou evitar forma de pagamento com taxa retida.
+
+## Formas de pagamento
+À vista, PIX, Boleto parcelado, Cartão de crédito, Financeira e as combinadas com entrada no PIX: **Entrada no PIX + boleto**, **Entrada no PIX + cartão** e **Entrada no PIX + financeira**. Nas combinadas, informe o valor da entrada no campo **Entrada no PIX** e as parcelas do saldo; a taxa retida (cartão ou financeira) incide só sobre o saldo. Ao aprovar o orçamento, o financeiro recebe a entrada como PIX e as parcelas na segunda forma.
+

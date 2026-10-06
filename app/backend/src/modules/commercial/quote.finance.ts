@@ -79,17 +79,20 @@ export function planFinance(q: QuoteForFinance, today: string): PlannedEntry[] {
     if (amount > 0) out.push({ type: "DESPESA", category, amount, dueDay, description, method, installmentNumber: null, installmentTotal: null });
   };
 
-  if (down > 0) receita(down, today, `${ref} — entrada`, "Entrada");
+  const pixEntry = p.method.startsWith("PIX_");
+  // forma combinada ("PIX_BOLETO"…): o saldo segue a regra da segunda parte
+  const settle = pixEntry ? p.method.slice(4) : p.method;
+  if (down > 0) receita(down, today, `${ref} — entrada${pixEntry ? " (PIX)" : ""}`, pixEntry ? "PIX" : "Entrada");
 
   let firstDue = today;
   if (rest > 0) {
-    if (p.method === "AVISTA" || p.method === "PIX") {
-      receita(rest, today, `${ref} — ${p.method === "PIX" ? "PIX" : "à vista"}`, p.method === "PIX" ? "PIX" : "À vista");
-    } else if (p.method === "BOLETO") {
+    if (settle === "AVISTA" || settle === "PIX") {
+      receita(rest, today, `${ref} — ${settle === "PIX" ? "PIX" : "à vista"}`, settle === "PIX" ? "PIX" : "À vista");
+    } else if (settle === "BOLETO") {
       const n = Math.max(1, p.installments);
       splitAmount(rest, n).forEach((v, i) => receita(v, addMonthsDay(today, i + 1), `${ref} — parcela ${i + 1}/${n}`, "Boleto", i + 1, n));
       firstDue = addMonthsDay(today, 1);
-    } else if (p.method === "CARTAO") {
+    } else if (settle === "CARTAO") {
       const n = Math.max(1, p.installments);
       const onde = p.planName ?? "Cartão";
       const fees = splitAmount(r2((rest * p.feePercent) / 100), n);

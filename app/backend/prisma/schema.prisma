@@ -1842,6 +1842,9 @@ model CommercialQuote {
   discount       Decimal                @default(0) @db.Decimal(14, 2)
   surcharge      Decimal                @default(0) @db.Decimal(14, 2)
   total          Decimal                @default(0) @db.Decimal(14, 2)
+  // desconto informado em % ou como valor final combinado (vazio = desconto em R$)
+  discountPercent Decimal?              @db.Decimal(7, 4)
+  targetTotal     Decimal?              @db.Decimal(14, 2)
   paymentTerms   String?
   // negociação deste orçamento: prazo de entrega (texto e dias); vazio = padrão da configuração
   deliveryText   String?
