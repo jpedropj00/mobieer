@@ -87,12 +87,12 @@ export function brandDocument(opts: { contacts?: string[] } = {}) {
 }
 
 /** Título em duas cores (primeira palavra em laranja) com o traço curto embaixo. */
-export function brandTitle(doc: Doc, title: string, subtitle?: string | null) {
+export function brandTitle(doc: Doc, title: string, subtitle?: string | null, opts: { size?: number } = {}) {
   const t = title.trim();
   const cut = t.indexOf(" ");
   const first = cut > 0 ? t.slice(0, cut) : t;
   const rest = cut > 0 ? t.slice(cut) : "";
-  doc.font("Times-Roman").fontSize(23).fillColor(BRAND.orange).text(first, PAGE.left, doc.y, { continued: Boolean(rest) });
+  doc.font("Times-Roman").fontSize(opts.size ?? 23).fillColor(BRAND.orange).text(first, PAGE.left, doc.y, { continued: Boolean(rest) });
   if (rest) doc.fillColor(BRAND.ink).text(rest);
   const y = doc.y + 4;
   doc.moveTo(PAGE.left, y).lineTo(PAGE.left + 44, y).lineWidth(1.6).strokeColor(BRAND.orange).stroke();

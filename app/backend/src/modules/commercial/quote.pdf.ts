@@ -46,7 +46,7 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
     doc.fillColor(BRAND.ink);
   };
 
-  brandTitle(doc, `Orçamento ${d.number}${d.version > 1 ? ` · versão ${d.version}` : ""}`, `Emitido em ${brDate(d.issuedAt)}${d.validUntil ? `   ·   Válido até ${brDate(d.validUntil)}` : ""}`);
+  brandTitle(doc, `Orçamento ${d.number}${d.version > 1 ? ` · versão ${d.version}` : ""}`, `Emitido em ${brDate(d.issuedAt)}${d.validUntil ? `   ·   Válido até ${brDate(d.validUntil)}` : ""}`, { size: 16 });
 
   // ---------------------------------------------------------------- venda e cliente (rótulo pequeno em cima, valor embaixo)
   const fields = (rows: [string, string | null | undefined, number][][]) => {
