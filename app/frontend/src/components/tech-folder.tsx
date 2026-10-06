@@ -18,7 +18,7 @@ import { getToken } from "@/services/api";
 
 type Sheet = { id: string; room: string; title: string; scale: string | null; note: string | null; fileName: string; mime: string; page: number | null; stamp: boolean; drawing?: DrawingSpec; annotated?: boolean };
 type Spec = { room: string; rows: { label: string; value: string }[]; description: string | null };
-type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[]; area?: { w: number; h: number } };
+type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[]; area?: { w: number; h: number }; ai?: { image: boolean } };
 
 /** Tela de anotar uma prancha: carrega a prancha de fundo e as anotações já salvas. */
 function AnnotateDialog({ base, sheet, aspect, onClose, onSaved }: { base: string; sheet: Sheet | null; aspect: number; onClose: () => void; onSaved: (d: Folder) => void }) {
@@ -283,7 +283,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
         </div>
       </CardContent>
       <AnnotateDialog base={base} sheet={annotating} aspect={d.area ? d.area.w / d.area.h : 801.92 / 453.32} onClose={() => setAnnotating(null)} onSaved={apply} />
-      <TechDrawingDialog<Folder> base={base} open={drawing !== null} onClose={() => setDrawing(null)} onSaved={apply} sheet={drawing && drawing !== "new" ? drawing : null} defaultRoom={room.trim() || d.rooms[0] || ""} />
+      <TechDrawingDialog<Folder> base={base} open={drawing !== null} onClose={() => setDrawing(null)} onSaved={apply} sheet={drawing && drawing !== "new" ? drawing : null} defaultRoom={room.trim() || d.rooms[0] || ""} aiImage={d.ai?.image} />
     </Card>
   );
 }

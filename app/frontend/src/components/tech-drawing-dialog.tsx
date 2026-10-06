@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ImagePlus, Loader2, Plus, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { apiOpen, apiPost, apiPostForm, apiPut } from "@/services/api";
+import { apiOpen, apiPost, apiPostForm, apiPut, getToken } from "@/services/api";
+import { pdfPageToDataUrl } from "@/lib/pdf-preview";
 import { errorMessage } from "@/lib/errors";
 
 type Kind = "PRATELEIRAS" | "PORTAS" | "GAVETAS" | "VAO";
@@ -86,7 +87,7 @@ const fromSheet = (s: DrawingSheet): Form => ({
  * Desenho por medidas: a pessoa digita largura, altura, topo, rodapé e o que há
  * em cada coluna, e o sistema gera a vista cotada como uma prancha da pasta.
  */
-export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defaultRoom }: { base: string; open: boolean; onClose: () => void; onSaved: (data: T) => void; sheet: DrawingSheet | null; defaultRoom: string }) {
+export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defaultRoom, aiImage }: { base: string; open: boolean; onClose: () => void; onSaved: (data: T) => void; sheet: DrawingSheet | null; defaultRoom: string; /** a IA de imagem está configurada no servidor */ aiImage?: boolean }) {
   const [f, setF] = useState<Form>(emptyForm(defaultRoom));
   useEffect(() => {
     if (open) setF(sheet?.drawing ? fromSheet(sheet) : emptyForm(defaultRoom));
@@ -98,6 +99,29 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
 
   const inner = num(f.height) - num(f.top) - num(f.base);
   const [uploading, setUploading] = useState<"closed" | "open" | null>(null);
+  // IA: a vista cotada já salva vira imagem aqui na tela e vai para o servidor, que chama a IA
+  const [generating, setGenerating] = useState<"closed" | "open" | null>(null);
+  const generate = async (slot: "closed" | "open") => {
+    if (!sheet?.drawing) return;
+    setGenerating(slot);
+    try {
+      const file = await fetch(`/api${base}/sheets/${sheet.id}/file`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (!file.ok) throw new Error("vista");
+      const png = await (await fetch(await pdfPageToDataUrl(await file.arrayBuffer(), 0))).blob();
+      const form = new FormData();
+      form.append("file", png, "vista.png");
+      form.append("slot", slot);
+      form.append("view", slot === "open" ? "ABERTO" : "FECHADO");
+      const r = await apiPostForm<{ data: T; message?: string }>(`${base}/sheets/${sheet.id}/ai-image`, form);
+      toast.success(r.message ?? "Imagem gerada pela IA");
+      onSaved(r.data);
+      onClose();
+    } catch (e) {
+      toast.error(errorMessage(e, "Não foi possível gerar a imagem com a IA"));
+    } finally {
+      setGenerating(null);
+    }
+  };
   const sendImage = async (slot: "closed" | "open", file: File) => {
     setUploading(slot);
     try {
@@ -176,10 +200,19 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                         <input type="file" accept="image/png,image/jpeg" className="hidden" disabled={uploading !== null} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void sendImage(slot, file); }} />
                       </label>
                     )}
+                    <button
+                      type="button"
+                      className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={!aiImage || !sheet?.drawing || generating !== null}
+                      title={!aiImage ? "A IA de imagem ainda não está configurada (falta a chave GEMINI_API_KEY no servidor)" : !sheet?.drawing ? "Salve o desenho primeiro; a IA parte da vista cotada salva" : "A IA gera a perspectiva 3D a partir da vista cotada salva e das medidas"}
+                      onClick={() => void generate(slot)}
+                    >
+                      {generating === slot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Gerar com IA ({slot === "open" ? "aberto" : "fechado"})
+                    </button>
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">Sem imagem, a vista ocupa a folha inteira. Perspectiva sozinha em uma folha: envie em "Enviar pranchas do Promob".</p>
+              <p className="text-xs text-muted-foreground">{aiImage ? "Para gerar com IA, salve o desenho primeiro: ela parte da vista cotada salva. " : "Gerar com IA: aguardando a chave da IA de imagem no servidor. "}Sem imagem, a vista ocupa a folha inteira. Perspectiva sozinha em uma folha: envie em "Enviar pranchas do Promob".</p>
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_90px]">

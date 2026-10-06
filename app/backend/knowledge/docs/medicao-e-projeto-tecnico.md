@@ -36,6 +36,11 @@ Perspectiva ou planta sozinha em uma folha continua sendo enviada em **Enviar pr
 
 Se as alturas não fecharem com o vão interno (altura menos topo e rodapé), o sistema desenha mesmo assim e avisa a diferença. Para mudar as medidas depois, use o botão de lápis e régua na prancha. O desenho é só a vista frontal em 2D: perspectiva e planta continuam vindo do Promob.
 
+## Imagem 3D gerada por IA (em preparação)
+Na tela **Desenhar por medidas**, cada espaço de imagem 3D tem o botão **Gerar com IA**. A IA recebe a vista cotada já salva e as medidas digitadas, e devolve a perspectiva do móvel (fechado ou aberto), que entra ao lado da vista na mesma folha. Ela não pode mudar medidas, quantidade nem posição de portas, prateleiras e gavetas.
+
+O botão só funciona quando a chave da IA de imagem (GEMINI_API_KEY) está configurada no servidor; sem ela, ele fica desativado e a imagem 3D continua sendo enviada pelo botão de escolher imagem. Para usar, salve o desenho primeiro e depois abra as medidas de novo (o lápis com régua na prancha).
+
 ## Desenhar e escrever na prancha
 Cada prancha da pasta técnica tem o botão **Anotar** (o lápis). Ele abre a prancha em tela grande para você desenhar à mão e escrever por cima: marcar um ponto, riscar, escrever "maleiro", avisar de uma tomada. Há três ferramentas (**Desenhar**, **Escrever** e **Borracha**), cinco cores e três espessuras, além de desfazer e limpar. Em **Escrever**, clique no ponto da prancha, digite e aperte Enter.
 
