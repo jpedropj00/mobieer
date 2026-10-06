@@ -45,7 +45,12 @@ export type QuoteDocumentConfig = {
   /** prazo em dias de cada ambiente */
   deliveryDays: number;
   deliveryText: string;
-  /** observações do rodapé: OBS, OBS², OBS³… */
+  /** única observação que sai em todo orçamento: a garantia (certificado) */
+  mandatoryNote: string;
+  /**
+   * Sugestões de observação. Não saem sozinhas no PDF: aparecem como atalho na
+   * tela e só entram se quem monta o orçamento escolher.
+   */
   notes: string[];
 };
 
@@ -63,8 +68,8 @@ export const DEFAULT_QUOTE_DOCUMENT: QuoteDocumentConfig = {
   line: "RESIDENCIAL",
   deliveryDays: 45,
   deliveryText: "Em dias úteis conforme ambientes",
+  mandatoryNote: "5 ANOS DE GARANTIA PARA MÓVEIS E FERRAGENS (COM EXCEÇÃO DE SITUAÇÕES CONFIGURADAS MAU USO).",
   notes: [
-    "5 ANOS DE GARANTIA PARA MÓVEIS E FERRAGENS (COM EXCEÇÃO DE SITUAÇÕES CONFIGURADAS MAU USO).",
     "PRODUÇÃO 100% INDUSTRIAL E FABRICAÇÃO PRÓPRIA.",
     "ASSISTÊNCIA VITALÍCIA.",
     "TODAS AS PORTAS DE GIRO COM AMORTECEDOR.",
@@ -80,7 +85,21 @@ export function ambCode(index: number): string {
   return String.fromCharCode(A + (Math.floor(index / 26) % 26)) + String.fromCharCode(A + (index % 26));
 }
 
-/** Rótulo da observação fixa: OBS:, OBS²:, OBS³:, OBS4:… */
+/**
+ * Observações que saem no PDF: a obrigatória (garantia) e, em seguida, o que a
+ * pessoa escreveu no orçamento — cada linha vira uma observação.
+ */
+export function quoteObservations(mandatoryNote: string, quoteNotes: string | null | undefined): string[] {
+  const own = (quoteNotes ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const fixed = mandatoryNote.trim();
+  // quem colou a garantia de novo não a vê repetida
+  return [...(fixed ? [fixed] : []), ...own.filter((l) => l.toUpperCase() !== fixed.toUpperCase())];
+}
+
+/** Rótulo da observação: OBS:, OBS²:, OBS³:, OBS4:… */
 export function obsLabel(index: number): string {
   return index === 0 ? "OBS:" : index === 1 ? "OBS²:" : index === 2 ? "OBS³:" : `OBS${index + 1}:`;
 }
@@ -292,8 +311,11 @@ function normalizeDocument(raw: unknown): QuoteDocumentConfig {
     line: str(o.line, D.line),
     deliveryDays: typeof o.deliveryDays === "number" && o.deliveryDays > 0 ? Math.round(o.deliveryDays) : D.deliveryDays,
     deliveryText: str(o.deliveryText, D.deliveryText),
-    // lista vazia é uma escolha válida (orçamento sem observações fixas)
-    notes: Array.isArray(o.notes) ? o.notes.filter((n): n is string => typeof n === "string" && Boolean(n.trim())).map((n) => n.trim()) : D.notes,
+    mandatoryNote: str(o.mandatoryNote, D.mandatoryNote),
+    // lista vazia é uma escolha válida (sem sugestões); a garantia fica só em mandatoryNote
+    notes: Array.isArray(o.notes)
+      ? o.notes.filter((n): n is string => typeof n === "string" && Boolean(n.trim())).map((n) => n.trim()).filter((n) => n.toUpperCase() !== str(o.mandatoryNote, D.mandatoryNote).toUpperCase())
+      : D.notes,
   };
 }
 

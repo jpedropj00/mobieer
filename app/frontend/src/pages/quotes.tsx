@@ -27,7 +27,7 @@ const settlementOf = (m: PaymentMethod) => (m.startsWith("PIX_") ? m.slice(4) : 
 type DiscountMode = "VALOR" | "PERCENTUAL" | "TOTAL";
 type FinancingPlan = { id: string; name: string; method: "CARTAO" | "FINANCEIRA"; installments: number; feePercent: number; requiresDownPayment: boolean };
 type CommissionRole = { role: string; label: string; defaultPercent: number };
-type QuoteDocumentConfig = { supplier: string; line: string; deliveryDays: number; deliveryText: string; notes: string[] };
+type QuoteDocumentConfig = { supplier: string; line: string; deliveryDays: number; deliveryText: string; mandatoryNote: string; notes: string[] };
 type PricingConfig = { defaultMarkup: number; minScore: number; validityDays: number; commissionRoles: CommissionRole[]; financingPlans: FinancingPlan[]; document: QuoteDocumentConfig };
 type Approval = "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED";
 type QuoteStatus = "DRAFT" | "SENT" | "VIEWED" | "NEGOTIATION" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
@@ -712,8 +712,23 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
                   </Field>
                 )}
               </div>
-              <Field label="Observações para o cliente" className="sm:col-span-4">
-                <Textarea disabled={!canEdit} rows={2} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+              <Field label="Observações do orçamento — o que você quer que saia no documento? (uma por linha)" className="sm:col-span-4">
+                <Textarea disabled={!canEdit} rows={5} placeholder={"Escreva aqui as observações deste orçamento.\nCada linha sai como uma observação (OBS², OBS³…)."} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Sai sempre, sem precisar escrever: <span className="font-medium text-foreground">{config.document.mandatoryNote}</span>
+                </p>
+                {canEdit && config.document.notes.filter((n) => !form.notes.toUpperCase().includes(n.toUpperCase())).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="text-xs text-muted-foreground">Atalhos:</span>
+                    {config.document.notes
+                      .filter((n) => !form.notes.toUpperCase().includes(n.toUpperCase()))
+                      .map((n) => (
+                        <button key={n} type="button" title={n} className="max-w-[260px] truncate rounded-full border px-2 py-0.5 text-xs hover:bg-muted" onClick={() => set("notes", form.notes.trim() ? `${form.notes.trim()}\n${n}` : n)}>
+                          + {n}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </Field>
             </CardContent>
           </Card>
@@ -1070,7 +1085,7 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
     if (q.data && !c) setC(q.data.data);
   }, [q.data, c]);
   const save = useMutation({
-    mutationFn: () => apiPut<{ message: string }>("/commercial/quotes/config", c && { ...c, document: { ...c.document, notes: c.document.notes.map((n) => n.trim()).filter(Boolean) } }),
+    mutationFn: () => apiPut<{ message: string }>("/commercial/quotes/config", c && { ...c, document: { ...c.document, mandatoryNote: c.document.mandatoryNote.trim() || undefined, notes: c.document.notes.map((n) => n.trim()).filter(Boolean) } }),
     onSuccess: (r) => {
       toast.success(r.message);
       qc.invalidateQueries({ queryKey: ["quotes", "config"] });
@@ -1147,7 +1162,10 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
                 <Field label="Prazo (dias)"><NumInput value={c.document.deliveryDays} onChange={(v) => setC({ ...c, document: { ...c.document, deliveryDays: Math.max(1, Math.round(v)) } })} /></Field>
               </div>
               <Field label="Prazo de entrega (texto)"><Input value={c.document.deliveryText} onChange={(e) => setC({ ...c, document: { ...c.document, deliveryText: e.target.value } })} /></Field>
-              <Field label="Observações fixas do rodapé — uma por linha (viram OBS, OBS², OBS³…)">
+              <Field label="Observação obrigatória (garantia) — sai em todo orçamento">
+                <Input value={c.document.mandatoryNote} onChange={(e) => setC({ ...c, document: { ...c.document, mandatoryNote: e.target.value } })} />
+              </Field>
+              <Field label="Atalhos de observação — uma por linha (não saem sozinhos; o vendedor escolhe no orçamento)">
                 <Textarea rows={7} value={c.document.notes.join("\n")} onChange={(e) => setC({ ...c, document: { ...c.document, notes: e.target.value.split("\n") } })} />
               </Field>
             </div>

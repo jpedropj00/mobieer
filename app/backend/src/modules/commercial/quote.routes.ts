@@ -172,6 +172,7 @@ router.put(
             line: z.string().trim().min(1).max(60),
             deliveryDays: z.coerce.number().int().min(1).max(365),
             deliveryText: z.string().trim().min(1).max(120),
+            mandatoryNote: z.string().trim().min(1).max(400).optional(),
             notes: z.array(z.string().trim().min(1).max(400)).max(15),
           })
           .optional(),
