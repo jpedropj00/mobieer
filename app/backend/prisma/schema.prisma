@@ -26,6 +26,10 @@ enum UserStatus {
 model User {
   id               String     @id @default(cuid())
   aiConversations AiConversation[]
+  // verificação em duas etapas (TOTP): segredo cifrado, quando foi ativada e hashes dos códigos de recuperação
+  mfaSecret        String?
+  mfaEnabledAt     DateTime?
+  mfaRecoveryCodes String[]   @default([])
   name             String
   email            String     @unique
   password         String

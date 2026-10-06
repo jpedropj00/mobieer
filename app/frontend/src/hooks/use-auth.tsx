@@ -7,7 +7,9 @@ type AuthContextValue = {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** Devolve `mfaToken` quando a conta pede o código do autenticador antes de entrar. */
+  login: (email: string, password: string) => Promise<{ mfaToken?: string }>;
+  verifyMfa: (mfaToken: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   can: (permission: string) => boolean;
   refresh: () => Promise<void>;
@@ -57,8 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: (credentials: { email: string; password: string }) =>
-      api<{ data: { token: string; user: AuthUser } }>("/auth/login", { method: "POST", body: credentials }),
+      api<{ data: { token?: string; user?: AuthUser; mfaRequired?: boolean; mfaToken?: string } }>("/auth/login", { method: "POST", body: credentials }),
     onSuccess: (data) => {
+      // com verificação em duas etapas a sessão só vem depois do código
+      if (!data.data.token || !data.data.user) return;
       setToken(data.data.token);
       setUser(data.data.user);
     },
@@ -66,10 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      await loginMutation.mutateAsync({ email, password });
+      const r = await loginMutation.mutateAsync({ email, password });
+      return r.data.mfaRequired && r.data.mfaToken ? { mfaToken: r.data.mfaToken } : {};
     },
     [loginMutation]
   );
+
+  const verifyMfa = useCallback(async (mfaToken: string, code: string) => {
+    const r = await api<{ data: { token: string; user: AuthUser } }>("/auth/mfa/verify", { method: "POST", body: { mfaToken, code } });
+    setToken(r.data.token);
+    setUser(r.data.user);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -93,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading: Boolean(initialToken) && isLoading && !user,
       isAuthenticated: Boolean(user),
       login,
+      verifyMfa,
       logout,
       can,
       // relê o /auth/me (ex.: depois de trocar a senha obrigatória)
@@ -101,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (r.data) setUser(r.data.data);
       },
     }),
-    [user, initialToken, isLoading, login, logout, can, refetch]
+    [user, initialToken, isLoading, login, verifyMfa, logout, can, refetch]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

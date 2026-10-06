@@ -1,3 +1,4 @@
+import { MfaSettings } from "@/components/mfa-settings";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -277,8 +278,9 @@ export function SettingsPage() {
           {can("settings.manage") && <TabsTrigger value="integracoes">Integrações</TabsTrigger>}
           {can("settings.manage") && <TabsTrigger value="seguranca">Segurança</TabsTrigger>}
         </TabsList>
-        <TabsContent value="account">
+        <TabsContent value="account" className="space-y-4">
           <AccountTab />
+          <MfaSettings />
         </TabsContent>
         {can("settings.manage") && (
           <>

@@ -46,6 +46,7 @@ import renderRoutes from "./modules/render/render.routes";
 import financeExtrasRoutes from "./modules/finance/finance-extras.routes";
 import contractorAttendanceRoutes from "./modules/contractors/attendance.routes";
 import projectStartAtRoutes from "./modules/timeline/start-at.routes";
+import mfaRoutes from "./modules/auth/mfa.routes";
 import weeklyRoutes from "./modules/weekly/weekly.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
@@ -129,6 +130,7 @@ export function createApp() {
   const uploadsDir = process.env.VERCEL ? path.join("/tmp", "uploads") : path.resolve(process.cwd(), "uploads");
   app.use("/uploads", express.static(uploadsDir));
 
+  app.use("/api/auth", mfaRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
   app.use("/api/products", productsRoutes);

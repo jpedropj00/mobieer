@@ -347,6 +347,9 @@ export type AuthUser = {
   permissions: string[];
   /** senha provisória ou vencida: só entra depois de trocar */
   passwordChangeRequired?: boolean;
+  /** verificação em duas etapas ativa / recomendada para o perfil e ainda não ativada */
+  mfaEnabled?: boolean;
+  mfaRecommended?: boolean;
 };
 
 export type Unit = "UNIT" | "BOX" | "PACKAGE" | "METER" | "LITER" | "KILO" | "ROLL" | "PAIR";

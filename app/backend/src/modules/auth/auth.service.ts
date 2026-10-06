@@ -8,10 +8,39 @@ import { accessAllowed, passwordExpired } from "../../lib/security-policy";
 import { assertStrongPassword, loadSecurityPolicy, setUserPassword } from "../../lib/security";
 import { notifyUsersWithPermission } from "../../lib/notify";
 import { renderResetEmail, sendMail } from "../../lib/mailer";
+import { MFA_RECOMMENDED_ROLES } from "../../lib/totp.rules";
 import type { EnterpriseRegistrationInput } from "./auth.schema";
 
 function signToken(userId: string) {
   return jwt.sign({ sub: userId }, env.jwtSecret, { expiresIn: env.jwtExpiresIn as jwt.SignOptions["expiresIn"] });
+}
+
+/**
+ * Passe de 5 minutos entre a senha certa e o código do autenticador. É assinado
+ * com outro segredo: não serve como sessão em nenhuma rota.
+ */
+const mfaSecretKey = () => `${env.jwtSecret}:mfa-step`;
+export function signMfaToken(userId: string) {
+  return jwt.sign({ sub: userId, purpose: "mfa" }, mfaSecretKey(), { expiresIn: "5m" });
+}
+export function readMfaToken(token: string): string {
+  try {
+    const p = jwt.verify(token, mfaSecretKey()) as { sub?: string; purpose?: string };
+    if (p.purpose !== "mfa" || !p.sub) throw new Error("passe inválido");
+    return p.sub;
+  } catch {
+    throw new UnauthorizedError("A verificação expirou. Entre de novo com e-mail e senha.");
+  }
+}
+
+/** Conclui o login depois do segundo fator: registra o acesso e entrega a sessão. */
+export async function issueSession(userId: string, ip?: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, include: { role: { include: { permissions: { include: { permission: true } } } } } });
+  const policy = await loadSecurityPolicy();
+  await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date(), failedLoginCount: 0 } });
+  await prisma.auditLog.create({ data: { userId: user.id, action: "LOGIN", entity: "User", entityId: user.id, ip: ip ?? null, details: { mfa: true } } });
+  const passwordChangeRequired = user.mustChangePassword || passwordExpired(user.passwordChangedAt, policy);
+  return { token: signToken(user.id), user: serializeUser({ ...user, passwordChangeRequired }) };
 }
 
 function serializeUser(user: {
@@ -25,6 +54,7 @@ function serializeUser(user: {
   role: { id: string; name: string; label: string; permissions: { permission: { code: string } }[] };
   mustChangePassword?: boolean;
   passwordChangeRequired?: boolean;
+  mfaEnabledAt?: Date | null;
 }) {
   return {
     id: user.id,
@@ -39,6 +69,9 @@ function serializeUser(user: {
     permissions: user.role.permissions.map((rp) => rp.permission.code),
     // senha provisória (definida pelo admin) ou vencida: a tela manda trocar antes de tudo
     passwordChangeRequired: Boolean(user.passwordChangeRequired ?? user.mustChangePassword),
+    // verificação em duas etapas: se está ativa e se o perfil é dos que deveriam ativar
+    mfaEnabled: Boolean(user.mfaEnabledAt),
+    mfaRecommended: !user.mfaEnabledAt && MFA_RECOMMENDED_ROLES.includes(user.role.name),
   };
 }
 
@@ -81,6 +114,11 @@ export async function login(email: string, password: string, ip?: string) {
   if (!access.ok) {
     await prisma.auditLog.create({ data: { userId: user.id, action: `LOGIN_DENIED_${access.reason}`, entity: "User", entityId: user.id, ip: ip ?? null } });
     throw new ApiError(403, access.message, undefined, "ACCESS_RESTRICTED");
+  }
+
+  // senha certa, mas a conta tem verificação em duas etapas: a sessão só sai depois do código
+  if (user.mfaEnabledAt && user.mfaSecret) {
+    return { mfaRequired: true as const, mfaToken: signMfaToken(user.id) };
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date(), failedLoginCount: 0 } });

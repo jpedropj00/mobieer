@@ -21,3 +21,18 @@ Menu **Relatórios**: relatórios do sistema, conforme a permissão de cada um.
 
 ## Notificações
 O sino no topo da tela reúne os avisos: lembretes comerciais, a Semana da Mobieer, tarefas e outros. Clicar num aviso leva à tela correspondente.
+
+## Verificação em duas etapas
+Menu **Configurações**, aba **Minha conta**, cartão **Verificação em duas etapas**. Além da senha, o sistema pede um código de 6 dígitos gerado no celular por um aplicativo autenticador (Google Authenticator, Microsoft Authenticator ou Authy).
+1. Clique em **Ativar verificação em duas etapas**.
+2. No aplicativo do celular, adicione uma conta e leia o QR Code (ou digite a chave mostrada).
+3. Digite o código de 6 dígitos e clique em **Confirmar e ativar**.
+4. Guarde os **códigos de recuperação** que aparecem: cada um vale uma vez e substitui o código do celular. Eles não são mostrados de novo.
+
+Depois de ativar, o login pede a senha e, em seguida, o código. É opcional para todos e recomendada para administrador, gestor e financeiro, que veem um lembrete no topo das telas.
+
+Perdeu o celular e não tem código de recuperação: peça a um administrador. Em **Usuários**, o botão de escudo cortado desliga a verificação em duas etapas da pessoa, que volta a entrar só com a senha e pode configurar de novo.
+
+## Avisos de erro do sistema
+Quem tem a permissão de auditoria recebe no sino um aviso quando o sistema dá um erro interno ou quando uma tela quebra no navegador de alguém, com a rota e um código de rastreio. O mesmo erro avisa no máximo uma vez a cada 15 minutos.
+
