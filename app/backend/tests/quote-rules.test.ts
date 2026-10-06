@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { quoteModelPdf } from "../src/modules/commercial/quote.pdf";
-import { DEFAULT_PRICING, ambCode, computeQuote, normalizePricing, obsLabel, paymentText, quoteRooms, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
+import { DEFAULT_PRICING, ambCode, computeQuote, normalizePricing, obsLabel, paymentText, quoteObservations, quoteRooms, type PricingConfig, type QuoteInput } from "../src/modules/commercial/quote.rules";
 
 const config: PricingConfig = {
   ...DEFAULT_PRICING,
@@ -168,7 +168,8 @@ test("configuração do PDF: completa com o padrão da loja e aceita lista de ob
   const padrao = normalizePricing({}).document;
   assert.equal(padrao.supplier, "MOBIEER MÓVEIS PLANEJADOS");
   assert.equal(padrao.deliveryDays, 45);
-  assert.equal(padrao.notes.length, 7);
+  // a garantia saiu da lista: é a observação obrigatória; as outras 6 viraram atalhos
+  assert.equal(padrao.notes.length, 6);
   const custom = normalizePricing({ document: { line: "CORPORATIVO", deliveryDays: 60, notes: [" Garantia de 5 anos ", ""] } }).document;
   assert.deepEqual([custom.line, custom.deliveryDays, custom.notes, custom.supplier], ["CORPORATIVO", 60, ["Garantia de 5 anos"], "MOBIEER MÓVEIS PLANEJADOS"]);
   assert.deepEqual(normalizePricing({ document: { notes: [] } }).document.notes, []);
@@ -184,4 +185,16 @@ test("PDF no modelo da loja: gera com muitos ambientes e observação longa sem 
   });
   assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
   assert.ok(pdf.length > 5000);
+});
+
+test("observações do PDF: só a garantia é fixa; o resto é o que foi escrito no orçamento", () => {
+  const garantia = DEFAULT_PRICING.document.mandatoryNote;
+  assert.match(garantia, /GARANTIA/);
+  assert.deepEqual(quoteObservations(garantia, null), [garantia]);
+  assert.deepEqual(quoteObservations(garantia, "Entrega no 3º andar\n\n  Montagem em 2 dias \n" + garantia.toLowerCase()), [garantia, "Entrega no 3º andar", "Montagem em 2 dias"]);
+  // os atalhos não incluem a garantia, e config antiga (sem o campo) ganha a garantia
+  assert.ok(!DEFAULT_PRICING.document.notes.includes(garantia));
+  const antiga = normalizePricing({ document: { notes: [garantia, "ASSISTÊNCIA VITALÍCIA."] } }).document;
+  assert.equal(antiga.mandatoryNote, garantia);
+  assert.deepEqual(antiga.notes, ["ASSISTÊNCIA VITALÍCIA."]);
 });

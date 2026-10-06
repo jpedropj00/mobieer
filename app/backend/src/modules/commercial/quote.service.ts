@@ -78,6 +78,9 @@ export function serializeQuote(q: QuoteRow) {
     commissionPercent: n(q.commissionPercent),
     subtotal: n(q.subtotal),
     discount: n(q.discount),
+    // como o desconto foi informado (para a tela reabrir no mesmo modo)
+    discountPercent: q.discountPercent == null ? null : n(q.discountPercent),
+    targetTotal: q.targetTotal == null ? null : n(q.targetTotal),
     total,
     freight: n(q.freight),
     otherCosts: n(q.otherCosts),
@@ -115,6 +118,8 @@ export function calcToData(c: QuoteCalc) {
     commissionPercent: D(c.commissionPercent),
     subtotal: D(c.subtotal),
     discount: D(c.discount),
+    discountPercent: c.discountPercent == null ? null : new Prisma.Decimal(c.discountPercent.toFixed(4)),
+    targetTotal: c.targetTotal == null ? null : D(c.targetTotal),
     total: D(c.total),
     freight: D(c.freight),
     otherCosts: D(c.otherCosts),

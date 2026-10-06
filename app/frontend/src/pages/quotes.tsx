@@ -21,10 +21,13 @@ import { Textarea } from "@/components/ui/textarea";
 
 // ------------------------------------------------------------------ tipos
 
-type PaymentMethod = "AVISTA" | "PIX" | "BOLETO" | "CARTAO" | "FINANCEIRA";
+type PaymentMethod = "AVISTA" | "PIX" | "BOLETO" | "CARTAO" | "FINANCEIRA" | "PIX_BOLETO" | "PIX_CARTAO" | "PIX_FINANCEIRA";
+/** como o saldo é pago: "PIX_BOLETO" → "BOLETO" */
+const settlementOf = (m: PaymentMethod) => (m.startsWith("PIX_") ? m.slice(4) : m) as "AVISTA" | "PIX" | "BOLETO" | "CARTAO" | "FINANCEIRA";
+type DiscountMode = "VALOR" | "PERCENTUAL" | "TOTAL";
 type FinancingPlan = { id: string; name: string; method: "CARTAO" | "FINANCEIRA"; installments: number; feePercent: number; requiresDownPayment: boolean };
 type CommissionRole = { role: string; label: string; defaultPercent: number };
-type QuoteDocumentConfig = { supplier: string; line: string; deliveryDays: number; deliveryText: string; notes: string[] };
+type QuoteDocumentConfig = { supplier: string; line: string; deliveryDays: number; deliveryText: string; mandatoryNote: string; notes: string[] };
 type PricingConfig = { defaultMarkup: number; minScore: number; validityDays: number; commissionRoles: CommissionRole[]; financingPlans: FinancingPlan[]; document: QuoteDocumentConfig };
 type Approval = "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED";
 type QuoteStatus = "DRAFT" | "SENT" | "VIEWED" | "NEGOTIATION" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED";
@@ -51,6 +54,8 @@ type Quote = {
   markup: number;
   subtotal: number;
   discount: number;
+  discountPercent?: number | null;
+  targetTotal?: number | null;
   total: number;
   freight: number;
   otherCosts: number;
@@ -78,6 +83,8 @@ type Calc = {
   commissionPercent: number;
   subtotal: number;
   discount: number;
+  /** desconto efetivo em % do preço de venda */
+  discountRate?: number;
   total: number;
   freight: number;
   otherCosts: number;
@@ -102,7 +109,7 @@ const STATUS_LABEL: Record<QuoteStatus, string> = {
   EXPIRED: "Vencido",
   CANCELLED: "Cancelado",
 };
-const METHOD_LABEL: Record<PaymentMethod, string> = { AVISTA: "À vista", PIX: "PIX", BOLETO: "Boleto parcelado", CARTAO: "Cartão de crédito", FINANCEIRA: "Financeira" };
+const METHOD_LABEL: Record<PaymentMethod, string> = { AVISTA: "À vista", PIX: "PIX", BOLETO: "Boleto parcelado", CARTAO: "Cartão de crédito", FINANCEIRA: "Financeira", PIX_BOLETO: "Entrada no PIX + boleto", PIX_CARTAO: "Entrada no PIX + cartão", PIX_FINANCEIRA: "Entrada no PIX + financeira" };
 const EDITABLE: QuoteStatus[] = ["DRAFT", "NEGOTIATION"];
 
 const pts = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(2).replace(".", ","));
@@ -229,6 +236,8 @@ type Form = {
   markup: string;
   commissions: CommissionForm[];
   discount: string;
+  /** como o desconto é informado: em R$, em % ou pelo valor final combinado com o cliente */
+  discountMode: DiscountMode;
   freight: string;
   otherCosts: string;
   method: PaymentMethod;
@@ -256,7 +265,9 @@ function fromQuote(q: Quote): Form {
     items: q.items.map((i) => ({ room: i.room ?? "", description: i.description, quantity: String(i.quantity).replace(".", ","), unitCost: toField(i.unitCost), corpo: i.corpo ?? "", porta: i.porta ?? "", puxador: i.puxador ?? "", complemento: i.complemento ?? "", modelo: i.modelo ?? "" })),
     markup: String(q.markup).replace(".", ","),
     commissions: q.commissions.map((c) => ({ userId: c.userId ?? "", referrerId: c.referrerId ?? "", name: c.name, role: c.role, percent: toField(c.percent) })),
-    discount: toField(q.discount),
+    // reabre no mesmo modo em que foi salvo
+    discount: q.targetTotal ? toField(q.targetTotal) : q.discountPercent ? String(q.discountPercent).replace(".", ",") : toField(q.discount),
+    discountMode: q.targetTotal ? "TOTAL" : q.discountPercent ? "PERCENTUAL" : "VALOR",
     freight: toField(q.freight),
     otherCosts: toField(q.otherCosts),
     method: q.payment.method,
@@ -287,7 +298,9 @@ function toPayload(f: Form, roleLabel: (role: string) => string, addendumOf?: st
     markup: parse(f.markup),
     // percentual sem pessoa escolhida ainda conta no preço, com o nome do papel
     commissions: f.commissions.filter((c) => parse(c.percent) > 0).map((c) => ({ userId: c.userId || null, referrerId: c.referrerId || null, name: c.name.trim() || roleLabel(c.role), role: c.role, percent: parse(c.percent) })),
-    discount: parse(f.discount),
+    discount: f.discountMode === "VALOR" ? parse(f.discount) : 0,
+    discountPercent: f.discountMode === "PERCENTUAL" ? parse(f.discount) || null : null,
+    targetTotal: f.discountMode === "TOTAL" ? parse(f.discount) || null : null,
     freight: parse(f.freight),
     otherCosts: parse(f.otherCosts),
     payment: {
@@ -352,6 +365,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
             .filter((r) => r.defaultPercent > 0)
             .map((r) => ({ userId: r.role === "VENDEDOR" ? user?.id ?? "" : "", name: r.role === "VENDEDOR" ? user?.name ?? "" : "", role: r.role, percent: toField(r.defaultPercent) })),
           discount: "",
+          discountMode: "VALOR",
           freight: "",
           otherCosts: "",
           method: "AVISTA",
@@ -400,7 +414,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
     [form, config.commissionRoles, quote, params]
   );
   const calcBody = useDebounced(
-    { items: payload.items, markup: payload.markup, commissions: payload.commissions, discount: payload.discount, freight: payload.freight, otherCosts: payload.otherCosts, payment: payload.payment },
+    { items: payload.items, markup: payload.markup, commissions: payload.commissions, discount: payload.discount, discountPercent: payload.discountPercent, targetTotal: payload.targetTotal, freight: payload.freight, otherCosts: payload.otherCosts, payment: payload.payment },
     350
   );
   const preview = useQuery({
@@ -432,6 +446,7 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
 
   const plans = config.financingPlans.filter((p) => p.method === form.method);
   const pickMethod = (m: PaymentMethod) => setForm((f) => ({ ...f, method: m, planId: "", installments: m === "AVISTA" || m === "PIX" ? "1" : f.installments }));
+  const settle = settlementOf(form.method);
 
   const title = quote ? `Orçamento ${quote.number}${quote.version > 1 ? ` v${quote.version}` : ""}` : "Novo orçamento";
 
@@ -563,7 +578,29 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
               <CardHeader className="py-3"><CardTitle className="text-base">Preço</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 gap-3">
                 <Field label="Mark-up (fator)"><Input disabled={!canEdit} inputMode="decimal" value={form.markup} onChange={(e) => set("markup", e.target.value)} /></Field>
-                <Field label="Desconto (R$)"><Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={form.discount} onChange={(e) => set("discount", e.target.value)} /></Field>
+                <Field label={form.discountMode === "TOTAL" ? "Valor final para o cliente (R$)" : form.discountMode === "PERCENTUAL" ? "Desconto (%)" : "Desconto (R$)"}>
+                  <div className="flex gap-1.5">
+                    <Input disabled={!canEdit} inputMode="decimal" placeholder={form.discountMode === "PERCENTUAL" ? "0" : "0,00"} value={form.discount} onChange={(e) => set("discount", e.target.value)} />
+                    <Select
+                      disabled={!canEdit}
+                      value={form.discountMode}
+                      onValueChange={(v) => {
+                        const mode = v as DiscountMode;
+                        // ao trocar o modo, o campo já vem com o equivalente do que está calculado agora
+                        const cur = preview.data?.data;
+                        const next = !cur ? "" : mode === "TOTAL" ? toField(cur.total) : mode === "PERCENTUAL" ? (cur.discountRate ? String(cur.discountRate).replace(".", ",") : "") : cur.discount ? toField(cur.discount) : "";
+                        setForm((f) => ({ ...f, discountMode: mode, discount: next }));
+                      }}
+                    >
+                      <SelectTrigger className="w-[104px] shrink-0"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="VALOR">em R$</SelectItem>
+                        <SelectItem value="PERCENTUAL">em %</SelectItem>
+                        <SelectItem value="TOTAL">fechar em</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </Field>
                 <Field label="Frete (R$)"><Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={form.freight} onChange={(e) => set("freight", e.target.value)} /></Field>
                 <Field label="Outros custos (R$)"><Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={form.otherCosts} onChange={(e) => set("otherCosts", e.target.value)} /></Field>
                 <p className="col-span-2 text-xs text-muted-foreground">O custo já inclui peças e montagem. Frete e outros custos saem do resultado, não entram no preço.</p>
@@ -632,22 +669,22 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
                   <SelectContent>{(Object.keys(METHOD_LABEL) as PaymentMethod[]).map((m) => <SelectItem key={m} value={m}>{METHOD_LABEL[m]}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              {(form.method === "FINANCEIRA" || form.method === "CARTAO") && (
+              {(settle === "FINANCEIRA" || settle === "CARTAO") && (
                 <Field label="Plano">
                   <Select disabled={!canEdit} value={form.planId || "NONE"} onValueChange={(v) => set("planId", v === "NONE" ? "" : v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="NONE">Sem plano (informar)</SelectItem>
-                      {plans.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      {plans.filter((p) => p.method === settle).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
               )}
-              <Field label="Entrada (R$)"><Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={form.downPayment} onChange={(e) => set("downPayment", e.target.value)} /></Field>
-              {form.method !== "AVISTA" && form.method !== "PIX" && !form.planId && (
+              <Field label={form.method.startsWith("PIX_") ? "Entrada no PIX (R$)" : "Entrada (R$)"}><Input disabled={!canEdit} inputMode="decimal" placeholder="0,00" value={form.downPayment} onChange={(e) => set("downPayment", e.target.value)} /></Field>
+              {settle !== "AVISTA" && settle !== "PIX" && !form.planId && (
                 <>
                   <Field label="Parcelas"><Input disabled={!canEdit} inputMode="numeric" value={form.installments} onChange={(e) => set("installments", e.target.value)} /></Field>
-                  {(form.method === "FINANCEIRA" || form.method === "CARTAO") && (
+                  {(settle === "FINANCEIRA" || settle === "CARTAO") && (
                     <Field label="Taxa retida (%)"><Input disabled={!canEdit} inputMode="decimal" placeholder="0" value={form.feePercent} onChange={(e) => set("feePercent", e.target.value)} /></Field>
                   )}
                 </>
@@ -675,8 +712,23 @@ function QuoteEditor({ quote, config }: { quote: Quote | null; config: PricingCo
                   </Field>
                 )}
               </div>
-              <Field label="Observações para o cliente" className="sm:col-span-4">
-                <Textarea disabled={!canEdit} rows={2} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+              <Field label="Observações do orçamento — o que você quer que saia no documento? (uma por linha)" className="sm:col-span-4">
+                <Textarea disabled={!canEdit} rows={5} placeholder={"Escreva aqui as observações deste orçamento.\nCada linha sai como uma observação (OBS², OBS³…)."} value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Sai sempre, sem precisar escrever: <span className="font-medium text-foreground">{config.document.mandatoryNote}</span>
+                </p>
+                {canEdit && config.document.notes.filter((n) => !form.notes.toUpperCase().includes(n.toUpperCase())).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="text-xs text-muted-foreground">Atalhos:</span>
+                    {config.document.notes
+                      .filter((n) => !form.notes.toUpperCase().includes(n.toUpperCase()))
+                      .map((n) => (
+                        <button key={n} type="button" title={n} className="max-w-[260px] truncate rounded-full border px-2 py-0.5 text-xs hover:bg-muted" onClick={() => set("notes", form.notes.trim() ? `${form.notes.trim()}\n${n}` : n)}>
+                          + {n}
+                        </button>
+                      ))}
+                  </div>
+                )}
               </Field>
             </CardContent>
           </Card>
@@ -723,6 +775,7 @@ function ResultPanel({ calc, quote, error }: { calc: Calc | null; quote: Quote |
         cost: calc.costTotal,
         subtotal: calc.subtotal,
         discount: calc.discount,
+        discountRate: calc.discountRate ?? 0,
         total: calc.total,
         commissions: calc.commissionTotal,
         fee: calc.payment.financingFee,
@@ -739,6 +792,7 @@ function ResultPanel({ calc, quote, error }: { calc: Calc | null; quote: Quote |
           cost: quote.costTotal,
           subtotal: quote.subtotal,
           discount: quote.discount,
+          discountRate: quote.subtotal > 0 ? Math.round((quote.discount / quote.subtotal) * 10000) / 100 : 0,
           total: quote.total,
           commissions: quote.commissions.reduce((s, c) => s + c.amount, 0),
           fee: quote.payment.financingFee,
@@ -768,7 +822,7 @@ function ResultPanel({ calc, quote, error }: { calc: Calc | null; quote: Quote |
             </div>
             <Row k="Custo (peças + montagem)" v={formatCurrency(v.cost)} />
             <Row k="Preço de venda" v={formatCurrency(v.subtotal)} />
-            {v.discount > 0 && <Row k="Desconto" v={`- ${formatCurrency(v.discount)}`} />}
+            {v.discount > 0 && <Row k={v.discountRate ? `Desconto (${String(v.discountRate).replace(".", ",")}%)` : "Desconto"} v={`- ${formatCurrency(v.discount)}`} />}
             <Row k="Total para o cliente" v={formatCurrency(v.total)} strong />
             {v.installments && <Row k="Parcelas" v={v.installments} />}
             <div className="border-t pt-2" />
@@ -1031,7 +1085,7 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
     if (q.data && !c) setC(q.data.data);
   }, [q.data, c]);
   const save = useMutation({
-    mutationFn: () => apiPut<{ message: string }>("/commercial/quotes/config", c && { ...c, document: { ...c.document, notes: c.document.notes.map((n) => n.trim()).filter(Boolean) } }),
+    mutationFn: () => apiPut<{ message: string }>("/commercial/quotes/config", c && { ...c, document: { ...c.document, mandatoryNote: c.document.mandatoryNote.trim() || undefined, notes: c.document.notes.map((n) => n.trim()).filter(Boolean) } }),
     onSuccess: (r) => {
       toast.success(r.message);
       qc.invalidateQueries({ queryKey: ["quotes", "config"] });
@@ -1108,7 +1162,10 @@ function PricingConfigDialog({ onClose }: { onClose: () => void }) {
                 <Field label="Prazo (dias)"><NumInput value={c.document.deliveryDays} onChange={(v) => setC({ ...c, document: { ...c.document, deliveryDays: Math.max(1, Math.round(v)) } })} /></Field>
               </div>
               <Field label="Prazo de entrega (texto)"><Input value={c.document.deliveryText} onChange={(e) => setC({ ...c, document: { ...c.document, deliveryText: e.target.value } })} /></Field>
-              <Field label="Observações fixas do rodapé — uma por linha (viram OBS, OBS², OBS³…)">
+              <Field label="Observação obrigatória (garantia) — sai em todo orçamento">
+                <Input value={c.document.mandatoryNote} onChange={(e) => setC({ ...c, document: { ...c.document, mandatoryNote: e.target.value } })} />
+              </Field>
+              <Field label="Atalhos de observação — uma por linha (não saem sozinhos; o vendedor escolhe no orçamento)">
                 <Textarea rows={7} value={c.document.notes.join("\n")} onChange={(e) => setC({ ...c, document: { ...c.document, notes: e.target.value.split("\n") } })} />
               </Field>
             </div>

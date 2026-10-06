@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import { CameraScanner } from "@/components/camera-scanner";
 import { apiPost, apiPostForm } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
+import { InvoiceItems, type InvoiceItem } from "@/components/invoice-items";
 
 type Boleto = { kind: "BANCARIO" | "ARRECADACAO"; barcode: string; line: string; bankCode: string | null; amount: number | null; dueDate: string | null };
-type ReadResult = { boleto: Boleto; beneficiary: { name: string | null; document: string | null }; supplier: { id: string; name: string } | null };
+type ReadResult = { boleto: Boleto; beneficiary: { name: string | null; document: string | null }; supplier: { id: string; name: string } | null; items?: InvoiceItem[] };
 
 const BANKS: Record<string, string> = { "001": "Banco do Brasil", "033": "Santander", "104": "Caixa", "237": "Bradesco", "341": "Itaú", "260": "Nubank", "077": "Inter", "756": "Sicoob", "748": "Sicredi", "422": "Safra", "336": "C6", "212": "Original", "655": "Votorantim", "070": "BRB", "004": "Banco do Nordeste" };
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -45,9 +46,13 @@ export function BoletoReader({ open, onClose, onCreated }: { open: boolean; onCl
     setRead(r);
     const who = r.supplier?.name ?? r.beneficiary.name;
     const bank = r.boleto.bankCode ? BANKS[r.boleto.bankCode] ?? `banco ${r.boleto.bankCode}` : null;
+    // veio com as compras: é fatura de cartão
+    const fatura = (r.items?.length ?? 0) > 0;
+    const what = fatura ? "Fatura" : "Boleto";
     setForm((f) => ({
       ...f,
-      description: who ? `Boleto — ${who}` : bank ? `Boleto ${bank}` : "Boleto",
+      category: fatura ? "Cartão de crédito" : f.category,
+      description: who ? `${what} — ${who}` : bank ? `${what} ${bank}` : what,
       amount: r.boleto.amount ? String(r.boleto.amount.toFixed(2)).replace(".", ",") : "",
       dueDate: r.boleto.dueDate ?? "",
     }));
@@ -86,7 +91,8 @@ export function BoletoReader({ open, onClose, onCreated }: { open: boolean; onCl
       const r = read!;
       const created = await apiPost<{ data: { id: string }; message?: string }>("/finance/documents", {
         type: "DESPESA",
-        docType: "BOLETO",
+        docType: r.items?.length ? "FATURA" : "BOLETO",
+        items: r.items?.length ? r.items : undefined,
         docNumber: r.boleto.line.slice(0, 80),
         category: form.category.trim() || "Boleto",
         amount: parseMoney(form.amount),
@@ -103,7 +109,7 @@ export function BoletoReader({ open, onClose, onCreated }: { open: boolean; onCl
       }
     },
     onSuccess: () => {
-      toast.success("Boleto adicionado às contas a pagar");
+      toast.success(read?.items?.length ? "Fatura adicionada às contas a pagar, com os gastos por loja" : "Boleto adicionado às contas a pagar");
       onCreated();
       close();
     },
@@ -179,6 +185,7 @@ export function BoletoReader({ open, onClose, onCreated }: { open: boolean; onCl
               <Label className="text-xs">Descrição</Label>
               <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </div>
+            {read.items && read.items.length > 0 && <InvoiceItems items={read.items} />}
             {pdf && <p className="text-xs text-muted-foreground">O PDF ({pdf.name}) vai anexado ao lançamento.</p>}
           </div>
         )}

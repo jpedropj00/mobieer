@@ -44,7 +44,7 @@ import {
   statusAfterPayments,
 } from "./documents.service";
 import { issueReceipt } from "./receipt.service";
-import { BoletoError, beneficiaryFromText, findBoletoInText, parseBoleto } from "./boleto.rules";
+import { BoletoError, type InvoiceItem, amountFromText, beneficiaryFromText, dueDateFromText, findBoletoInText, invoiceItemsFromText, parseBoleto } from "./boleto.rules";
 import { extractPdfLines } from "../promob/promob.pdf";
 
 const router = Router();
@@ -153,6 +153,16 @@ const docInput = z.object({
   responsibleId: z.string().min(1).optional().nullable(),
   relatedId: z.string().min(1).optional().nullable(),
 });
+
+// compras de dentro da fatura (só na criação, vindas da leitura do PDF)
+const itemInput = z.object({
+  date: z.coerce.date().optional().nullable(),
+  store: clean(160).min(1),
+  description: clean(300).optional().nullable(),
+  installment: clean(20).optional().nullable(),
+  amount: z.coerce.number().min(-1_000_000_000).max(1_000_000_000),
+});
+const docCreateInput = docInput.extend({ items: z.array(itemInput).max(500).optional() });
 
 /**
  * Confere que cada vínculo existe e é da mesma organização. Sem isso alguém
@@ -558,7 +568,7 @@ router.post(
   "/",
   canManage,
   asyncHandler(async (req, res) => {
-    const input = docInput.parse(req.body);
+    const input = docCreateInput.parse(req.body);
     const organizationId = req.user!.organizationId;
     await validateLinks(input, organizationId);
 
@@ -586,6 +596,18 @@ router.post(
         responsibleId: input.responsibleId ?? null,
         relatedId: input.relatedId ?? null,
         createdById: req.user!.id,
+        items: input.items?.length
+          ? {
+              create: input.items.map((it, position) => ({
+                position,
+                date: it.date ?? null,
+                store: txtReq(it.store),
+                description: txt(it.description),
+                installment: txt(it.installment),
+                amount: dec(it.amount),
+              })),
+            }
+          : undefined,
       },
       include,
     });
@@ -604,7 +626,7 @@ router.get(
   canRead,
   asyncHandler(async (req, res) => {
     const doc = await loadDoc(req.params.id, req.user!.organizationId);
-    const [payments, attachments, relatedBy] = await Promise.all([
+    const [payments, attachments, relatedBy, items] = await Promise.all([
       prisma.financePayment.findMany({
         where: { transactionId: doc.id },
         orderBy: { paidAt: "desc" },
@@ -619,10 +641,13 @@ router.get(
         where: { relatedId: doc.id },
         select: { id: true, docType: true, docNumber: true, amount: true, dueDate: true, status: true },
       }),
+      prisma.financeDocumentItem.findMany({ where: { transactionId: doc.id }, orderBy: { position: "asc" } }),
     ]);
 
     return ok(res, {
       ...serialize(doc, await orgAlertDays()),
+      // compras de dentro da fatura, na ordem em que vieram
+      items: items.map((it) => ({ id: it.id, date: it.date, store: it.store, description: it.description, installment: it.installment, amount: money(it.amount) })),
       payments: payments.map((p) => ({
         id: p.id,
         amount: money(p.amount),
@@ -932,6 +957,7 @@ router.post(
     const { code } = z.object({ code: z.string().max(200).optional() }).parse(req.body ?? {});
     let boleto = null;
     let beneficiary: { name: string | null; document: string | null } = { name: null, document: null };
+    let items: InvoiceItem[] = [];
     try {
       if (req.file) {
         if (!/pdf/i.test(req.file.mimetype) && !/\.pdf$/i.test(req.file.originalname)) throw new BoletoError("Envie o boleto em PDF — foto pela câmera é lida na própria tela");
@@ -939,6 +965,11 @@ router.post(
         boleto = findBoletoInText(text);
         beneficiary = beneficiaryFromText(text);
         if (!boleto) throw new BoletoError("Não achei a linha digitável neste PDF — digite os números do boleto");
+        // fatura de cartão: valor e vencimento não vêm no código, só no texto
+        if (boleto.amount == null) boleto.amount = amountFromText(text);
+        if (boleto.dueDate == null) boleto.dueDate = dueDateFromText(text);
+        // fatura: as compras do período, loja por loja
+        items = invoiceItemsFromText(text);
       } else if (code) {
         boleto = parseBoleto(code);
       } else throw new BoletoError("Digite a linha digitável, leia o código de barras ou envie o PDF do boleto");
@@ -954,7 +985,7 @@ router.post(
       const hit = list.find((s) => s.cnpj!.replace(/\D/g, "") === docDigits);
       if (hit) supplier = { id: hit.id, name: hit.name };
     }
-    return ok(res, { boleto, beneficiary, supplier });
+    return ok(res, { boleto, beneficiary, supplier, items });
   })
 );
 

@@ -7,7 +7,7 @@
  * Custo, mark-up, comissões e resultado nunca entram aqui.
  */
 import { BRAND, PAGE, brandDocument, brandSection, brandTitle, ensureSpace } from "../../lib/brand-pdf";
-import { ambCode, obsLabel, type QuoteDocumentConfig } from "./quote.rules";
+import { ambCode, obsLabel, quoteObservations, type QuoteDocumentConfig } from "./quote.rules";
 
 export type QuotePdfData = {
   number: string;
@@ -46,7 +46,7 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
     doc.fillColor(BRAND.ink);
   };
 
-  brandTitle(doc, `Orçamento ${d.number}${d.version > 1 ? ` · versão ${d.version}` : ""}`, `Emitido em ${brDate(d.issuedAt)}${d.validUntil ? `   ·   Válido até ${brDate(d.validUntil)}` : ""}`);
+  brandTitle(doc, `Orçamento ${d.number}${d.version > 1 ? ` · versão ${d.version}` : ""}`, `Emitido em ${brDate(d.issuedAt)}${d.validUntil ? `   ·   Válido até ${brDate(d.validUntil)}` : ""}`, { size: 16 });
 
   // ---------------------------------------------------------------- venda e cliente (rótulo pequeno em cima, valor embaixo)
   const fields = (rows: [string, string | null | undefined, number][][]) => {
@@ -185,8 +185,9 @@ export function quoteModelPdf(d: QuotePdfData): Promise<Buffer> {
   fields([[["Prazo de entrega", d.config.deliveryText, 0.55], ["Validade da proposta", days ? `${days} dias (até ${brDate(d.validUntil)})` : "", 0.45]]]);
   doc.moveDown(0.4);
 
-  // ---------------------------------------------------------------- observações fixas
-  const notes = [...d.config.notes, ...(d.notes?.trim() ? [d.notes.trim()] : [])];
+  // ---------------------------------------------------------------- observações
+  // só a garantia é fixa; o resto é o que foi escrito neste orçamento
+  const notes = quoteObservations(d.config.mandatoryNote, d.notes);
   if (notes.length) {
     ensureSpace(doc, 50);
     brandSection(doc, "Observações");

@@ -145,8 +145,103 @@ export function beneficiaryFromText(text: string): { name: string | null; docume
   if (idx < 0) return { name: null, document: null };
   const near = lines.slice(idx, idx + 3).join(" ");
   // CNPJ formatado, só números (alguns bancos imprimem com um zero na frente: 15 dígitos) ou CPF
-  const doc = /(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14,15}(?!\d)|\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}(?!\d))/.exec(near)?.[1] ?? null;
+  // sem documento perto do nome: vale o primeiro CNPJ do boleto (o do pagador costuma ser CPF)
+  const doc =
+    /(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14,15}(?!\d)|\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}(?!\d))/.exec(near)?.[1] ?? /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/.exec(text)?.[0] ?? null;
   const rest = near.replace(/^(benefici[aá]rio|cedente)[:\s]*/i, "");
-  const name = rest.split(/\s[-–]\s|\s\d{2}\.?\d{3}|\s\d{11,14}|CNPJ|CPF/i)[0].trim() || null;
+  const name = rest.split(/\s[-–]\s|\s\d{2}\.?\d{3}|\s\d{11,14}|CNPJ|CPF|Nosso\s+N[uú]mero|Vencimento|Ag[eê]ncia|Pagador/i)[0].trim() || null;
   return { name: name && name.length > 2 ? name.slice(0, 120) : null, document: doc };
+}
+
+/**
+ * Fatura de cartão e boleto de valor em aberto trazem valor e vencimento
+ * zerados no código de barras. Nesse caso os dois saem do texto do PDF.
+ */
+export function amountFromText(text: string): number | null {
+  const m = /\bvalor[ \t]*(?:do documento|cobrado|total)?[ \t]*:?[ \t]*(?:R\$[ \t]*)?(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(text);
+  const value = m ? Number(m[1].replace(/\./g, "").replace(",", ".")) : 0;
+  return value > 0 ? value : null;
+}
+
+export function dueDateFromText(text: string): string | null {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/vencimento/i.test(lines[i])) continue;
+    // a data na mesma linha, depois da palavra; senão, na linha de baixo (cabeçalho de tabela)
+    const m = /vencimento[^\d\n]{0,40}?(\d{2})\/(\d{2})\/(\d{4})/i.exec(lines[i]) ?? /(\d{2})\/(\d{2})\/(\d{4})/.exec(lines[i + 1] ?? "");
+    if (!m) continue;
+    const [, d, mo, y] = m;
+    const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+    if (date.getUTCDate() === Number(d) && date.getUTCMonth() === Number(mo) - 1) return iso(date);
+  }
+  return null;
+}
+
+/** Uma compra de dentro da fatura de cartão. */
+export type InvoiceItem = {
+  /** aaaa-mm-dd */
+  date: string | null;
+  /** onde foi gasto (estabelecimento) */
+  store: string;
+  /** o lançamento como veio na fatura */
+  description: string;
+  /** "2/3" quando é parcela */
+  installment: string | null;
+  amount: number;
+};
+
+const ITEM_LINE = /^(\d{2})\/(\d{2})\/(\d{4})\s+(.+?)\s+(-?\d{1,3}(?:\.\d{3})*,\d{2})$/;
+// "Compra a Vista sem Juros Visa LOJA" / "Parcela de compra lojista Visa - Parc.1/2 LOJA"
+const ITEM_PREFIX = /^(?:compra\s+(?:a\s+vista|parcelada)(?:\s+(?:sem|com)\s+juros)?|parcela\s+de\s+compra(?:\s+lojista)?)\s*(?:visa|master(?:card)?|elo|hiper(?:card)?|amex)?\s*/i;
+const ITEM_PARC = /\s*-?\s*parc(?:ela)?\.?\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*/i;
+
+/**
+ * Lançamentos de uma fatura de cartão: uma linha por compra, com a loja.
+ * Vale o trecho dos lançamentos do período; o quadro de "próximas faturas"
+ * fica de fora (são parcelas que ainda vão cair). Pagamento da fatura anterior
+ * não é gasto e também fica de fora.
+ */
+export function invoiceItemsFromText(text: string): InvoiceItem[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  const start = lines.findIndex((l) => /lan[cç]amentos/i.test(l));
+  const items: InvoiceItem[] = [];
+  for (let i = Math.max(0, start); i < lines.length; i++) {
+    if (/pr[oó]ximas?\s+faturas?/i.test(lines[i]) && items.length) break;
+    const m = ITEM_LINE.exec(lines[i]);
+    if (!m) continue;
+    const [, d, mo, y, raw, val] = m;
+    const description = raw.replace(/\s+/g, " ").trim();
+    if (/^pagamento\b/i.test(description)) continue;
+    const parc = ITEM_PARC.exec(description);
+    const store =
+      description
+        .replace(ITEM_PREFIX, "")
+        .replace(ITEM_PARC, " ")
+        // "DL"/"PG" na frente é só a marca do intermediador de pagamento
+        .replace(/^(?:DL|PG)\s+/i, "")
+        .replace(/\s+/g, " ")
+        .trim() || description;
+    const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+    items.push({
+      date: date.getUTCDate() === Number(d) ? iso(date) : null,
+      store: store.slice(0, 160),
+      description: description.slice(0, 300),
+      installment: parc ? `${Number(parc[1])}/${Number(parc[2])}` : null,
+      amount: Number(val.replace(/\./g, "").replace(",", ".")),
+    });
+  }
+  return items;
+}
+
+/** Total por loja, do maior para o menor. */
+export function invoiceTotalsByStore(items: { store: string; amount: number }[]): { store: string; count: number; total: number }[] {
+  const map = new Map<string, { store: string; count: number; total: number }>();
+  for (const it of items) {
+    const key = it.store.toUpperCase();
+    const cur = map.get(key) ?? { store: it.store, count: 0, total: 0 };
+    cur.count += 1;
+    cur.total = Math.round((cur.total + it.amount) * 100) / 100;
+    map.set(key, cur);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total);
 }

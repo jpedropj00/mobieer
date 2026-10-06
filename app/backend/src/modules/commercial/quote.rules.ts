@@ -11,7 +11,7 @@
  * configurado, o orçamento só segue com liberação.
  */
 
-export const PAYMENT_METHODS = ["AVISTA", "PIX", "BOLETO", "CARTAO", "FINANCEIRA"] as const;
+export const PAYMENT_METHODS = ["AVISTA", "PIX", "BOLETO", "CARTAO", "FINANCEIRA", "PIX_BOLETO", "PIX_CARTAO", "PIX_FINANCEIRA"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   AVISTA: "À vista",
@@ -19,6 +19,10 @@ export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   BOLETO: "Boleto parcelado",
   CARTAO: "Cartão de crédito",
   FINANCEIRA: "Financeira",
+  // entrada no PIX e o saldo na forma indicada
+  PIX_BOLETO: "Entrada no PIX + boleto",
+  PIX_CARTAO: "Entrada no PIX + cartão",
+  PIX_FINANCEIRA: "Entrada no PIX + financeira",
 };
 
 export type FinancingPlan = {
@@ -41,7 +45,12 @@ export type QuoteDocumentConfig = {
   /** prazo em dias de cada ambiente */
   deliveryDays: number;
   deliveryText: string;
-  /** observações do rodapé: OBS, OBS², OBS³… */
+  /** única observação que sai em todo orçamento: a garantia (certificado) */
+  mandatoryNote: string;
+  /**
+   * Sugestões de observação. Não saem sozinhas no PDF: aparecem como atalho na
+   * tela e só entram se quem monta o orçamento escolher.
+   */
   notes: string[];
 };
 
@@ -59,8 +68,8 @@ export const DEFAULT_QUOTE_DOCUMENT: QuoteDocumentConfig = {
   line: "RESIDENCIAL",
   deliveryDays: 45,
   deliveryText: "Em dias úteis conforme ambientes",
+  mandatoryNote: "5 ANOS DE GARANTIA PARA MÓVEIS E FERRAGENS (COM EXCEÇÃO DE SITUAÇÕES CONFIGURADAS MAU USO).",
   notes: [
-    "5 ANOS DE GARANTIA PARA MÓVEIS E FERRAGENS (COM EXCEÇÃO DE SITUAÇÕES CONFIGURADAS MAU USO).",
     "PRODUÇÃO 100% INDUSTRIAL E FABRICAÇÃO PRÓPRIA.",
     "ASSISTÊNCIA VITALÍCIA.",
     "TODAS AS PORTAS DE GIRO COM AMORTECEDOR.",
@@ -76,7 +85,21 @@ export function ambCode(index: number): string {
   return String.fromCharCode(A + (Math.floor(index / 26) % 26)) + String.fromCharCode(A + (index % 26));
 }
 
-/** Rótulo da observação fixa: OBS:, OBS²:, OBS³:, OBS4:… */
+/**
+ * Observações que saem no PDF: a obrigatória (garantia) e, em seguida, o que a
+ * pessoa escreveu no orçamento — cada linha vira uma observação.
+ */
+export function quoteObservations(mandatoryNote: string, quoteNotes: string | null | undefined): string[] {
+  const own = (quoteNotes ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const fixed = mandatoryNote.trim();
+  // quem colou a garantia de novo não a vê repetida
+  return [...(fixed ? [fixed] : []), ...own.filter((l) => l.toUpperCase() !== fixed.toUpperCase())];
+}
+
+/** Rótulo da observação: OBS:, OBS²:, OBS³:, OBS4:… */
 export function obsLabel(index: number): string {
   return index === 0 ? "OBS:" : index === 1 ? "OBS²:" : index === 2 ? "OBS³:" : `OBS${index + 1}:`;
 }
@@ -112,11 +135,30 @@ export type PaymentInput = {
   /** % retido; vem do plano, mas pode ser informado quando não há plano. */
   feePercent?: number | null;
 };
+/** Como o saldo (o que não é entrada) é pago: "PIX_BOLETO" → "BOLETO". */
+export type SettlementMethod = "AVISTA" | "PIX" | "BOLETO" | "CARTAO" | "FINANCEIRA";
+export function settlementOf(method: PaymentMethod): SettlementMethod {
+  if (method === "PIX_BOLETO") return "BOLETO";
+  if (method === "PIX_CARTAO") return "CARTAO";
+  if (method === "PIX_FINANCEIRA") return "FINANCEIRA";
+  return method;
+}
+/** Forma combinada: a entrada é no PIX. */
+export const hasPixEntry = (method: PaymentMethod) => method.startsWith("PIX_");
+
 export type QuoteInput = {
   items: QuoteItemInput[];
   markup: number;
   commissions: CommissionInput[];
   discount?: number;
+  /** Desconto em % sobre o preço de venda; vale no lugar do desconto em R$. */
+  discountPercent?: number | null;
+  /**
+   * Valor final combinado com o cliente: o desconto vira a diferença entre o
+   * preço de venda e este valor. Vale no lugar dos outros dois. Com ele, mexer
+   * em mark-up ou comissão muda a pontuação sem mudar o que o cliente paga.
+   */
+  targetTotal?: number | null;
   freight?: number;
   otherCosts?: number;
   payment: PaymentInput;
@@ -156,7 +198,12 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
   });
   const costTotal = r2(items.reduce((s, i) => s + i.cost, 0));
   const subtotal = r2(items.reduce((s, i) => s + i.total, 0));
-  const discount = Math.min(r2(pos(input.discount)), subtotal);
+  // desconto: valor final combinado > percentual > valor em R$
+  const targetTotal = pos(input.targetTotal) ? r2(input.targetTotal!) : null;
+  const discountPercentInput = !targetTotal && pos(input.discountPercent) ? Math.min(r4(input.discountPercent!), 100) : null;
+  const discount =
+    targetTotal != null ? r2(Math.max(0, subtotal - targetTotal)) : discountPercentInput != null ? r2((subtotal * discountPercentInput) / 100) : Math.min(r2(pos(input.discount)), subtotal);
+  const discountMode: "VALOR" | "PERCENTUAL" | "TOTAL" = targetTotal != null ? "TOTAL" : discountPercentInput != null ? "PERCENTUAL" : "VALOR";
   const total = r2(subtotal - discount);
   const freight = r2(pos(input.freight));
   const otherCosts = r2(pos(input.otherCosts));
@@ -169,12 +216,15 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
   // Pagamento: entrada + o restante no plano escolhido.
   const plan = input.payment.planId ? config.financingPlans.find((p) => p.id === input.payment.planId) ?? null : null;
   if (input.payment.planId && !plan) throw new QuoteRuleError("Plano de pagamento não encontrado nas configurações");
-  const method = plan?.method ?? input.payment.method;
+  // o plano manda na forma do saldo; a forma combinada (entrada no PIX) é mantida quando o saldo é o mesmo do plano
+  const chosen = input.payment.method;
+  const method: PaymentMethod = plan ? (settlementOf(chosen) === plan.method ? chosen : plan.method) : chosen;
+  const settle = settlementOf(method);
   const downPayment = Math.min(r2(pos(input.payment.downPayment)), total);
   if (plan?.requiresDownPayment && downPayment <= 0) throw new QuoteRuleError(`${plan.name} exige entrada`);
   const financed = r2(total - downPayment);
-  const installments = plan?.installments ?? (method === "AVISTA" || method === "PIX" ? 1 : Math.max(1, Math.floor(input.payment.installments ?? 1)));
-  const feePercent = method === "CARTAO" || method === "FINANCEIRA" ? r2(plan?.feePercent ?? pos(input.payment.feePercent)) : 0;
+  const installments = plan?.installments ?? (settle === "AVISTA" || settle === "PIX" ? 1 : Math.max(1, Math.floor(input.payment.installments ?? 1)));
+  const feePercent = settle === "CARTAO" || settle === "FINANCEIRA" ? r2(plan?.feePercent ?? pos(input.payment.feePercent)) : 0;
   const financingFee = r2((financed * feePercent) / 100);
   const installmentValue = financed > 0 ? r2(financed / installments) : 0;
 
@@ -193,6 +243,12 @@ export function computeQuote(input: QuoteInput, config: PricingConfig) {
     commissionPercent,
     subtotal,
     discount,
+    /** como o desconto foi informado, e o valor informado (para a tela reabrir igual) */
+    discountMode,
+    discountPercent: discountPercentInput,
+    targetTotal,
+    /** desconto efetivo em % do preço de venda */
+    discountRate: subtotal > 0 ? r2((discount / subtotal) * 100) : 0,
     total,
     freight,
     otherCosts,
@@ -239,8 +295,11 @@ export function paymentText(p: QuoteCalc["payment"], brl: (n: number) => string)
   const entrada = p.downPayment > 0 ? `Entrada de ${brl(p.downPayment)} + ` : "";
   if (p.financed <= 0) return `À vista: ${brl(p.downPayment)}`;
   if (p.method === "AVISTA" || p.method === "PIX") return `${PAYMENT_LABEL[p.method]}: ${brl(p.financed)}`;
-  const onde = p.planName ?? PAYMENT_LABEL[p.method];
-  return `${entrada}${p.installments}x de ${brl(p.installmentValue)} (${onde})${p.downPayment > 0 ? "" : " sem entrada"}`;
+  const settle = settlementOf(p.method);
+  const onde = p.planName ?? PAYMENT_LABEL[settle];
+  // forma combinada: diz que a entrada é no PIX
+  const lead = hasPixEntry(p.method) && p.downPayment > 0 ? `Entrada de ${brl(p.downPayment)} no PIX + ` : entrada;
+  return `${lead}${p.installments}x de ${brl(p.installmentValue)} (${onde})${p.downPayment > 0 ? "" : " sem entrada"}`;
 }
 
 function normalizeDocument(raw: unknown): QuoteDocumentConfig {
@@ -252,8 +311,11 @@ function normalizeDocument(raw: unknown): QuoteDocumentConfig {
     line: str(o.line, D.line),
     deliveryDays: typeof o.deliveryDays === "number" && o.deliveryDays > 0 ? Math.round(o.deliveryDays) : D.deliveryDays,
     deliveryText: str(o.deliveryText, D.deliveryText),
-    // lista vazia é uma escolha válida (orçamento sem observações fixas)
-    notes: Array.isArray(o.notes) ? o.notes.filter((n): n is string => typeof n === "string" && Boolean(n.trim())).map((n) => n.trim()) : D.notes,
+    mandatoryNote: str(o.mandatoryNote, D.mandatoryNote),
+    // lista vazia é uma escolha válida (sem sugestões); a garantia fica só em mandatoryNote
+    notes: Array.isArray(o.notes)
+      ? o.notes.filter((n): n is string => typeof n === "string" && Boolean(n.trim())).map((n) => n.trim()).filter((n) => n.toUpperCase() !== str(o.mandatoryNote, D.mandatoryNote).toUpperCase())
+      : D.notes,
   };
 }
 
