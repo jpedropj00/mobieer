@@ -22,6 +22,7 @@ import type { Contractor, ContractorShift, ContractorSummary } from "@/types";
 import { AccessDialog, BonusTab, InstallationsTab, ProductivityTab } from "@/components/contractors-management";
 import { ContractorDocumentsTab } from "@/components/contractor-documents";
 import { WorkOrdersTab } from "@/components/work-orders";
+import { ContractorAttendance } from "@/components/contractor-attendance";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDateTime = (v: string) => new Date(v).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -192,6 +193,7 @@ export function ContractorsPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="equipe">Equipe ({list.length})</TabsTrigger>
+          <TabsTrigger value="presenca">Presença</TabsTrigger>
           <TabsTrigger value="turnos">Turnos ({shiftList.length})</TabsTrigger>
           <TabsTrigger value="comodos">Cômodos</TabsTrigger>
           <TabsTrigger value="requisicoes">Requisições</TabsTrigger>
@@ -325,6 +327,10 @@ export function ContractorsPage() {
 
         <TabsContent value="documentos" className="space-y-4 pt-4">
           <ContractorDocumentsTab contractors={list} canManage={canManage} />
+        </TabsContent>
+
+        <TabsContent value="presenca" className="pt-4">
+          <ContractorAttendance />
         </TabsContent>
 
         <TabsContent value="requisicoes" className="pt-4">

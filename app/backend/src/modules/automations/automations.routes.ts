@@ -4,7 +4,6 @@ import { MessageEvent, MessageStatus } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
 import { requirePermission } from "../../middlewares/rbac";
 import { AUTOMATION_DEFAULTS, MESSAGE_EVENTS, getAutomation } from "../../lib/automations";
-import { sendWhatsAppText, toWhatsAppNumber } from "../../lib/whatsapp";
 import { env } from "../../config/env";
 import { prisma } from "../../prisma";
 import { asyncHandler } from "../../utils/asyncHandler";
@@ -12,7 +11,6 @@ import { ValidationError } from "../../utils/ApiError";
 import { enumQuery, intQuery } from "../../utils/query";
 import { ok } from "../../utils/response";
 import { renderTemplate, templateKeys } from "../../utils/template";
-import { whatsappStatus } from "../../lib/whatsapp-status";
 
 /** Configuração das mensagens automáticas: /api/automations */
 const router = Router();
@@ -45,17 +43,9 @@ router.get(
   asyncHandler(async (req, res) => {
     const list = await Promise.all(MESSAGE_EVENTS.map((e) => getAutomation(req.user!.organizationId, e)));
     return ok(res, {
-      whatsappConfigured: env.whatsapp.enabled,
       automations: list.map((a) => ({ ...a, defaultBody: AUTOMATION_DEFAULTS[a.event].body, preview: renderTemplate(a.body, EXAMPLES).text })),
     });
   })
-);
-
-// GET /api/automations/whatsapp/status -> numero conectado, templates e avisos
-router.get(
-  "/whatsapp/status",
-  requirePermission("settings.manage"),
-  asyncHandler(async (_req, res) => ok(res, await whatsappStatus()))
 );
 
 // PUT /api/automations/:event
@@ -115,58 +105,6 @@ router.delete(
     await prisma.messageAutomation.deleteMany({ where: { organizationId: req.user!.organizationId, event } });
     const a = await getAutomation(req.user!.organizationId, event);
     return ok(res, { ...a, defaultBody: AUTOMATION_DEFAULTS[event].body, preview: renderTemplate(a.body, EXAMPLES).text }, "Texto padrão restaurado");
-  })
-);
-
-// POST /api/automations/:event/test { phone } -> envia o exemplo para um número
-router.post(
-  "/:event/test",
-  requirePermission("settings.manage"),
-  asyncHandler(async (req, res) => {
-    const event = enumQuery(req.params.event, MessageEvent, "evento")!;
-    const { phone } = z.object({ phone: z.string().trim().min(8).max(30) }).parse(req.body);
-    if (!toWhatsAppNumber(phone)) throw new ValidationError("Telefone inválido — inclua o DDD");
-    const a = await getAutomation(req.user!.organizationId, event);
-    const r = await sendWhatsAppText(phone, `[TESTE] ${renderTemplate(a.body, EXAMPLES).text}`);
-    return ok(
-      res,
-      r,
-      r.delivered ? "Mensagem de teste enviada" : r.skipped ? "WhatsApp não configurado: a mensagem saiu só no log do servidor" : `Falha: ${r.error}`
-    );
-  })
-);
-
-// GET /api/automations/logs?event=&status=&limit=
-router.get(
-  "/logs",
-  requirePermission("settings.manage"),
-  asyncHandler(async (req, res) => {
-    const rows = await prisma.messageLog.findMany({
-      where: {
-        organizationId: req.user!.organizationId,
-        ...(req.query.event ? { event: enumQuery(req.query.event, MessageEvent, "evento") } : {}),
-        ...(req.query.status ? { status: enumQuery(req.query.status, MessageStatus, "status") } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      take: intQuery(req.query.limit, { min: 1, max: 200, name: "limit" }) ?? 50,
-    });
-    const clientIds = [...new Set(rows.map((r) => r.clientId).filter((x): x is string => Boolean(x)))];
-    const clients = await prisma.client.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } });
-    const names = new Map(clients.map((c) => [c.id, c.name]));
-    return ok(
-      res,
-      rows.map((r) => ({
-        id: r.id,
-        event: r.event,
-        label: AUTOMATION_DEFAULTS[r.event].label,
-        status: r.status,
-        to: r.to ? `•••${r.to.slice(-4)}` : null,
-        clientName: r.clientId ? names.get(r.clientId) ?? null : null,
-        body: r.body,
-        error: r.error,
-        createdAt: r.createdAt,
-      }))
-    );
   })
 );
 

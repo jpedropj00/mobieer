@@ -20,13 +20,16 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 const DEMO_ACCOUNTS = [
-  { label: "Administrador", email: "admin@mobieer.com.br", password: "admin123" },
-  { label: "Almoxarife", email: "almoxarife@mobieer.com.br", password: "almox123" },
-  { label: "Solicitante", email: "solicitante@mobieer.com.br", password: "sol123" },
+  { label: "Administrador", email: "admin@mobieer.com.br" },
+  { label: "Almoxarife", email: "almoxarife@mobieer.com.br" },
+  { label: "Solicitante", email: "solicitante@mobieer.com.br" },
 ];
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, verifyMfa } = useAuth();
+  // segunda etapa: a senha estava certa e a conta pede o código do autenticador
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
   const [submitting, setSubmitting] = useState(false);
@@ -41,12 +44,34 @@ export function LoginPage() {
   const onSubmit = async (values: LoginValues) => {
     setSubmitting(true);
     try {
-      await login(values.email, values.password);
+      const r = await login(values.email, values.password);
+      if (r.mfaToken) {
+        setMfaToken(r.mfaToken);
+        setMfaCode("");
+        return;
+      }
       toast.success("Login realizado com sucesso");
       const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
       navigate(from ?? "/", { replace: true });
     } catch (err) {
       toast.error(errorMessage(err, "Falha ao entrar"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const onMfa = async () => {
+    if (!mfaToken || mfaCode.length < 6) return;
+    setSubmitting(true);
+    try {
+      await verifyMfa(mfaToken, mfaCode);
+      toast.success("Login realizado com sucesso");
+      const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
+      navigate(from ?? "/", { replace: true });
+    } catch (err) {
+      toast.error(errorMessage(err, "Código incorreto"));
+      // passe vencido ou conta bloqueada: volta para e-mail e senha
+      if (/expirou|bloquead|indispon/i.test(errorMessage(err, ""))) setMfaToken(null);
     } finally {
       setSubmitting(false);
     }
@@ -61,7 +86,27 @@ export function LoginPage() {
           <p className="mt-1 text-sm text-white/50">Acesse o sistema de gestão da Mobieer</p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 rounded-2xl bg-white p-6 shadow-2xl sm:p-8">
+        {mfaToken && (
+          <form onSubmit={(e) => { e.preventDefault(); void onMfa(); }} className="space-y-4 rounded-2xl bg-white p-6 shadow-2xl sm:p-8">
+            <div className="space-y-1">
+              <p className="font-semibold">Verificação em duas etapas</p>
+              <p className="text-sm text-muted-foreground">Digite o código de 6 dígitos do seu aplicativo autenticador. Sem o celular? Use um código de recuperação.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mfa-code">Código</Label>
+              <Input id="mfa-code" autoFocus autoComplete="one-time-code" inputMode="text" placeholder="000000" className="text-center font-mono text-lg tracking-widest" value={mfaCode} onChange={(e) => setMfaCode(e.target.value.replace(/[^0-9A-Za-z-]/g, "").slice(0, 12))} />
+            </div>
+            <Button type="submit" className="w-full" disabled={submitting || mfaCode.length < 6}>
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting ? "Conferindo..." : "Confirmar"}
+            </Button>
+            <button type="button" className="block w-full text-center text-xs text-muted-foreground hover:underline" onClick={() => setMfaToken(null)}>
+              Voltar para e-mail e senha
+            </button>
+          </form>
+        )}
+
+        <form onSubmit={handleSubmit(onSubmit)} className={mfaToken ? "hidden" : "space-y-4 rounded-2xl bg-white p-6 shadow-2xl sm:p-8"}>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <div className="relative">
@@ -99,8 +144,8 @@ export function LoginPage() {
                 key={acc.email}
                 type="button"
                 onClick={() => {
+                  // só o e-mail: a senha é a do SEED_PASSWORD de quem rodou o seed
                   setValue("email", acc.email);
-                  setValue("password", acc.password);
                 }}
                 className="rounded-lg border border-sidebar-border bg-sidebar-muted/10 px-3 py-2 text-left transition-colors hover:border-primary/50 hover:bg-sidebar-muted/30"
               >

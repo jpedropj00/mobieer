@@ -45,7 +45,7 @@ export async function setUserPassword(userId: string, pw: string, opts: { tempor
   if (opts.currentHash && (await bcrypt.compare(pw, opts.currentHash))) {
     throw new BadRequestError("A senha nova precisa ser diferente da atual");
   }
-  const hash = await bcrypt.hash(pw, 10);
+  const hash = await bcrypt.hash(pw, 12);
   await prisma.user.update({
     where: { id: userId },
     data: {

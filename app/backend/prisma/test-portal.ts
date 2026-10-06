@@ -17,7 +17,10 @@ async function main() {
   // 1) Ativa a conta do portal já semeada (contrato 364-1) com uma senha de teste.
   const juliana = await prisma.client.findFirst({ where: { name: { contains: "Juliana" } } });
   if (!juliana) throw new Error("Cliente piloto não encontrado — rode o seed antes.");
-  const pw = await bcrypt.hash("cliente123", 12);
+  // a senha de teste vem do ambiente; nada de senha no repositório
+  const testPassword = process.env.PORTAL_TEST_PASSWORD ?? "";
+  if (testPassword.length < 10) throw new Error("Defina PORTAL_TEST_PASSWORD (mínimo 10 caracteres) para rodar este script.");
+  const pw = await bcrypt.hash(testPassword, 12);
   const julianaAccount = await prisma.clientAccount.update({
     where: { email: "adv.julianabarboza@gmail.com" },
     data: { passwordHash: pw, status: "ACTIVE", inviteToken: null, inviteExpiry: null },
@@ -110,7 +113,7 @@ async function main() {
 
   // Resumo
   const summary = {
-    portalLoginAtivo: { email: "adv.julianabarboza@gmail.com", senha: "cliente123" },
+    portalLoginAtivo: { email: "adv.julianabarboza@gmail.com", senha: "(a de PORTAL_TEST_PASSWORD)" },
     conviteInvitePendente: "/portal/definir-senha?token=dev-invite-studio-alfa",
     clientes: await prisma.client.count(),
     projetos: await prisma.project.count(),

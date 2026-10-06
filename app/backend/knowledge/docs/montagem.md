@@ -17,3 +17,13 @@ Aba **Cronograma** do projeto. O cronograma segue o modelo da loja:
 
 ## Solicitação de peças
 Menu **Solicitação de peças**: pedidos de peças que faltaram ou precisam ser refeitas, com foto.
+
+## Presença dos montadores externos
+Menu **Montadores externos**, aba **Presença**. O escritório marca, dia a dia, quem veio (✓) e quem não veio (✗). Funciona para o montador que ainda não tem login e também para quem tem.
+- O dia marcado como "veio" entra no fechamento com a diária do montador.
+- Se o montador já bateu o ponto pelo celular naquele dia, o dia aparece em verde claro e já conta.
+- Tocar de novo no botão marcado limpa o lançamento.
+- As setas mudam a semana; não dá para lançar dia que ainda não chegou.
+
+## Solicitação de peças na produção
+Quando uma solicitação de peças passa para **Em produção**, cada peça pedida entra na fábrica como um item do pedido de produção do projeto, com etiqueta, e aparece no quadro **Fábrica** identificada como "Reposição" e o número da solicitação. Quando todas as peças têm baixa, a solicitação passa sozinha para **Pronta**. A solicitação precisa estar ligada a um projeto.

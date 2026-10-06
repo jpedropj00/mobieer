@@ -114,13 +114,10 @@ npm run dev
 
 ## Credenciais de desenvolvimento (seed)
 
-| Perfil        | Email                    | Senha      |
-| ------------- | ------------------------ | ---------- |
-| Administrador | admin@mobieer.com.br     | admin123   |
-| Gestor        | gestor@mobieer.com.br    | gestor123  |
-| Almoxarife    | almoxarife@mobieer.com.br | almox123  |
-| Solicitante   | solicitante@mobieer.com.br | sol123   |
-| Visualizador  | visual@mobieer.com.br    | visual123  |
+O seed cria uma conta por perfil (`admin@`, `gestor@`, `almoxarife@`, `solicitante@`, `visual@`, `rh@` e `financeiro@mobieer.com.br`).
+Nenhuma senha fica no repositório: defina `SEED_PASSWORD` no `.env` (mínimo de 10 caracteres) antes de rodar o seed,
+ou deixe em branco para o seed gerar uma senha e mostrá-la no terminal naquela execução.
+Nunca rode o seed no banco de produção.
 
 ## Módulos
 

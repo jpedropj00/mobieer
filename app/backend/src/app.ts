@@ -43,6 +43,10 @@ import materialsListRoutes from "./modules/production/materials-list.routes";
 import techFolderRoutes from "./modules/techproject/tech-folder.routes";
 import assistantRoutes from "./modules/ai/assistant.routes";
 import renderRoutes from "./modules/render/render.routes";
+import financeExtrasRoutes from "./modules/finance/finance-extras.routes";
+import contractorAttendanceRoutes from "./modules/contractors/attendance.routes";
+import projectStartAtRoutes from "./modules/timeline/start-at.routes";
+import mfaRoutes from "./modules/auth/mfa.routes";
 import weeklyRoutes from "./modules/weekly/weekly.routes";
 import fiscalRoutes from "./modules/fiscal/fiscal.routes";
 import fiscalImportRoutes from "./modules/fiscal/fiscal-import.routes";
@@ -73,9 +77,10 @@ import chatRoutes from "./modules/chat/chat.routes";
 import installationRoutes from "./modules/contractors/installation.routes";
 import meContractorRoutes from "./modules/contractors/me-contractor.routes";
 import automationsRoutes from "./modules/automations/automations.routes";
-import whatsappWebhookRoutes from "./modules/integrations/whatsapp-webhook.routes";
 import integrationsRoutes from "./modules/integrations/integrations.routes";
-import { errorHandler, notFound } from "./middlewares/errorHandler";
+import { errorHandler, notFound, setErrorReporter } from "./middlewares/errorHandler";
+import { healthCheck, reportClientError, reportServerError } from "./lib/monitoring";
+import { rateLimit } from "./utils/rate-limit";
 
 export function createApp() {
   const app = express();
@@ -98,21 +103,27 @@ export function createApp() {
     })
   );
   app.use(
-    express.json({
-      limit: "5mb",
-      // corpo cru guardado para validar a assinatura do webhook do WhatsApp
-      verify: (req, _res, buf) => {
-        if (req.url?.startsWith("/api/integrations/")) (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
-      },
-    })
+    express.json({ limit: "5mb" })
   );
   app.use(express.urlencoded({ extended: true }));
 
   app.get("/health", (_req, res) => res.json({ success: true, message: "MOBIEER API OK" }));
+  // saúde de verdade (API + banco), para monitor de disponibilidade: 200 ou 503
+  app.get("/api/health", async (_req, res) => {
+    const h = await healthCheck();
+    res.status(h.ok ? 200 : 503).json({ success: h.ok, ...h });
+  });
+  // erro que aconteceu no navegador (tela quebrada): vira aviso para quem administra
+  app.post("/api/monitoring/client-error", rateLimit({ name: "client-error", windowMs: 60 * 60_000, max: 30 }), async (req, res) => {
+    const b = (req.body ?? {}) as { message?: unknown; path?: unknown };
+    if (typeof b.message === "string" && b.message.trim()) await reportClientError({ message: b.message.slice(0, 500), path: typeof b.path === "string" ? b.path.slice(0, 200) : "/" });
+    res.status(204).end();
+  });
 
   const uploadsDir = process.env.VERCEL ? path.join("/tmp", "uploads") : path.resolve(process.cwd(), "uploads");
   app.use("/uploads", express.static(uploadsDir));
 
+  app.use("/api/auth", mfaRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/users", usersRoutes);
   app.use("/api/products", productsRoutes);
@@ -138,6 +149,8 @@ export function createApp() {
   app.use("/api/portal/finance", portalFinanceRoutes);
   app.use("/api/portal", portalRoutes);
   app.use("/api/hr", hrRoutes);
+  // antes das rotas do montador: "/attendance" não pode cair em "/:id"
+  app.use("/api/contractors", contractorAttendanceRoutes);
   app.use("/api/contractors", contractorsRoutes);
   app.use("/api/assistance", assistanceRoutes);
   app.use("/api/public/os", publicWorkOrderRoutes);
@@ -149,11 +162,12 @@ export function createApp() {
   app.use("/api/ai", assistantRoutes);
   app.use("/api/parts", partsRoutes);
   app.use("/api/fieldwork", fieldworkRoutes);
+  app.use("/api/projects/:projectId", projectStartAtRoutes);
   app.use("/api/projects/:projectId", timelineRoutes);
   app.use("/api/installations", installationRoutes);
   app.use("/api/me/contractor", meContractorRoutes);
-  app.use("/api/integrations", whatsappWebhookRoutes);
   app.use("/api/integrations", integrationsRoutes);
+  app.use("/api/finance", financeExtrasRoutes);
   app.use("/api/finance", financeRoutes);
   app.use("/api/templates", templatesRoutes);
   app.use("/api/commercial/goals", goalsRoutes);
@@ -196,6 +210,8 @@ export function createApp() {
   }
 
   app.use(notFound);
+  // erro 500 vira aviso no sino de quem administra
+  setErrorReporter(reportServerError);
   app.use(errorHandler);
 
   return app;

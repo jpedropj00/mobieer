@@ -26,6 +26,10 @@ enum UserStatus {
 model User {
   id               String     @id @default(cuid())
   aiConversations AiConversation[]
+  // verificação em duas etapas (TOTP): segredo cifrado, quando foi ativada e hashes dos códigos de recuperação
+  mfaSecret        String?
+  mfaEnabledAt     DateTime?
+  mfaRecoveryCodes String[]   @default([])
   name             String
   email            String     @unique
   password         String
@@ -1129,6 +1133,7 @@ model Project {
   fiscalInvoices      FiscalInvoice[]
   promobImports       PromobImport[]
   contractorShifts    ContractorShift[]
+  contractorAttendances ContractorAttendance[]
   installationTasks   InstallationTask[]
   workOrders          InstallationWorkOrder[]
   partRequests        PartRequest[]
@@ -3027,6 +3032,9 @@ model ProductionItem {
   sector         ProductionSector? // setor atual (null se PENDING/DONE/CANCELLED)
   sourceImportId String?
   sourceImport   PromobImport?         @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  // peça de reposição: veio de uma solicitação de peças
+  partRequestId  String?
+  partRequest    PartRequest?          @relation(fields: [partRequestId], references: [id], onDelete: SetNull)
   position       Int                   @default(0)
   notes          String?
   startedAt      DateTime?
@@ -3368,6 +3376,7 @@ model Contractor {
   pixKey               String?
   hiredAt              DateTime?
   shifts               ContractorShift[]
+  attendances          ContractorAttendance[]
   installationTasks    InstallationTask[]
   workOrders           InstallationWorkOrder[]
   bonuses              ContractorBonus[]
@@ -3406,6 +3415,7 @@ model ContractorShift {
   notes            String?      @db.Text
   createdById      String?
   createdBy        User?        @relation("ContractorShiftAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  attendances      ContractorAttendance[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -3920,6 +3930,7 @@ model PartRequest {
   items   PartRequestItem[]
   photos  PartRequestPhoto[]
   history PartRequestHistory[]
+  productionItems ProductionItem[]
 
   @@index([organizationId, status])
   @@index([contractorId, status])
@@ -4779,4 +4790,26 @@ model AiMessage {
   createdAt      DateTime       @default(now())
 
   @@index([conversationId, createdAt])
+}
+
+/// Presença do montador externo lançada pelo escritório: um registro por dia.
+/// "Veio" gera também um turno (ContractorShift) para a diária entrar no fechamento.
+model ContractorAttendance {
+  id             String           @id @default(cuid())
+  organizationId String
+  contractorId   String
+  contractor     Contractor       @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  date           DateTime         @db.Date
+  present        Boolean
+  projectId      String?
+  project        Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  shiftId        String?
+  shift          ContractorShift? @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  notes          String?          @db.Text
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
+
+  @@unique([contractorId, date])
+  @@index([organizationId, date])
 }

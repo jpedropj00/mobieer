@@ -465,13 +465,13 @@ for (const def of ROLE_DEFS) {
 }
 
 const USERS = [
-  { name: "Admin Principal", email: "admin@mobieer.com.br", password: "admin123", position: "Administrador", sector: "TI", role: "ADMIN" },
-  { name: "Marcos Vinícius", email: "gestor@mobieer.com.br", password: "gestor123", position: "Gestor de Produção", sector: "Produção", role: "MANAGER" },
-  { name: "J. Silva", email: "almoxarife@mobieer.com.br", password: "almox123", position: "Almoxarife", sector: "Almoxarifado", role: "WAREHOUSE" },
-  { name: "Ana Beatriz", email: "solicitante@mobieer.com.br", password: "sol123", position: "Supervisora de Montagem", sector: "Montagem", role: "REQUESTER" },
-  { name: "Carlos Eduardo", email: "visual@mobieer.com.br", password: "visual123", position: "Diretor", sector: "Diretoria", role: "VIEWER" },
-  { name: "Patrícia Nunes", email: "rh@mobieer.com.br", password: "rh123", position: "Analista de RH", sector: "Administração", role: "RH" },
-  { name: "Fernanda Lima", email: "financeiro@mobieer.com.br", password: "fin123", position: "Analista Financeiro", sector: "Administração", role: "FINANCEIRO" },
+  { name: "Admin Principal", email: "admin@mobieer.com.br", position: "Administrador", sector: "TI", role: "ADMIN" },
+  { name: "Marcos Vinícius", email: "gestor@mobieer.com.br", position: "Gestor de Produção", sector: "Produção", role: "MANAGER" },
+  { name: "J. Silva", email: "almoxarife@mobieer.com.br", position: "Almoxarife", sector: "Almoxarifado", role: "WAREHOUSE" },
+  { name: "Ana Beatriz", email: "solicitante@mobieer.com.br", position: "Supervisora de Montagem", sector: "Montagem", role: "REQUESTER" },
+  { name: "Carlos Eduardo", email: "visual@mobieer.com.br", position: "Diretor", sector: "Diretoria", role: "VIEWER" },
+  { name: "Patrícia Nunes", email: "rh@mobieer.com.br", position: "Analista de RH", sector: "Administração", role: "RH" },
+  { name: "Fernanda Lima", email: "financeiro@mobieer.com.br", position: "Analista Financeiro", sector: "Administração", role: "FINANCEIRO" },
 ];
 
 const CATEGORIES = [
@@ -631,9 +631,14 @@ async function main() {
   }
 
   console.log("[SEED] Criando usuários...");
+  // Nenhuma senha fica no código (o repositório é público). Use SEED_PASSWORD no .env
+  // (mínimo 10 caracteres) ou deixe o seed gerar uma, mostrada só nesta execução.
+  const seedPassword = (process.env.SEED_PASSWORD ?? "").length >= 10 ? process.env.SEED_PASSWORD! : crypto.randomBytes(12).toString("base64url");
+  if (!process.env.SEED_PASSWORD) console.log(`[SEED]   senha das contas de desenvolvimento (gerada agora, não fica salva): ${seedPassword}`);
+  const seedHash = await bcrypt.hash(seedPassword, 12);
   const userIds: Record<string, string> = {};
   for (const u of USERS) {
-    const hash = await bcrypt.hash(u.password, 10);
+    const hash = seedHash;
     const user = await prisma.user.create({
       data: {
         name: u.name,

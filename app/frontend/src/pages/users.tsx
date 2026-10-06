@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
-import { KeyRound, Loader2, LockOpen, Pencil, Plus, Search, Shield, Trash2, Users } from "lucide-react";
+import { KeyRound, Loader2, LockOpen, Pencil, Plus, Search, Shield, ShieldOff, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/services/api";
 import type { Paginated, RoleInfo, User } from "@/types";
@@ -111,6 +111,13 @@ export function UsersPage() {
       setTempPassword({ name: r.data.name, password: r.data.temporaryPassword });
     },
     onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao limpar a senha"),
+  });
+
+  // celular perdido: desliga a verificação em duas etapas da pessoa, que volta a entrar só com a senha
+  const resetMfa = useMutation({
+    mutationFn: (u: User) => apiPost<{ message: string }>(`/auth/mfa/reset/${u.id}`),
+    onSuccess: (r) => toast.success(r.message),
+    onError: (err) => toast.error((err as { message?: string }).message ?? "Erro ao desligar a verificação em duas etapas"),
   });
 
   const toggleStatus = async (u: User) => {
@@ -246,6 +253,18 @@ export function UsersPage() {
                                   <KeyRound className="h-4 w-4" />
                                 </Button>
                               )}
+                              {u.id !== me?.id && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Desligar a verificação em duas etapas (celular perdido)"
+                                  disabled={resetMfa.isPending}
+                                  onClick={() => confirm(`Desligar a verificação em duas etapas de ${u.name}? A pessoa volta a entrar só com a senha.`) && resetMfa.mutate(u)}
+                                >
+                                  <ShieldOff className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => toggleStatus(u)} title={u.status === "ACTIVE" ? "Inativar" : "Ativar"}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -321,7 +340,7 @@ export function UsersPage() {
             {!editing && (
               <div className="space-y-2">
                 <Label htmlFor="u-password">Senha</Label>
-                <Input id="u-password" type="password" placeholder="Deixe vazio para usar mudar123" {...form.register("password")} />
+                <Input id="u-password" type="password" placeholder="Deixe vazio para gerar uma senha temporária" {...form.register("password")} />
                 {form.formState.errors.password && <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>}
               </div>
             )}

@@ -10,6 +10,7 @@
  * uma atividade de montagem a partir dela.
  */
 import { Router } from "express";
+import { sendPartRequestToProduction } from "./parts-production.service";
 import { z } from "zod";
 import { PartRequestPhotoKind, PartRequestStatus, Prisma, RequisitionPriority, RoomType, Unit } from "@prisma/client";
 import { authenticate } from "../../middlewares/auth";
@@ -517,7 +518,14 @@ router.post(
       });
     }
 
-    return ok(res, serialize(updated, actor), `Solicitação ${STATUS_LABEL[input.status].toLowerCase()}`);
+    // as peças entram na fábrica como itens do pedido de produção do projeto
+    let extra = "";
+    if (input.status === PartRequestStatus.EM_PRODUCAO) {
+      const sent = await sendPartRequestToProduction(current.id, req.user!.organizationId, actor.id);
+      extra = sent.created ? ` — ${sent.created} ${sent.created === 1 ? "peça enviada" : "peças enviadas"} para a fábrica` : sent.reason ? `. ${sent.reason}` : "";
+    }
+
+    return ok(res, serialize(updated, actor), `Solicitação ${STATUS_LABEL[input.status].toLowerCase()}${extra}`);
   })
 );
 

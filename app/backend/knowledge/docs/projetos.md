@@ -39,3 +39,6 @@ Ao abrir um projeto aparecem as abas:
 
 ## Venda futura
 Um projeto pode ser marcado como venda futura: a produção só começa depois de uma nova medição e da liberação.
+
+## Projeto que já estava em andamento
+Ao criar o projeto, no campo **Projeto já em andamento? Etapa atual**, escolha em que etapa ele está (por exemplo, Medição, Produção ou Montagem). As etapas anteriores ficam concluídas e o projeto segue dali normalmente. Se a etapa for Produção ou posterior, o pedido de produção já nasce na fase correspondente. Deixando em "Projeto novo", ele começa do início.
