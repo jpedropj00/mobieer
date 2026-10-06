@@ -20,6 +20,16 @@ Como montar:
 
 PDF exportado do Promob entra página por página. Se a página já vem com carimbo, desmarque a opção Carimbo daquela prancha.
 
+## Desenhar por medidas (vista cotada sem o Promob)
+No cartão **Pasta técnica** há o botão **Desenhar por medidas**. Você digita as medidas em milímetros e o sistema desenha a vista frontal do móvel com as cotas, e coloca como uma prancha da pasta:
+1. Informe o ambiente, o título da prancha (ex.: VISTA A INTERNA) e a escala.
+2. Escreva a descrição do móvel (sai na chamada, junto com L x A x P) e informe largura, altura, profundidade, topo e rodapé.
+3. Monte as colunas, da esquerda para a direita. Cada coluna pode ter **prateleiras**, **portas**, **gavetas** ou ser um **vão livre**. Largura em branco fica com o que sobrar.
+4. Em prateleiras e gavetas, digite as alturas de cima para baixo, separadas por ponto e vírgula. Em branco, o sistema divide por igual. Se faltar a última, ela fica com o resto.
+5. Clique em **Salvar e ver o desenho**.
+
+Se as alturas não fecharem com o vão interno (altura menos topo e rodapé), o sistema desenha mesmo assim e avisa a diferença. Para mudar as medidas depois, use o botão de lápis e régua na prancha. O desenho é só a vista frontal em 2D: perspectiva e planta continuam vindo do Promob.
+
 ## Aprovação do projeto técnico
 Na mesma aba fica a aprovação: a equipe publica o projeto técnico para o cliente, que aprova ou pede ajustes pelo portal. Cada rodada fica registrada com data, quem decidiu e o comentário do cliente. Com a aprovação, o projeto pode ser liberado para produção.
 

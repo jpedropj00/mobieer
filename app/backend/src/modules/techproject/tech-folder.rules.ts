@@ -6,6 +6,8 @@
  * "PROJETO EXECUTIVO VARANDA".
  */
 
+import type { DrawingSpec } from "./tech-drawing.rules";
+
 export type TechSheet = {
   id: string;
   room: string;
@@ -20,6 +22,8 @@ export type TechSheet = {
   page: number | null;
   /** Desenha o carimbo da loja. Página de PDF que já veio carimbada do Promob entra como está. */
   stamp: boolean;
+  /** Prancha desenhada pelo sistema a partir das medidas (dá para editar e gerar de novo). */
+  drawing?: DrawingSpec;
 };
 
 export type TechFolderData = { sheets: TechSheet[]; includeSpecs: boolean; notes: string[] };
