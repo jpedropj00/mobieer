@@ -6,6 +6,8 @@
  *   POST /sheets   envia imagem ou PDF do Promob (cada página vira uma prancha)
  *   DELETE /sheets/:sheetId
  *   GET  /sheets/:sheetId/file   o arquivo da prancha
+ *   POST /drawings            desenha uma vista cotada a partir das medidas
+ *   PUT  /drawings/:sheetId   refaz o desenho com medidas novas
  *   GET  .pdf      gera a pasta
  *   POST /publish  guarda nos documentos do projeto (Projeto técnico)
  */
@@ -23,6 +25,8 @@ import { BadRequestError, NotFoundError } from "../../utils/ApiError";
 import { ok } from "../../utils/response";
 import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { techFolderPdf } from "./tech-folder.pdf";
+import { drawingPdf } from "./tech-drawing.pdf";
+import { COLUMN_KINDS, DRAWING_FINISHES, DRAWING_LAYOUTS, DrawingError, type DrawingImage, type DrawingSpec } from "./tech-drawing.rules";
 import { SCALES, SHEET_TITLES, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
 
 const router = Router();
@@ -153,6 +157,120 @@ router.post(
   })
 );
 
+// ---- prancha desenhada pelo sistema a partir das medidas
+const mmNum = z.coerce.number().min(0).max(20_000);
+const imageRef = z.object({ storageKey: z.string().max(400), fileName: z.string().max(200), mime: z.string().regex(/^image\/(png|jpe?g)$/i) });
+/** Só vale imagem enviada para a pasta técnica deste projeto — a chave vem da tela. */
+function ownImage(i: DrawingImage | null | undefined, projectId: string): DrawingImage | null {
+  if (!i) return null;
+  if (!i.storageKey.startsWith(`projects/${projectId}/pasta-tecnica/`) || i.storageKey.includes("..")) throw new BadRequestError("Imagem inválida. Envie de novo.");
+  return i;
+}
+
+const drawingInput = z.object({
+  room: z.string().trim().min(1, "Informe o ambiente").max(80),
+  title: z.string().trim().min(1, "Informe o título da prancha").max(60),
+  scale: z.string().trim().max(12).nullable().optional(),
+  spec: z.object({
+    description: z.string().trim().max(160).default(""),
+    width: mmNum.positive("Informe a largura"),
+    height: mmNum.positive("Informe a altura"),
+    depth: mmNum.nullable().optional(),
+    top: mmNum.default(0),
+    base: mmNum.default(0),
+    columns: z
+      .array(
+        z.object({
+          kind: z.enum(COLUMN_KINDS),
+          width: mmNum.nullable().optional(),
+          count: z.coerce.number().int().min(0).max(30).default(0),
+          heights: z.array(mmNum.positive()).max(31).default([]),
+          label: z.string().trim().max(24).nullable().optional(),
+          shelves: z.coerce.number().int().min(0).max(30).optional(),
+        })
+      )
+      .min(1, "Adicione pelo menos uma coluna")
+      .max(8),
+    layout: z.enum(DRAWING_LAYOUTS).default("VISTA"),
+    thickness: mmNum.max(100).optional(),
+    finish: z.enum(DRAWING_FINISHES).optional(),
+    shelfDepth: mmNum.nullable().optional(),
+    specs: z.array(z.string().trim().max(90)).max(10).optional(),
+    images: z.object({ closed: imageRef.nullable().optional(), open: imageRef.nullable().optional() }).optional(),
+  }),
+});
+
+async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: string) {
+  const spec: DrawingSpec = {
+    ...input.spec,
+    depth: input.spec.depth || null,
+    shelfDepth: input.spec.shelfDepth || null,
+    images: { closed: ownImage(input.spec.images?.closed, projectId), open: ownImage(input.spec.images?.open, projectId) },
+    specs: (input.spec.specs ?? []).filter(Boolean),
+    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0 })),
+  };
+  let out: Awaited<ReturnType<typeof drawingPdf>>;
+  try {
+    const bytes = async (i: DrawingImage | null | undefined) => (i ? { bytes: await storage.getBytes(i.storageKey), mime: i.mime } : null);
+    out = await drawingPdf(spec, spec.layout === "PRANCHA" ? { closed: await bytes(spec.images?.closed), open: await bytes(spec.images?.open) } : {});
+  } catch (e) {
+    if (e instanceof DrawingError) throw new BadRequestError(e.message);
+    throw e;
+  }
+  const fileName = `desenho-${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "vista"}.pdf`;
+  const storageKey = buildStorageKey(`${projectId}/pasta-tecnica`, fileName);
+  await storage.put(storageKey, out.pdf, "application/pdf");
+  return { spec, storageKey, fileName, warnings: out.warnings };
+}
+
+// imagem 3D (render) para a prancha completa: guarda o arquivo e devolve a referência
+router.post(
+  "/projects/:projectId/tech-folder/drawing-images",
+  requirePermission("organization.manage"),
+  uploadDocument.single("file"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    if (!req.file) throw new BadRequestError("Arquivo é obrigatório");
+    if (!/^image\/(png|jpe?g)$/i.test(req.file.mimetype)) throw new BadRequestError("Envie a imagem 3D em PNG ou JPG.");
+    const storageKey = buildStorageKey(`${p.id}/pasta-tecnica`, req.file.originalname);
+    await storage.put(storageKey, req.file.buffer, req.file.mimetype);
+    return ok(res, { storageKey, fileName: req.file.originalname, mime: req.file.mimetype }, "Imagem enviada");
+  })
+);
+
+router.post(
+  "/projects/:projectId/tech-folder/drawings",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const input = drawingInput.parse(req.body);
+    const cur = await load(p.id);
+    if (cur.sheets.length + 1 > MAX_SHEETS) throw new BadRequestError(`A pasta aceita até ${MAX_SHEETS} pranchas.`);
+    const d = await renderDrawing(input, p.id);
+    const sheet: TechSheet = { id: randomUUID(), room: input.room, title: input.title, scale: input.scale || null, note: null, storageKey: d.storageKey, fileName: d.fileName, mime: "application/pdf", page: 0, stamp: true, drawing: d.spec };
+    const data = { ...cur, sheets: [...cur.sheets, sheet] };
+    await save(p.id, data);
+    return ok(res, { ...view(p, data), sheetId: sheet.id, warnings: d.warnings }, "Desenho adicionado à pasta técnica");
+  })
+);
+
+router.put(
+  "/projects/:projectId/tech-folder/drawings/:sheetId",
+  requirePermission("organization.manage"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const input = drawingInput.parse(req.body);
+    const cur = await load(p.id);
+    const old = cur.sheets.find((s) => s.id === req.params.sheetId);
+    if (!old?.drawing) throw new NotFoundError("Desenho não encontrado");
+    const d = await renderDrawing(input, p.id);
+    const sheets = cur.sheets.map((s) => (s.id === old.id ? { ...s, room: input.room, title: input.title, scale: input.scale || null, storageKey: d.storageKey, fileName: d.fileName, drawing: d.spec } : s));
+    await save(p.id, { ...cur, sheets });
+    await storage.remove(old.storageKey).catch(() => undefined);
+    return ok(res, { ...view(p, { ...cur, sheets }), sheetId: old.id, warnings: d.warnings }, "Desenho atualizado");
+  })
+);
+
 router.delete(
   "/projects/:projectId/tech-folder/sheets/:sheetId",
   requirePermission("organization.manage"),
@@ -165,6 +283,8 @@ router.delete(
     await save(p.id, { ...cur, sheets });
     // o arquivo só sai quando nenhuma outra prancha (outra página do mesmo PDF) usa
     if (!sheets.some((s) => s.storageKey === target.storageKey)) await storage.remove(target.storageKey).catch(() => undefined);
+    // as imagens 3D da prancha completa saem junto
+    for (const img of [target.drawing?.images?.closed, target.drawing?.images?.open]) if (img) await storage.remove(img.storageKey).catch(() => undefined);
     return ok(res, view(p, { ...cur, sheets }), "Prancha removida");
   })
 );

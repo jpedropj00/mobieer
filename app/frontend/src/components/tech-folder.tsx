@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, FileDown, FileText, FolderUp, ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileDown, FileText, FolderUp, ImagePlus, Loader2, PencilRuler, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiDelete, apiGet, apiObjectUrl, apiOpen, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
+import { TechDrawingDialog, type DrawingSpec } from "@/components/tech-drawing-dialog";
 
-type Sheet = { id: string; room: string; title: string; scale: string | null; note: string | null; fileName: string; mime: string; page: number | null; stamp: boolean };
+type Sheet = { id: string; room: string; title: string; scale: string | null; note: string | null; fileName: string; mime: string; page: number | null; stamp: boolean; drawing?: DrawingSpec };
 type Spec = { room: string; rows: { label: string; value: string }[]; description: string | null };
 type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[] };
 
@@ -30,7 +31,11 @@ function SheetThumb({ projectId, sheet }: { projectId: string; sheet: Sheet }) {
   return (
     <div className="flex h-24 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
       {isPdf ? (
-        <div className="text-center text-xs text-muted-foreground"><FileText className="mx-auto mb-1 h-6 w-6" />PDF · pág. {(sheet.page ?? 0) + 1}</div>
+        sheet.drawing ? (
+          <div className="text-center text-xs text-muted-foreground"><PencilRuler className="mx-auto mb-1 h-6 w-6" />Desenho por medidas</div>
+        ) : (
+          <div className="text-center text-xs text-muted-foreground"><FileText className="mx-auto mb-1 h-6 w-6" />PDF · pág. {(sheet.page ?? 0) + 1}</div>
+        )
       ) : url ? (
         <img src={url} alt={sheet.title} className="h-full w-full object-contain" />
       ) : (
@@ -51,6 +56,8 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
   const [notes, setNotes] = useState("");
   const [room, setRoom] = useState("");
   const [dirty, setDirty] = useState(false);
+  // desenho por medidas: null = fechado; "new" = novo; ou a prancha em edição
+  const [drawing, setDrawing] = useState<Sheet | "new" | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const apply = (d: Folder) => {
@@ -149,6 +156,9 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
             <Button variant="outline" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
               {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} Enviar pranchas do Promob
             </Button>
+            <Button variant="outline" disabled={dirty} title={dirty ? "Salve as alterações antes" : "Digite as medidas e o sistema desenha a vista cotada"} onClick={() => setDrawing("new")}>
+              <PencilRuler className="h-4 w-4" /> Desenhar por medidas
+            </Button>
             <p className="basis-full text-xs text-muted-foreground">Imagens (PNG ou JPG) de planta, vistas e perspectiva recebem o carimbo. PDF exportado do Promob entra página por página.</p>
           </div>
         )}
@@ -169,6 +179,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
               </div>
               {canManage && (
                 <div className="flex shrink-0 gap-0.5">
+                  {s.drawing && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={dirty} onClick={() => setDrawing(s)} title={dirty ? "Salve as alterações antes de editar" : "Editar medidas"}><PencilRuler className="h-4 w-4" /></Button>}
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === 0} onClick={() => move(i, -1)} title="Subir"><ArrowUp className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === sheets.length - 1} onClick={() => move(i, 1)} title="Descer"><ArrowDown className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={remove.isPending || dirty} onClick={() => remove.mutate(s.id)} title={dirty ? "Salve as alterações antes de remover" : "Remover prancha"}><Trash2 className="h-4 w-4" /></Button>
@@ -185,6 +196,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
           <Textarea rows={2} disabled={!canManage} placeholder="Ex.: Prateleira e fechamento maiores para galgar in loco." value={notes} onChange={(e) => { setNotes(e.target.value); setDirty(true); }} />
         </div>
       </CardContent>
+      <TechDrawingDialog<Folder> base={base} open={drawing !== null} onClose={() => setDrawing(null)} onSaved={apply} sheet={drawing && drawing !== "new" ? drawing : null} defaultRoom={room.trim() || d.rooms[0] || ""} />
     </Card>
   );
 }
