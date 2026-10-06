@@ -108,6 +108,25 @@ export function normalizeError(err: unknown): ApiError | null {
   return null;
 }
 
+type ErrorReport = { method: string; url: string; code?: string | null; errorId?: string | null; organizationId?: string | null };
+type ErrorReporter = (e: ErrorReport) => Promise<void>;
+
+/**
+ * Quem avisa os administradores sobre um erro 500. Fica fora deste arquivo (e
+ * é ligado em app.ts) para o tratamento de erros não depender do banco: sem
+ * reporter, a resposta sai na hora, como sempre foi.
+ */
+let reporter: ErrorReporter | null = null;
+export function setErrorReporter(fn: ErrorReporter | null) {
+  reporter = fn;
+}
+
+/** Responde depois de avisar: no Vercel a função pode ser congelada logo após a resposta. */
+function reportThen(e: ErrorReport, send: () => void) {
+  if (!reporter) return send();
+  void reporter(e).catch(() => undefined).finally(send);
+}
+
 export function errorHandler(err: unknown, req: Request, res: Response, next: NextFunction) {
   // Resposta já começou (ex.: download em streaming): só dá para encerrar a conexão.
   if (res.headersSent) return next(err);
@@ -117,23 +136,31 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
     if (apiErr.isServerError) {
       console.error(`[${apiErr.code}] ${req?.method ?? ""} ${req?.originalUrl ?? ""}:`, err);
     }
-    return res.status(apiErr.statusCode).json({
-      success: false,
-      code: apiErr.code,
-      message: apiErr.message,
-      // Detalhes de falhas 5xx (resposta de provedor, etc.) ficam só no log.
-      details: apiErr.isServerError ? undefined : apiErr.details,
-    });
+    const send = () =>
+      res.status(apiErr.statusCode).json({
+        success: false,
+        code: apiErr.code,
+        message: apiErr.message,
+        // Detalhes de falhas 5xx (resposta de provedor, etc.) ficam só no log.
+        details: apiErr.isServerError ? undefined : apiErr.details,
+      });
+    // 500 de verdade avisa quem administra; 502/503 de serviço externo (IA, nota fiscal) não é defeito do sistema
+    if (apiErr.statusCode === 500) {
+      return reportThen({ method: req?.method ?? "", url: req?.originalUrl ?? "", code: apiErr.code, organizationId: req?.user?.organizationId }, send);
+    }
+    return send();
   }
 
   // Desconhecido = bug. Não expõe a mensagem interna; devolve um id para achar no log.
   const errorId = crypto.randomBytes(6).toString("hex");
   console.error(`[INTERNAL_ERROR ${errorId}] ${req?.method ?? ""} ${req?.originalUrl ?? ""}:`, err);
-  return res.status(500).json({
-    success: false,
-    code: "INTERNAL_ERROR",
-    message: "Erro interno do servidor",
-    errorId,
+  return reportThen({ method: req?.method ?? "", url: req?.originalUrl ?? "", code: "INTERNAL_ERROR", errorId, organizationId: req?.user?.organizationId }, () => {
+    res.status(500).json({
+      success: false,
+      code: "INTERNAL_ERROR",
+      message: "Erro interno do servidor",
+      errorId,
+    });
   });
 }
 
