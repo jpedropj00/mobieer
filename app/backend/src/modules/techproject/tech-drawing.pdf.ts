@@ -76,30 +76,35 @@ export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): P
   for (const c of L.columns) {
     const cx = X(c.x);
     const cw = c.width * k;
-    if (c.kind === "PORTAS") {
-      p.drawRectangle({ x: cx, y: Y(L.base), width: cw, height: innerH * k, color: DOOR });
-      for (let d = 1; d < c.doors; d++) line(cx + (cw * d) / c.doors, Y(L.base), cx + (cw * d) / c.doors, Y(L.height - L.top), 0.6, rgb(0.75, 0.75, 0.75));
-      // puxador: um traço curto junto ao encontro das portas (ou na borda, com uma porta só)
-      const hx = c.doors > 1 ? cx + cw / c.doors - 3 : cx + cw - 6;
-      line(hx, Y(L.base + innerH / 2) - 5, hx, Y(L.base + innerH / 2) + 5, 1.4, rgb(0.85, 0.85, 0.85));
-    } else if (c.kind === "VAO") {
-      p.drawRectangle({ x: cx, y: Y(L.base), width: cw, height: innerH * k, color: EMPTY });
+    const shelf = (y: number) => p.drawRectangle({ x: cx + t * k, y: Y(y) - (t * k) / 2, width: cw - 2 * t * k, height: Math.max(t * k, 1.4), color: rgb(0.9, 0.9, 0.9), borderColor: EDGE, borderWidth: 0.4 });
+    for (const part of c.parts) {
+      const ph = part.y1 - part.y0;
+      const mid = (part.y0 + part.y1) / 2;
+      if (part.kind === "PORTAS") {
+        p.drawRectangle({ x: cx, y: Y(part.y0), width: cw, height: ph * k, color: DOOR });
+        for (let d = 1; d < part.doors; d++) line(cx + (cw * d) / part.doors, Y(part.y0), cx + (cw * d) / part.doors, Y(part.y1), 0.6, rgb(0.75, 0.75, 0.75));
+        // puxador: um traço curto junto ao encontro das portas (ou na borda, com uma porta só)
+        const hx = part.doors > 1 ? cx + cw / part.doors - 3 : cx + cw - 6;
+        line(hx, Y(mid) - 5, hx, Y(mid) + 5, 1.4, rgb(0.85, 0.85, 0.85));
+      } else if (part.kind === "VAO") {
+        p.drawRectangle({ x: cx, y: Y(part.y0), width: cw, height: ph * k, color: EMPTY });
+      }
+      const open = SHELF_LIKE.includes(part.kind) || part.kind === "VAO";
+      // laterais, teto e base da caixaria com a espessura da chapa (na coluna de um trecho só)
+      if (open && c.parts.length === 1 && c.width > 4 * t && ph > 4 * t) p.drawRectangle({ x: cx + t * k, y: Y(part.y0 + t), width: cw - 2 * t * k, height: (ph - 2 * t) * k, borderColor: EDGE, borderWidth: 0.4 });
+      // prateleira atrás de porta não aparece na vista de fora
+      for (const y of part.hidden ? [] : part.lines) {
+        if (part.kind === "GAVETAS") line(cx, Y(y), cx + cw, Y(y), 0.6, rgb(0.45, 0.45, 0.45));
+        // a chapa da prateleira: duas linhas, afastadas pela espessura
+        else shelf(y);
+      }
+      for (const b of part.hidden ? [] : part.bands) {
+        const h = (b.y1 - b.y0) * k;
+        if (b.label && h >= 10 && cw >= 40) center(b.label, cx + cw / 2, part.kind !== "GAVETAS" && part.bands.length > 1 ? Y(b.y1) - 9 : Y((b.y0 + b.y1) / 2) - 2.5, 6, RED);
+      }
     }
-    const open = SHELF_LIKE.includes(c.kind) || c.kind === "VAO";
-    if (open && c.width > 4 * t && innerH > 4 * t) {
-      // laterais, teto e base da caixaria com a espessura da chapa
-      p.drawRectangle({ x: cx + t * k, y: Y(L.base + t), width: cw - 2 * t * k, height: (innerH - 2 * t) * k, borderColor: EDGE, borderWidth: 0.4 });
-    }
-    // prateleira atrás de porta não aparece na vista de fora
-    for (const y of c.hidden ? [] : c.lines) {
-      if (c.kind === "GAVETAS") line(cx, Y(y), cx + cw, Y(y), 0.6, rgb(0.45, 0.45, 0.45));
-      // a chapa da prateleira: duas linhas, afastadas pela espessura
-      else p.drawRectangle({ x: cx + t * k, y: Y(y) - (t * k) / 2, width: cw - 2 * t * k, height: Math.max(t * k, 1.4), color: rgb(0.9, 0.9, 0.9), borderColor: EDGE, borderWidth: 0.4 });
-    }
-    for (const b of c.hidden ? [] : c.bands) {
-      const h = (b.y1 - b.y0) * k;
-      if (b.label && h >= 10 && cw >= 40) center(b.label, cx + cw / 2, c.kind !== "GAVETAS" && c.bands.length > 1 ? Y(b.y1) - 9 : Y((b.y0 + b.y1) / 2) - 2.5, 6, RED);
-    }
+    // a chapa que separa um trecho do outro
+    for (const y of c.separators) shelf(y);
     if (c.x > L.sideLeft) line(cx, Y(L.base), cx, Y(L.height - L.top), 0.7, rgb(0.4, 0.4, 0.4));
   }
   p.drawRectangle({ x: X(0), y: Y(0), width: L.width * k, height: L.height * k, borderColor: INK, borderWidth: 0.8 });

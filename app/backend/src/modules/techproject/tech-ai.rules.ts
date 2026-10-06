@@ -15,6 +15,18 @@ export const TECH_AI_VIEWS = ["FECHADO", "ABERTO"] as const;
 export type TechAiView = (typeof TECH_AI_VIEWS)[number];
 export const MAX_AI_EXTRA_CHARS = 600;
 
+export type TechAiPart = {
+  tipo: "prateleiras" | "portas" | "gavetas" | "vao_livre" | "sapateira" | "maleiro" | "outros";
+  /** nome escrito pela pessoa, quando o tipo é "outros" */
+  nome: string | null;
+  altura_mm: number;
+  portas: number;
+  prateleiras: number;
+  gavetas: number;
+  /** vãos livres (ou frentes de gaveta), de cima para baixo */
+  alturas_mm: number[];
+};
+
 export type TechAiBrief = {
   cliente: string;
   ambiente: string;
@@ -22,16 +34,10 @@ export type TechAiBrief = {
   medidas_mm: { largura: number; altura: number; profundidade: number | null; roda_teto: number; rodape: number; fechamento_esquerdo: number; fechamento_direito: number; espessura_chapa: number };
   colunas: {
     posicao: number;
-    tipo: "prateleiras" | "portas" | "gavetas" | "vao_livre" | "sapateira" | "maleiro" | "outros";
-    /** nome escrito pela pessoa, quando o tipo é "outros" */
-    nome: string | null;
     largura_mm: number;
-    portas: number;
-    prateleiras: number;
-    gavetas: number;
-    /** de cima para baixo */
-    alturas_mm: number[];
     observacao: string | null;
+    /** de cima para baixo; a coluna simples tem um trecho só */
+    trechos: TechAiPart[];
   }[];
   especificacoes: string[];
 };
@@ -47,38 +53,43 @@ export function techAiBrief(spec: DrawingSpec, ctx: { client: string; room: stri
     ambiente: clean(ctx.room),
     movel: clean(spec.description) || "Móvel planejado",
     medidas_mm: { largura: L.width, altura: L.height, profundidade: spec.depth && spec.depth > 0 ? spec.depth : null, roda_teto: L.top, rodape: L.base, fechamento_esquerdo: L.sideLeft, fechamento_direito: L.sideRight, espessura_chapa: L.thickness },
-    colunas: L.columns.map((c, i) => ({
-      posicao: i + 1,
-      tipo: KIND[c.kind],
-      nome: c.kind === "OUTROS" ? clean(spec.columns[i]?.label) || null : null,
-      largura_mm: r1(c.width),
-      portas: c.doors,
-      prateleiras: c.kind === "GAVETAS" ? 0 : c.lines.length,
-      gavetas: c.kind === "GAVETAS" ? c.bands.length : 0,
-      alturas_mm: [...c.bands].reverse().map((b) => r1(b.value)),
-      observacao: clean(spec.columns[i]?.note) || null,
-    })),
+    colunas: L.columns.map((c, i) => {
+      const typed = spec.columns[i]?.parts?.length ? spec.columns[i].parts! : [spec.columns[i]];
+      return {
+        posicao: i + 1,
+        largura_mm: r1(c.width),
+        observacao: clean(spec.columns[i]?.note) || null,
+        // o desenho guarda de baixo para cima; aqui vai na ordem em que foi digitado
+        trechos: [...c.parts].reverse().map((p, j) => ({
+          tipo: KIND[p.kind],
+          nome: p.kind === "OUTROS" ? clean(typed[j]?.label) || null : null,
+          altura_mm: r1(p.y1 - p.y0),
+          portas: p.doors,
+          prateleiras: p.kind === "GAVETAS" ? 0 : p.lines.length,
+          gavetas: p.kind === "GAVETAS" ? p.bands.length : 0,
+          alturas_mm: [...p.bands].reverse().map((b) => r1(b.value)),
+        })),
+      };
+    }),
     especificacoes: (spec.specs ?? []).map(clean).filter(Boolean),
   };
 }
 
 /** O móvel em uma frase por coluna, da esquerda para a direita. */
+function describePart(c: TechAiPart): string {
+  const n = c.prateleiras;
+  if (c.tipo === "portas") return `${c.portas} ${c.portas > 1 ? "portas de abrir" : "porta de abrir"}${n ? `, com ${n} ${n > 1 ? "prateleiras" : "prateleira"} por dentro` : ""}`;
+  if (c.tipo === "prateleiras") return `nicho aberto com ${n} ${n === 1 ? "prateleira" : "prateleiras"}`;
+  if (c.tipo === "gavetas") return `${c.gavetas} ${c.gavetas > 1 ? "gavetas" : "gaveta"}`;
+  if (c.tipo === "sapateira") return `sapateira com ${n} ${n === 1 ? "prateleira inclinada" : "prateleiras inclinadas"} para sapatos`;
+  if (c.tipo === "maleiro") return `maleiro (compartimento alto para malas)${n ? `, com ${n} ${n > 1 ? "divisões" : "divisão"}` : ""}`;
+  if (c.tipo === "outros") return `${c.nome ?? "outro compartimento"}${n ? `, com ${n} ${n > 1 ? "divisões" : "divisão"}` : ""}`;
+  return "vão livre, sem frente";
+}
+
 export function describeColumns(brief: TechAiBrief): string[] {
   return brief.colunas.map((c) => {
-    const what =
-      c.tipo === "portas"
-        ? `${c.portas} ${c.portas > 1 ? "portas de abrir" : "porta de abrir"}${c.prateleiras ? `, com ${c.prateleiras} ${c.prateleiras > 1 ? "prateleiras" : "prateleira"} por dentro` : ""}`
-        : c.tipo === "prateleiras"
-          ? `nicho aberto com ${c.prateleiras} ${c.prateleiras > 1 ? "prateleiras" : "prateleira"}`
-          : c.tipo === "gavetas"
-            ? `${c.gavetas} ${c.gavetas > 1 ? "gavetas" : "gaveta"}`
-            : c.tipo === "sapateira"
-              ? `sapateira com ${c.prateleiras} ${c.prateleiras === 1 ? "prateleira inclinada" : "prateleiras inclinadas"} para sapatos`
-              : c.tipo === "maleiro"
-                ? `maleiro (compartimento alto para malas)${c.prateleiras ? `, com ${c.prateleiras} ${c.prateleiras > 1 ? "divisões" : "divisão"}` : ""}`
-                : c.tipo === "outros"
-                  ? `${c.nome ?? "outro compartimento"}${c.prateleiras ? `, com ${c.prateleiras} ${c.prateleiras > 1 ? "divisões" : "divisão"}` : ""}`
-                  : "vão livre, sem frente";
+    const what = c.trechos.length > 1 ? `de cima para baixo: ${c.trechos.map((p) => `${describePart(p)} (${mm(p.altura_mm)} mm de altura)`).join("; ")}` : describePart(c.trechos[0]);
     return `Coluna ${c.posicao} (${mm(c.largura_mm)} mm de largura): ${what}${c.observacao ? ` — ${c.observacao}` : ""}.`;
   });
 }

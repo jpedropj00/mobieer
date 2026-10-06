@@ -36,7 +36,7 @@ import { AiProviderError } from "../ai/provider";
 import { imageProvider } from "../ai/provider/image";
 import { MAX_AI_EXTRA_CHARS, TECH_AI_VIEWS, techAiBrief, techAiPrompt } from "./tech-ai.rules";
 import { COLUMN_KINDS, DRAWING_FINISHES, DRAWING_LAYOUTS, DrawingError, type DrawingImage, type DrawingSpec } from "./tech-drawing.rules";
-import { SCALES, SHEET_AREA, SHEET_TITLES, pngFromDataUrl, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
+import { SCALES, SHEET_AREA, SHEET_TITLES, nextSheetNumber, pngFromDataUrl, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
 
 const router = Router();
 router.use(authenticate);
@@ -152,7 +152,7 @@ router.post(
     const added: TechSheet[] = Array.from({ length: pages }, (_, i) => ({
       id: randomUUID(),
       room,
-      title: isPdf && pages > 1 ? `PRANCHA ${cur.sheets.length + i + 1}` : titleFromFile(req.file!.originalname, cur.sheets.length + i),
+      title: isPdf && pages > 1 ? `PRANCHA ${nextSheetNumber(cur.sheets) + i}` : titleFromFile(req.file!.originalname, nextSheetNumber(cur.sheets) + i - 1),
       scale: null,
       note: null,
       storageKey,
@@ -178,6 +178,16 @@ function ownImage(i: DrawingImage | null | undefined, projectId: string): Drawin
   return i;
 }
 
+// um trecho da coluna, quando ela tem mais de uma coisa (de cima para baixo)
+const partInput = z.object({
+  kind: z.enum(COLUMN_KINDS),
+  count: z.coerce.number().int().min(0).max(30).default(0),
+  heights: z.array(z.coerce.number().positive().max(20_000)).max(31).default([]),
+  label: z.string().trim().max(24).nullable().optional(),
+  shelves: z.coerce.number().int().min(0).max(30).optional(),
+  height: z.coerce.number().min(0).max(20_000).nullable().optional(),
+});
+
 const drawingInput = z.object({
   room: z.string().trim().min(1, "Informe o ambiente").max(80),
   title: z.string().trim().min(1, "Informe o título da prancha").max(60),
@@ -201,6 +211,7 @@ const drawingInput = z.object({
           label: z.string().trim().max(24).nullable().optional(),
           shelves: z.coerce.number().int().min(0).max(30).optional(),
           note: z.string().trim().max(200).nullable().optional(),
+          parts: z.array(partInput).max(6).optional(),
         })
       )
       .min(1, "Adicione pelo menos uma coluna")
@@ -232,7 +243,7 @@ async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: str
     shelfDepth: input.spec.shelfDepth || null,
     images: { closed: ownImage(input.spec.images?.closed, projectId), open: ownImage(input.spec.images?.open, projectId) },
     specs: (input.spec.specs ?? []).filter(Boolean),
-    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0, note: c.note || null })),
+    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0, note: c.note || null, parts: (c.parts ?? []).length > 1 ? c.parts!.map((p) => ({ kind: p.kind, count: p.count, heights: p.heights, label: p.label || null, shelves: p.shelves || 0, height: p.height || null })) : undefined })),
   };
   let out: Awaited<ReturnType<typeof drawingPdf>>;
   try {

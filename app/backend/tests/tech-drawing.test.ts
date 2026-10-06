@@ -60,7 +60,7 @@ test("vista cotada: alturas digitadas saem como estão; a última pode ficar com
   // não fecha com o vão: desenha mesmo assim, avisa e mantém a cota digitada
   const sobra = col([1000, 760, 520]);
   assert.equal(sobra.warnings.length, 1);
-  assert.match(sobra.warnings[0], /somam 2280 mm e cabem 2229 mm \(vão interno de 2260 mm menos 2 prateleiras de 15,5 mm\) — diferença de 51 mm/);
+  assert.match(sobra.warnings[0], /somam 2280 mm e só cabem 2229 mm \(2260 mm menos 2 prateleiras de 15,5 mm\) — passam 51 mm/);
   assert.equal(sobra.columns[0].bands[0].value, 520);
   assert.ok(Math.abs(sobra.columns[0].bands.at(-1)!.y1 - 2330) < 0.01); // o desenho fecha no topo
 });
@@ -161,4 +161,49 @@ test("vista cotada: medidas já escritas na descrição não saem repetidas na c
   const l = layoutDrawing({ ...armario, description: "Armário em MDF cinza urban L 1360 x A 2380 x P 550" });
   assert.equal(l.callout.filter((x) => /L 1360/.test(x)).length, 1);
   assert.ok(layoutDrawing(armario).callout.includes("L 1360 X A 2380 X P 550"));
+});
+
+test("vista cotada: mais de uma coisa na mesma coluna, de cima para baixo", () => {
+  const l = layoutDrawing({
+    ...armario,
+    columns: [
+      {
+        kind: "MALEIRO", width: null, count: 0, heights: [], label: null,
+        parts: [
+          { kind: "MALEIRO", count: 0, heights: [], label: null, height: 400 },
+          { kind: "PRATELEIRAS", count: 2, heights: [], label: null, height: null },
+          { kind: "GAVETAS", count: 4, heights: [], label: null, height: 800 },
+        ],
+      },
+    ],
+  });
+  const c = l.columns[0];
+  // guardado de baixo para cima: gavetas, prateleiras, maleiro
+  assert.deepEqual(c.parts.map((p) => p.kind), ["GAVETAS", "PRATELEIRAS", "MALEIRO"]);
+  assert.equal(c.separators.length, 2); // uma chapa entre cada trecho
+  assert.equal(c.parts[0].y0, 70);
+  assert.equal(c.parts[0].y1, 870);
+  assert.ok(Math.abs(c.parts[2].y1 - 2330) < 0.01); // o maleiro fecha embaixo do roda-teto
+  assert.equal(c.parts[2].y1 - c.parts[2].y0, 400);
+  assert.deepEqual(c.parts[0].bands.map((b) => b.value), [200, 200, 200, 200]);
+  // a cota da esquerda passa por tudo: gavetas, chapa, vãos das prateleiras, chapa, maleiro
+  assert.ok(Math.abs(l.chain.reduce((s, x) => s + (x.y1 - x.y0), 0) - 2380) < 0.01);
+  assert.deepEqual(l.warnings, []);
+  // alturas dos trechos que passam da coluna são recusadas
+  assert.throws(() => layoutDrawing({ ...armario, columns: [{ kind: "VAO", width: null, count: 0, heights: [], label: null, parts: [{ kind: "VAO", count: 0, heights: [], label: null, height: 2000 }, { kind: "GAVETAS", count: 2, heights: [], label: null, height: 900 }] }] }), /trechos somam/);
+});
+
+test("vista cotada: sobrando altura, os vãos ficam como digitados e o de baixo recebe a sobra", () => {
+  // 2 prateleiras num vão de 2260: cabem 2229 de vãos livres; ela digitou 320; 380; 320
+  const l = layoutDrawing({ ...armario, columns: [{ kind: "PRATELEIRAS", width: null, count: 2, heights: [320, 380, 320], label: null }] });
+  assert.deepEqual(l.columns[0].bands.map((b) => b.value), [1529, 380, 320]); // de baixo para cima
+  assert.equal(l.columns[0].bands[2].y1 - l.columns[0].bands[2].y0, 320); // o de cima tem os 320 de verdade, sem esticar
+  assert.match(l.warnings[0], /Mantive as alturas digitadas e o vão de baixo ficou com 1529 mm/);
+});
+
+test("pasta técnica: a próxima 'PRANCHA n' continua da maior, sem pular por causa de vista no meio", async () => {
+  const { nextSheetNumber } = await import("../src/modules/techproject/tech-folder.rules");
+  assert.equal(nextSheetNumber([]), 1);
+  assert.equal(nextSheetNumber([{ title: "PRANCHA 1" }, { title: "Prancha 4" }, { title: "VISTA A" }]), 5);
+  assert.equal(nextSheetNumber([{ title: "VISTA A" }, { title: "PLANTA BAIXA" }]), 1);
 });

@@ -30,6 +30,10 @@ No cartão **Pasta técnica** há o botão **Desenhar por medidas**. Você digit
 
 Tipos de coluna: **Prateleiras**, **Portas**, **Gavetas**, **Sapateira**, **Maleiro**, **Vão livre** e **Outros (escrever)** — em Outros você digita o nome (ex.: Cabideiro) e ele sai escrito dentro da coluna.
 
+**Mais de uma coisa na mesma coluna**: clique em **Mais uma coisa nesta coluna** para empilhar, de cima para baixo, por exemplo maleiro, prateleiras e gavetas. Cada trecho tem a sua altura (um deles pode ficar em branco para ficar com o que sobrar) e o sistema põe uma chapa entre um e outro.
+
+**Alturas digitadas**: são os vãos livres, de cima para baixo. Se a soma for menor que o espaço, os vãos ficam como você digitou e o de baixo recebe a sobra; se passar, o sistema avisa.
+
 Medidas gerais do móvel:
 - **Roda-teto**: a faixa de acabamento em cima.
 - **Rodapé**: a faixa de baixo.

@@ -45,6 +45,15 @@ export type TechFolderData = { sheets: TechSheet[]; includeSpecs: boolean; notes
 export const SHEET_TITLES = ["PLANTA BAIXA", "VISTA A", "VISTA A INTERNA", "VISTA B", "VISTA B INTERNA", "VISTA C", "PERSPECTIVA", "DETALHE"];
 export const SCALES = ["1:10", "1:20", "1:25", "1:50"];
 
+/**
+ * Número da próxima "PRANCHA n": continua da maior que já existe. Contar todas as
+ * folhas fazia pular número quando havia uma vista ou um desenho no meio (4 → 6).
+ */
+export function nextSheetNumber(sheets: { title: string }[]): number {
+  const used = sheets.map((s) => /^PRANCHA\s+(\d+)$/i.exec(s.title.trim())?.[1]).filter((n): n is string => Boolean(n)).map(Number);
+  return (used.length ? Math.max(...used) : 0) + 1;
+}
+
 /** Título sugerido pelo nome do arquivo: "vista a interna.png" → "VISTA A INTERNA". */
 export function titleFromFile(fileName: string, index: number): string {
   const base = fileName.replace(/\.[a-z0-9]+$/i, "").replace(/[_\-.]+/g, " ").replace(/\s+/g, " ").trim().toUpperCase();

@@ -26,6 +26,22 @@ export type DrawingColumn = {
   shelves?: number;
   /** chamada própria desta coluna, ao lado do móvel (ex.: "PORTAS DE GIRO EM ALUMÍNIO PRATA L 1180 X A 2349") */
   note?: string | null;
+  /**
+   * Mais de uma coisa na mesma coluna, de cima para baixo (ex.: maleiro, prateleiras,
+   * gavetas). Com `parts`, os campos de tipo acima valem só como a primeira parte.
+   */
+  parts?: DrawingPart[];
+};
+
+/** Um trecho da coluna: o que tem ali e quanto ocupa de altura. */
+export type DrawingPart = {
+  kind: ColumnKind;
+  count: number;
+  heights: number[];
+  label: string | null;
+  shelves?: number;
+  /** altura do trecho em mm; vazio = fica com o que sobrar na coluna */
+  height?: number | null;
 };
 
 export const DRAWING_LAYOUTS = ["VISTA", "PRANCHA"] as const;
@@ -74,6 +90,20 @@ export type LaidColumn = {
   /** nº de portas (divisões verticais) */
   doors: number;
   /** as faixas ficam atrás das portas: só aparecem na vista interna */
+  hidden: boolean;
+  /** os trechos da coluna, de baixo para cima (um só, na coluna simples) */
+  parts: LaidPart[];
+  /** chapas que separam um trecho do outro (centro, a partir do chão) */
+  separators: number[];
+};
+
+export type LaidPart = {
+  kind: ColumnKind;
+  y0: number;
+  y1: number;
+  lines: number[];
+  bands: { y0: number; y1: number; value: number; label: string | null }[];
+  doors: number;
   hidden: boolean;
 };
 
@@ -138,55 +168,107 @@ export function layoutDrawing(spec: DrawingSpec): DrawingLayout {
   if (!free && Math.abs(given - usable) > 0.5) throw new DrawingError(`As colunas somam ${mm(given)} mm e não fecham com ${fit}. Ajuste, ou deixe uma coluna sem largura para ela ficar com o resto.`);
   const share = free ? (usable - given) / free : 0;
 
-  let x = sideLeft;
-  const columns: LaidColumn[] = spec.columns.map((c, i) => {
-    const w = c.width && c.width > 0 ? c.width : share;
+  /** Um trecho (ou a coluna inteira): divide a altura `h`, a partir de `y0`, conforme o tipo. */
+  const layPart = (c: DrawingPart, y0: number, h: number, where: string): LaidPart => {
     const count = Math.max(0, Math.floor(c.count || 0));
     // em "Outros" o nome é o que a pessoa escreveu
     const label = c.label?.trim().toUpperCase() || DEFAULT_LABEL[c.kind];
     const inside = c.kind === "PORTAS" ? Math.max(0, Math.floor(c.shelves || 0)) : 0;
-    const col: LaidColumn = { kind: c.kind, x, width: w, lines: [], bands: [], doors: c.kind === "PORTAS" ? Math.max(1, count) : 0, hidden: c.kind === "PORTAS" };
-    x += w;
+    const part: LaidPart = { kind: c.kind, y0, y1: y0 + h, lines: [], bands: [], doors: c.kind === "PORTAS" ? Math.max(1, count) : 0, hidden: c.kind === "PORTAS" };
     const parts = SHELF_LIKE.includes(c.kind) ? count + 1 : c.kind === "GAVETAS" ? count : inside ? inside + 1 : 0;
-    if (parts < 1) return col;
+    if (parts < 1) return part;
 
     // Entre dois vãos há uma prateleira, que ocupa a espessura da chapa. Gaveta não tem chapa entre as frentes.
     const boards = c.kind === "GAVETAS" ? 0 : parts - 1;
-    const tb = boards * t;
-    const avail = inner - tb;
-    if (avail <= 0) throw new DrawingError(`Coluna ${i + 1}: ${boards} prateleiras de ${mm(t)} mm não cabem no vão interno (${mm(inner)} mm)`);
+    const avail = h - boards * t;
+    if (avail <= 0) throw new DrawingError(`${where}: ${boards} prateleiras de ${mm(t)} mm não cabem em ${mm(h)} mm`);
 
     // alturas dos vãos livres, de cima para baixo; faltando a última, ela fica com o resto
-    let hs = c.heights.filter((h) => h > 0).slice(0, parts);
+    let hs = c.heights.filter((v) => v > 0).slice(0, parts);
     if (hs.length === parts - 1) {
-      const rest = avail - hs.reduce((s, h) => s + h, 0);
-      if (rest <= 0) throw new DrawingError(`Coluna ${i + 1}: as alturas informadas já passam do que cabe (${mm(avail)} mm${boards ? `, descontadas as prateleiras` : ""})`);
+      const rest = avail - hs.reduce((s, v) => s + v, 0);
+      if (rest <= 0) throw new DrawingError(`${where}: as alturas informadas já passam do que cabe (${mm(avail)} mm${boards ? `, descontadas as prateleiras` : ""})`);
       hs = [...hs, r1(rest)];
     } else if (hs.length !== parts) {
-      if (hs.length) warnings.push(`Coluna ${i + 1}: eram esperadas ${parts} alturas e vieram ${hs.length}; dividi por igual.`);
+      if (hs.length) warnings.push(`${where}: eram esperadas ${parts} alturas e vieram ${hs.length}; dividi por igual.`);
       hs = Array.from({ length: parts }, () => r1(avail / parts));
     }
-    const sum = hs.reduce((s, h) => s + h, 0);
-    if (Math.abs(sum - avail) > 1)
-      warnings.push(
-        `Coluna ${i + 1}: as alturas somam ${mm(sum)} mm e cabem ${mm(avail)} mm${boards ? ` (vão interno de ${mm(inner)} mm menos ${boards} ${boards > 1 ? "prateleiras" : "prateleira"} de ${mm(t)} mm)` : ""} — diferença de ${mm(Math.abs(sum - avail))} mm. O desenho foi ajustado; as cotas saem como você digitou.`
-      );
+    let sum = hs.reduce((s, v) => s + v, 0);
+    const fits = boards ? ` (${mm(h)} mm menos ${boards} ${boards > 1 ? "prateleiras" : "prateleira"} de ${mm(t)} mm)` : "";
+    if (sum < avail - 1) {
+      // Sobrou altura: os vãos ficam como foram digitados e o de baixo recebe a sobra.
+      // Esticar todos por igual desenhava prateleira em altura que ninguém pediu.
+      const last = r1(hs[hs.length - 1] + (avail - sum));
+      warnings.push(`${where}: as alturas somam ${mm(sum)} mm e cabem ${mm(avail)} mm${fits}. Mantive as alturas digitadas e o vão de baixo ficou com ${mm(last)} mm.`);
+      hs = [...hs.slice(0, -1), last];
+      sum = hs.reduce((s, v) => s + v, 0);
+    } else if (sum > avail + 1) {
+      warnings.push(`${where}: as alturas somam ${mm(sum)} mm e só cabem ${mm(avail)} mm${fits} — passam ${mm(sum - avail)} mm. O desenho foi encolhido para caber; confira as medidas.`);
+    }
 
     // de baixo para cima, proporcional ao que cabe (a cota impressa é a digitada)
     const k = avail / sum;
-    let y = base;
+    let y = y0;
     const up = [...hs].reverse();
-    up.forEach((h, j) => {
-      const y1 = y + h * k;
-      col.bands.push({ y0: y, y1, value: h, label: c.kind === "PORTAS" ? "PRATELEIRA" : label });
+    up.forEach((v, j) => {
+      const y1 = y + v * k;
+      part.bands.push({ y0: y, y1, value: v, label: c.kind === "PORTAS" ? "PRATELEIRA" : label });
       y = y1;
       if (j < up.length - 1) {
         // a chapa da prateleira (centro em `lines`); entre gavetas é só a linha da frente
-        col.lines.push(y + (boards ? t / 2 : 0));
+        part.lines.push(y + (boards ? t / 2 : 0));
         if (boards) y += t;
       }
     });
-    return col;
+    return part;
+  };
+
+  let x = sideLeft;
+  const columns: LaidColumn[] = spec.columns.map((c, i) => {
+    const w = c.width && c.width > 0 ? c.width : share;
+    const x0 = x;
+    x += w;
+    // de cima para baixo, como a pessoa digitou; a coluna simples é um trecho só
+    const specs: DrawingPart[] = c.parts?.length ? c.parts : [c];
+    const availH = inner - (specs.length - 1) * t;
+    if (availH <= 0) throw new DrawingError(`Coluna ${i + 1}: os trechos não cabem na altura do móvel`);
+    const givenH = specs.reduce((s, p) => s + (p.height && p.height > 0 ? p.height : 0), 0);
+    const freeH = specs.filter((p) => !(p.height && p.height > 0)).length;
+    if (givenH > availH + 1) throw new DrawingError(`Coluna ${i + 1}: as alturas dos trechos somam ${mm(givenH)} mm e cabem ${mm(availH)} mm${specs.length > 1 ? ` (descontadas as ${specs.length - 1} chapas entre eles)` : ""}`);
+    let scale = 1;
+    if (!freeH && Math.abs(givenH - availH) > 1) {
+      warnings.push(`Coluna ${i + 1}: as alturas dos trechos somam ${mm(givenH)} mm e cabem ${mm(availH)} mm. O desenho foi ajustado; deixe um trecho sem altura para ele ficar com o resto.`);
+      scale = availH / givenH;
+    }
+    const shareH = freeH ? (availH - givenH) / freeH : 0;
+
+    const parts: LaidPart[] = [];
+    const separators: number[] = [];
+    let y = base;
+    [...specs].reverse().forEach((p, j, all) => {
+      const h = p.height && p.height > 0 ? p.height * scale : shareH;
+      const n = specs.length - j;
+      parts.push(layPart(p, y, h, specs.length > 1 ? `Coluna ${i + 1}, trecho ${n}` : `Coluna ${i + 1}`));
+      y += h;
+      if (j < all.length - 1) {
+        separators.push(y + t / 2);
+        y += t;
+      }
+    });
+
+    // trecho sem divisão (vão, maleiro inteiro, portas) entra na cota pela altura dele
+    const bands = parts.flatMap((p) => (p.bands.length ? p.bands : specs.length > 1 ? [{ y0: p.y0, y1: p.y1, value: r1(p.y1 - p.y0), label: null }] : []));
+    return {
+      kind: specs[0].kind,
+      x: x0,
+      width: w,
+      lines: [...parts.flatMap((p) => p.lines), ...separators].sort((a, b) => a - b),
+      bands,
+      doors: Math.max(...parts.map((p) => p.doors)),
+      hidden: parts.every((p) => p.hidden),
+      parts,
+      separators,
+    };
   });
 
   // cotas da esquerda: a primeira coluna que tem vãos (de preferência, à vista)
