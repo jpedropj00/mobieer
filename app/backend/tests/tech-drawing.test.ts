@@ -79,3 +79,18 @@ test("vista cotada: prateleira atrás das portas fica guardada, mas não aparece
   assert.equal(l.columns[0].lines.length, 1);
   assert.deepEqual(l.columns[0].bands.map((b) => b.value), [350, 350]);
 });
+
+test("prancha completa: entra com a imagem 3D enviada e sai em uma página", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { boardSpecs } = await import("../src/modules/techproject/tech-board.pdf");
+  const baixo: DrawingSpec = { layout: "PRANCHA", description: "Armário baixo com portas", width: 900, height: 750, depth: 450, top: 0, base: 50, thickness: 15, specs: ["Puxador fornecido pelo cliente"], columns: [{ kind: "PORTAS", width: null, count: 2, shelves: 1, heights: [], label: null }] };
+  assert.deepEqual(boardSpecs(baixo, layoutDrawing(baixo)), ["Medidas: L 900 x A 750 x P 450 mm", "Chapas de 15 mm", "02 portas de abrir", "01 prateleira interna", "Rodapé de 50 mm", "Puxador fornecido pelo cliente"]);
+  const png = fs.readFileSync(path.join(process.cwd(), "assets", "cronograma", "logo.png"));
+  const com = await drawingPdf(baixo, { closed: { bytes: png, mime: "image/png" }, open: null });
+  assert.equal((await PDFDocument.load(com.pdf)).getPageCount(), 1);
+  // imagem ilegível não derruba a prancha
+  const ruim = await drawingPdf(baixo, { closed: { bytes: Buffer.from("nao e imagem"), mime: "image/png" } });
+  assert.equal((await PDFDocument.load(ruim.pdf)).getPageCount(), 1);
+  assert.ok(com.pdf.length > ruim.pdf.length);
+});

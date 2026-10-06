@@ -25,6 +25,7 @@ export type DrawingColumn = {
 };
 
 export const DRAWING_LAYOUTS = ["VISTA", "PRANCHA"] as const;
+export type DrawingImage = { storageKey: string; fileName: string; mime: string };
 export const DRAWING_FINISHES = ["MADEIRA", "BRANCO", "CINZA", "PRETO"] as const;
 
 export type DrawingSpec = {
@@ -38,9 +39,10 @@ export type DrawingSpec = {
   /** rodapé em mm */
   base: number;
   columns: DrawingColumn[];
-  // Dados guardados para a prancha completa, que será gerada por IA a partir
-  // destas medidas. O sistema hoje desenha só a vista cotada.
+  /** VISTA = só a vista cotada; PRANCHA = folha completa, com as imagens 3D enviadas */
   layout?: (typeof DRAWING_LAYOUTS)[number];
+  /** imagens 3D (render) enviadas para as perspectivas da prancha completa */
+  images?: { closed?: DrawingImage | null; open?: DrawingImage | null };
   /** espessura das chapas em mm */
   thickness?: number;
   finish?: (typeof DRAWING_FINISHES)[number];

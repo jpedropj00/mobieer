@@ -5,6 +5,7 @@
  */
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from "pdf-lib";
 import { layoutDrawing, mm, type DrawingSpec } from "./tech-drawing.rules";
+import { boardPdf, type BoardImages } from "./tech-board.pdf";
 
 const PW = 802;
 const PH = 453;
@@ -29,7 +30,8 @@ function safe(font: PDFFont, text: string) {
   return out;
 }
 
-export async function drawingPdf(spec: DrawingSpec): Promise<{ pdf: Buffer; warnings: string[] }> {
+export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): Promise<{ pdf: Buffer; warnings: string[] }> {
+  if (spec.layout === "PRANCHA") return boardPdf(spec, images);
   const L = layoutDrawing(spec);
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);

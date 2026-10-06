@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { ImagePlus, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { apiOpen, apiPost, apiPut } from "@/services/api";
+import { apiOpen, apiPost, apiPostForm, apiPut } from "@/services/api";
 import { errorMessage } from "@/lib/errors";
 
 type Kind = "PRATELEIRAS" | "PORTAS" | "GAVETAS" | "VAO";
@@ -20,11 +20,13 @@ export type DrawingSpec = {
   base: number;
   columns: { kind: Kind; width: number | null; count: number; heights: number[]; label: string | null; shelves?: number }[];
   layout?: "VISTA" | "PRANCHA";
+  images?: { closed?: Img | null; open?: Img | null };
   thickness?: number;
   finish?: Finish;
   shelfDepth?: number | null;
   specs?: string[];
 };
+type Img = { storageKey: string; fileName: string; mime: string };
 type Finish = "MADEIRA" | "BRANCO" | "CINZA" | "PRETO";
 const FINISH_LABEL: Record<Finish, string> = { MADEIRA: "Madeira", BRANCO: "Branco", CINZA: "Cinza", PRETO: "Preto" };
 export type DrawingSheet = { id: string; room: string; title: string; scale: string | null; drawing?: DrawingSpec };
@@ -33,7 +35,7 @@ const KIND_LABEL: Record<Kind, string> = { PRATELEIRAS: "Prateleiras", PORTAS: "
 const COUNT_LABEL: Record<Kind, string> = { PRATELEIRAS: "Nº de prateleiras", PORTAS: "Nº de portas", GAVETAS: "Nº de gavetas", VAO: "" };
 
 type Col = { kind: Kind; width: string; count: string; heights: string; shelves: string };
-type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; columns: Col[]; layout: "VISTA" | "PRANCHA"; thickness: string; finish: Finish; shelfDepth: string; specs: string };
+type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; columns: Col[]; layout: "VISTA" | "PRANCHA"; closed: Img | null; open: Img | null; thickness: string; finish: Finish; shelfDepth: string; specs: string };
 
 const num = (s: string) => Number(s.trim().replace(/\.(?=\d{3}\b)/g, "").replace(",", ".")) || 0;
 const show = (n: number | null | undefined) => (n ? String(n).replace(".", ",") : "");
@@ -42,9 +44,11 @@ const heightsOf = (s: string) => s.split(/[;/\n|]+|\s+(?=\d)/).map((p) => num(p)
 
 const emptyForm = (room: string): Form => ({
   room,
-  title: "VISTA A INTERNA",
+  title: "PROJETO EXECUTIVO",
   scale: "1:10",
-  layout: "VISTA",
+  layout: "PRANCHA",
+  closed: null,
+  open: null,
   thickness: "15",
   finish: "MADEIRA",
   shelfDepth: "",
@@ -70,6 +74,8 @@ const fromSheet = (s: DrawingSheet): Form => ({
   base: show(s.drawing!.base),
   columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; "), shelves: String(c.shelves ?? 0) })),
   layout: s.drawing!.layout ?? "VISTA",
+  closed: s.drawing!.images?.closed ?? null,
+  open: s.drawing!.images?.open ?? null,
   thickness: show(s.drawing!.thickness) || "15",
   finish: s.drawing!.finish ?? "MADEIRA",
   shelfDepth: show(s.drawing!.shelfDepth),
@@ -91,6 +97,20 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
   const setCol = (i: number, patch: Partial<Col>) => setF((cur) => ({ ...cur, columns: cur.columns.map((c, j) => (j === i ? { ...c, ...patch } : c)) }));
 
   const inner = num(f.height) - num(f.top) - num(f.base);
+  const [uploading, setUploading] = useState<"closed" | "open" | null>(null);
+  const sendImage = async (slot: "closed" | "open", file: File) => {
+    setUploading(slot);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await apiPostForm<{ data: Img }>(`${base}/drawing-images`, form);
+      set(slot, r.data);
+    } catch (e) {
+      toast.error(errorMessage(e, "Não foi possível enviar a imagem"));
+    } finally {
+      setUploading(null);
+    }
+  };
 
   const save = useMutation({
     mutationFn: (view: boolean) => {
@@ -106,7 +126,8 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
           top: num(f.top),
           base: num(f.base),
           columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0 })),
-          layout: "VISTA" as const,
+          layout: f.layout,
+          images: f.layout === "PRANCHA" ? { closed: f.closed, open: f.open } : undefined,
           thickness: num(f.thickness) || 15,
           finish: f.finish,
           shelfDepth: num(f.shelfDepth) || null,
@@ -133,10 +154,42 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{sheet?.drawing ? "Editar medidas do desenho" : "Desenhar por medidas"}</DialogTitle>
-          <DialogDescription>Informe as medidas em milímetros. O sistema guarda as medidas e desenha a vista frontal cotada como uma prancha da pasta técnica.</DialogDescription>
+          <DialogDescription>Informe as medidas em milímetros. O sistema monta a prancha com as imagens 3D enviadas e as vistas cotadas, e coloca na pasta técnica.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 text-sm">
+          <div className="space-y-1">
+            <Label className="text-xs">Formato</Label>
+            <div className="flex rounded-md border text-xs">
+              <button type="button" className={`flex-1 px-3 py-2 ${f.layout === "PRANCHA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "PRANCHA")}>Prancha completa (imagens 3D, vistas e especificações)</button>
+              <button type="button" className={`flex-1 border-l px-3 py-2 ${f.layout === "VISTA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "VISTA")}>Só a vista frontal cotada</button>
+            </div>
+          </div>
+
+          {f.layout === "PRANCHA" && (
+            <div className="space-y-1">
+              <Label className="text-xs">Imagens 3D (PNG ou JPG) — entram no topo da prancha</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {([["closed", "Perspectiva fechado"], ["open", "Perspectiva aberto"]] as const).map(([slot, label]) => (
+                  <div key={slot} className="rounded-lg border p-2.5">
+                    <p className="text-xs font-medium">{label}</p>
+                    {f[slot] ? (
+                      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span className="min-w-0 truncate">{f[slot]!.fileName}</span>
+                        <button type="button" className="shrink-0 underline" onClick={() => set(slot, null)}>remover</button>
+                      </div>
+                    ) : (
+                      <label className="mt-1 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground">
+                        {uploading === slot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} Escolher imagem
+                        <input type="file" accept="image/png,image/jpeg" className="hidden" disabled={uploading !== null} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void sendImage(slot, file); }} />
+                      </label>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Sem imagem, o espaço dela fica vazio. O sistema não desenha o 3D: ele só posiciona as imagens enviadas.</p>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_90px]">
             <div className="space-y-1"><Label className="text-xs">Ambiente</Label><Input value={f.room} placeholder="Ex.: Suíte master" onChange={(e) => set("room", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Título da prancha</Label><Input value={f.title} onChange={(e) => set("title", e.target.value)} /></div>
