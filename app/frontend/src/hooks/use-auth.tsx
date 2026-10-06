@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, apiPost, getToken, setToken } from "@/services/api";
+import { ApiError, api, apiPost, getToken, setToken } from "@/services/api";
 import type { AuthUser } from "@/types";
 
 type AuthContextValue = {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** Há login guardado, mas o servidor não respondeu: a tela oferece tentar de novo. */
+  sessionError: boolean;
   /** Devolve `mfaToken` quando a conta pede o código do autenticador antes de entrar. */
   login: (email: string, password: string) => Promise<{ mfaToken?: string }>;
   verifyMfa: (mfaToken: string, code: string) => Promise<void>;
@@ -25,12 +27,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const {
     data: meData,
     isLoading,
+    isError,
+    isFetching,
     refetch,
   } = useQuery({
     queryKey: ["me"],
-    queryFn: () => api<{ data: AuthUser }>("/auth/me"),
+    // Sem tempo limite, um pedido que o servidor não respondia deixava a tela em
+    // "Carregando sessão..." até a pessoa recarregar. Agora desiste em 10 s e
+    // tenta de novo sozinho, que é o que o recarregar fazia.
+    queryFn: () => api<{ data: AuthUser }>("/auth/me", { timeoutMs: 10_000 }),
     enabled: Boolean(initialToken),
-    retry: false,
+    // sessão recusada (401/403) não adianta repetir; rede, demora e 5xx, sim
+    retry: (count, err) => count < 2 && !(err instanceof ApiError && err.status < 500),
+    retryDelay: 800,
   });
 
   // Copia o usuário no mesmo render em que /auth/me responde. Com useEffect
@@ -41,12 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSyncedMe(meData);
     if (meData) setUser(meData.data);
   }
-
-  useEffect(() => {
-    if (!initialToken) return;
-    const onMeError = () => {};
-    void refetch().catch(onMeError);
-  }, [initialToken, refetch]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -103,6 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isLoading: Boolean(initialToken) && isLoading && !user,
       isAuthenticated: Boolean(user),
+      // o 401 apaga o token (aí é login mesmo); com o token ainda guardado, foi o servidor que não respondeu
+      sessionError: Boolean(initialToken) && isError && !isFetching && !user && Boolean(getToken()),
       login,
       verifyMfa,
       logout,
@@ -113,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (r.data) setUser(r.data.data);
       },
     }),
-    [user, initialToken, isLoading, login, verifyMfa, logout, can, refetch]
+    [user, initialToken, isLoading, isError, isFetching, login, verifyMfa, logout, can, refetch]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
