@@ -18,7 +18,7 @@ export type DrawingSpec = {
   depth: number | null;
   top: number;
   base: number;
-  columns: { kind: Kind; width: number | null; count: number; heights: number[]; label: string | null; shelves?: number }[];
+  columns: { kind: Kind; width: number | null; count: number; heights: number[]; label: string | null; shelves?: number; note?: string | null }[];
   layout?: "VISTA" | "PRANCHA";
   images?: { closed?: Img | null; open?: Img | null };
   thickness?: number;
@@ -34,7 +34,7 @@ export type DrawingSheet = { id: string; room: string; title: string; scale: str
 const KIND_LABEL: Record<Kind, string> = { PRATELEIRAS: "Prateleiras", PORTAS: "Portas", GAVETAS: "Gavetas", VAO: "Vão livre" };
 const COUNT_LABEL: Record<Kind, string> = { PRATELEIRAS: "Nº de prateleiras", PORTAS: "Nº de portas", GAVETAS: "Nº de gavetas", VAO: "" };
 
-type Col = { kind: Kind; width: string; count: string; heights: string; shelves: string };
+type Col = { kind: Kind; width: string; count: string; heights: string; shelves: string; note: string };
 type Form = { room: string; title: string; scale: string; description: string; width: string; height: string; depth: string; top: string; base: string; columns: Col[]; layout: "VISTA" | "PRANCHA"; closed: Img | null; open: Img | null; thickness: string; finish: Finish; shelfDepth: string; specs: string };
 
 const num = (s: string) => Number(s.trim().replace(/\.(?=\d{3}\b)/g, "").replace(",", ".")) || 0;
@@ -44,8 +44,8 @@ const heightsOf = (s: string) => s.split(/[;/\n|]+|\s+(?=\d)/).map((p) => num(p)
 
 const emptyForm = (room: string): Form => ({
   room,
-  title: "PROJETO EXECUTIVO",
-  scale: "1:10",
+  title: "VISTA A",
+  scale: "1:20",
   layout: "PRANCHA",
   closed: null,
   open: null,
@@ -59,7 +59,7 @@ const emptyForm = (room: string): Form => ({
   depth: "",
   top: "",
   base: "",
-  columns: [{ kind: "PORTAS", width: "", count: "2", heights: "", shelves: "1" }],
+  columns: [{ kind: "PRATELEIRAS", width: "", count: "5", heights: "", shelves: "0", note: "" }],
 });
 
 const fromSheet = (s: DrawingSheet): Form => ({
@@ -72,7 +72,7 @@ const fromSheet = (s: DrawingSheet): Form => ({
   depth: show(s.drawing!.depth),
   top: show(s.drawing!.top),
   base: show(s.drawing!.base),
-  columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; "), shelves: String(c.shelves ?? 0) })),
+  columns: s.drawing!.columns.map((c) => ({ kind: c.kind, width: show(c.width), count: String(c.count), heights: c.heights.map((h) => show(h)).join("; "), shelves: String(c.shelves ?? 0), note: c.note ?? "" })),
   layout: s.drawing!.layout ?? "VISTA",
   closed: s.drawing!.images?.closed ?? null,
   open: s.drawing!.images?.open ?? null,
@@ -125,9 +125,9 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
           depth: num(f.depth) || null,
           top: num(f.top),
           base: num(f.base),
-          columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0 })),
+          columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0, note: c.note.trim() || null })),
           layout: f.layout,
-          images: f.layout === "PRANCHA" ? { closed: f.closed, open: f.open } : undefined,
+          images: { closed: f.closed, open: f.open },
           thickness: num(f.thickness) || 15,
           finish: f.finish,
           shelfDepth: num(f.shelfDepth) || null,
@@ -154,23 +154,15 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{sheet?.drawing ? "Editar medidas do desenho" : "Desenhar por medidas"}</DialogTitle>
-          <DialogDescription>Informe as medidas em milímetros. O sistema monta a prancha com as imagens 3D enviadas e as vistas cotadas, e coloca na pasta técnica.</DialogDescription>
+          <DialogDescription>Informe as medidas em milímetros. O sistema desenha a vista cotada, com a imagem 3D ao lado se você enviar, e coloca na pasta técnica com o carimbo.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 text-sm">
-          <div className="space-y-1">
-            <Label className="text-xs">Formato</Label>
-            <div className="flex rounded-md border text-xs">
-              <button type="button" className={`flex-1 px-3 py-2 ${f.layout === "PRANCHA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "PRANCHA")}>Prancha completa (imagens 3D, vistas e especificações)</button>
-              <button type="button" className={`flex-1 border-l px-3 py-2 ${f.layout === "VISTA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "VISTA")}>Só a vista frontal cotada</button>
-            </div>
-          </div>
-
-          {f.layout === "PRANCHA" && (
+          {(
             <div className="space-y-1">
-              <Label className="text-xs">Imagens 3D (PNG ou JPG) — entram no topo da prancha</Label>
+              <Label className="text-xs">Imagens 3D (PNG ou JPG) — opcional; entram ao lado da vista, na mesma folha</Label>
               <div className="grid gap-2 sm:grid-cols-2">
-                {([["closed", "Perspectiva fechado"], ["open", "Perspectiva aberto"]] as const).map(([slot, label]) => (
+                {([["closed", "Imagem 3D"], ["open", "Segunda imagem 3D"]] as const).map(([slot, label]) => (
                   <div key={slot} className="rounded-lg border p-2.5">
                     <p className="text-xs font-medium">{label}</p>
                     {f[slot] ? (
@@ -187,7 +179,7 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">Sem imagem, o espaço dela fica vazio. O sistema não desenha o 3D: ele só posiciona as imagens enviadas.</p>
+              <p className="text-xs text-muted-foreground">Sem imagem, a vista ocupa a folha inteira. Perspectiva sozinha em uma folha: envie em "Enviar pranchas do Promob".</p>
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_90px]">
@@ -197,7 +189,7 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Descrição do móvel (sai na chamada, junto com L x A x P)</Label>
+            <Label className="text-xs">Descrição do móvel (chamada da primeira coluna, junto com L x A x P)</Label>
             <Input value={f.description} placeholder="Ex.: Armário com caixaria em MDF cinza urban" onChange={(e) => set("description", e.target.value)} />
           </div>
 
@@ -208,24 +200,12 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
             <div className="space-y-1"><Label className="text-xs">Topo</Label><Input inputMode="decimal" value={f.top} placeholder="50" onChange={(e) => set("top", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Rodapé</Label><Input inputMode="decimal" value={f.base} placeholder="70" onChange={(e) => set("base", e.target.value)} /></div>
           </div>
-          {(
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <div className="space-y-1"><Label className="text-xs">Espessura das chapas</Label><Input inputMode="decimal" value={f.thickness} placeholder="15" onChange={(e) => set("thickness", e.target.value)} /></div>
-              <div className="space-y-1">
-                <Label className="text-xs">Cor do móvel</Label>
-                <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={f.finish} onChange={(e) => set("finish", e.target.value as Finish)}>
-                  {(Object.keys(FINISH_LABEL) as Finish[]).map((k) => <option key={k} value={k}>{FINISH_LABEL[k]}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1"><Label className="text-xs">Profundidade da prateleira</Label><Input inputMode="decimal" value={f.shelfDepth} placeholder="opcional" onChange={(e) => set("shelfDepth", e.target.value)} /></div>
-            </div>
-          )}
           {inner > 0 && <p className="text-xs text-muted-foreground">Vão interno (altura menos topo e rodapé): <span className="font-medium text-foreground">{String(Math.round(inner * 10) / 10).replace(".", ",")} mm</span></p>}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs">Colunas, da esquerda para a direita</Label>
-              <Button type="button" size="sm" variant="outline" disabled={f.columns.length >= 8} onClick={() => set("columns", [...f.columns, { kind: "PORTAS", width: "", count: "2", heights: "", shelves: "0" }])}>
+              <Button type="button" size="sm" variant="outline" disabled={f.columns.length >= 8} onClick={() => set("columns", [...f.columns, { kind: "PORTAS", width: "", count: "2", heights: "", shelves: "0", note: "" }])}>
                 <Plus className="mr-1 h-3.5 w-3.5" /> Coluna
               </Button>
             </div>
@@ -244,6 +224,12 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
                   ) : <div />}
                   <Button type="button" variant="ghost" size="icon" className="h-9 w-9 self-end" disabled={f.columns.length === 1} title="Remover coluna" onClick={() => set("columns", f.columns.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
                 </div>
+                {i > 0 && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Chamada desta coluna (opcional) — sai ao lado do móvel, com a linha apontando para ela</Label>
+                    <Input value={c.note} placeholder="Ex.: Portas de giro em alumínio prata e espelho prata L 1180 x A 2349 x P 360" onChange={(e) => setCol(i, { note: e.target.value })} />
+                  </div>
+                )}
                 {c.kind === "PORTAS" && (
                   <div className="grid gap-2 sm:grid-cols-[150px_1fr]">
                     <div className="space-y-1"><Label className="text-xs">Prateleiras atrás das portas</Label><Input inputMode="numeric" value={c.shelves} onChange={(e) => setCol(i, { shelves: e.target.value })} /></div>
@@ -265,12 +251,6 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
             ))}
           </div>
 
-          {(
-            <div className="space-y-1">
-              <Label className="text-xs">Especificações do móvel (uma por linha) — ficam guardadas com as medidas</Label>
-              <Textarea rows={4} value={f.specs} placeholder={"Ex.: MDF Carvalho Treviso 15mm\nInterno em MDF Branco\nPuxador fornecido pelo cliente"} onChange={(e) => set("specs", e.target.value)} />
-            </div>
-          )}
         </div>
 
         <DialogFooter>

@@ -4,8 +4,11 @@
  * na prancha e põe o carimbo, o título e a escala.
  */
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont } from "pdf-lib";
-import { layoutDrawing, mm, type DrawingSpec } from "./tech-drawing.rules";
-import { boardPdf, type BoardImages } from "./tech-board.pdf";
+import { layoutDrawing, mm, wrapWords, type DrawingSpec } from "./tech-drawing.rules";
+
+export type BoardImage = { bytes: Buffer; mime: string };
+/** imagens 3D que entram ao lado da vista, na mesma folha */
+export type BoardImages = { closed?: BoardImage | null; open?: BoardImage | null };
 
 const PW = 802;
 const PH = 453;
@@ -31,17 +34,22 @@ function safe(font: PDFFont, text: string) {
 }
 
 export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): Promise<{ pdf: Buffer; warnings: string[] }> {
-  if (spec.layout === "PRANCHA") return boardPdf(spec, images);
   const L = layoutDrawing(spec);
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const p = doc.addPage([PW, PH]);
 
   // margens: cotas à esquerda, chamada em cima, larguras embaixo
-  const box = { l: 96, r: 40, t: 22 + L.callout.length * 10 + 16, b: 44 };
-  const k = Math.min((PW - box.l - box.r) / L.width, (PH - box.t - box.b) / L.height);
-  const x0 = box.l + (PW - box.l - box.r - L.width * k) / 2;
-  const y0 = box.b;
+  // com imagem 3D, a vista fica na metade esquerda e a imagem na direita (como na "Vista A" da loja)
+  const side = [images.closed, images.open].filter((i): i is BoardImage => Boolean(i));
+  const RW = side.length ? PW * 0.56 : PW;
+  // chamadas próprias das colunas ficam à direita do móvel
+  const notes = spec.columns.map((c, i) => ({ col: L.columns[i], lines: wrapWords((c.note ?? "").trim().toUpperCase(), side.length ? 22 : 30) })).filter((n) => n.lines.length);
+  const box = { l: 96, r: notes.length ? (side.length ? 112 : 150) : 40, t: 22 + L.callout.length * 10 + 16, b: 44 };
+  const k = Math.min((RW - box.l - box.r) / L.width, (PH - box.t - box.b) / L.height);
+  const x0 = box.l + (RW - box.l - box.r - L.width * k) / 2;
+  // sobrando altura (vista menor, ao lado da imagem), o desenho fica no meio da folha
+  const y0 = box.b + Math.max(0, (PH - box.t - box.b - L.height * k) / 2);
   const X = (v: number) => x0 + v * k;
   const Y = (v: number) => y0 + v * k;
   const line = (xa: number, ya: number, xb: number, yb: number, thickness = 0.5, color = INK) => p.drawLine({ start: { x: xa, y: ya }, end: { x: xb, y: yb }, thickness, color });
@@ -122,6 +130,33 @@ export async function drawingPdf(spec: DrawingSpec, images: BoardImages = {}): P
   line(px - 36, cy, px - 34 + under + 2, cy, 0.4);
   line(px, cy, px, py, 0.4);
   p.drawCircle({ x: px, y: py, size: 1.8, color: INK });
+
+  // chamadas das colunas: ponto dentro da coluna, linha até o texto à direita
+  let ny = Y(L.height - L.top) - 30;
+  for (const n of notes) {
+    const px2 = X(n.col.x + n.col.width * 0.6);
+    const tx = X(L.width) + 22;
+    n.lines.forEach((l, i) => text(l, tx, ny - i * 9, 6.5));
+    const bottom = ny - (n.lines.length - 1) * 9 - 3;
+    const w = Math.max(...n.lines.map((l) => font.widthOfTextAtSize(safe(font, l), 6.5)));
+    line(tx - 2, bottom, tx + w + 2, bottom, 0.4);
+    line(px2, bottom, tx - 2, bottom, 0.4);
+    p.drawCircle({ x: px2, y: bottom, size: 1.8, color: INK });
+    ny = bottom - 26;
+  }
+
+  // imagens 3D na metade direita, uma embaixo da outra
+  const slotH = (PH - 16) / Math.max(1, side.length);
+  for (const [i, img] of side.entries()) {
+    try {
+      const emb = /png/i.test(img.mime) ? await doc.embedPng(img.bytes) : await doc.embedJpg(img.bytes);
+      const area = { x: RW + 8, y: PH - 8 - (i + 1) * slotH + 4, w: PW - RW - 16, h: slotH - 8 };
+      const s = Math.min(area.w / emb.width, area.h / emb.height);
+      p.drawImage(emb, { x: area.x + (area.w - emb.width * s) / 2, y: area.y + (area.h - emb.height * s) / 2, width: emb.width * s, height: emb.height * s });
+    } catch {
+      // imagem que o PDF não consegue ler fica de fora; a vista sai
+    }
+  }
 
   return { pdf: Buffer.from(await doc.save()), warnings: L.warnings };
 }

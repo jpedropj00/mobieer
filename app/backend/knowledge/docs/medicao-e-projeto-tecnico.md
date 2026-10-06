@@ -28,11 +28,11 @@ No cartão **Pasta técnica** há o botão **Desenhar por medidas**. Você digit
 4. Em prateleiras e gavetas, digite as alturas de cima para baixo, separadas por ponto e vírgula. Em branco, o sistema divide por igual. Se faltar a última, ela fica com o resto.
 5. Clique em **Salvar e ver o desenho**.
 
-O desenho sai em dois formatos, escolhidos no topo da tela:
-- **Prancha completa**: uma folha com as **imagens 3D** que você enviar (perspectiva fechado e perspectiva aberto, em PNG ou JPG), o quadro de especificações, vista frontal, vista frontal interna, vista lateral, vista superior, planta baixa interna, detalhe do rodapé e a peça da prateleira. Nela você informa também a espessura das chapas, a profundidade da prateleira e as especificações (uma por linha). Em coluna de portas, informe quantas prateleiras ficam atrás delas.
-- **Só a vista frontal cotada**: apenas a vista de frente com as cotas.
+A folha sai no modelo da loja: a vista cotada, o título (ex.: VISTA B), a escala e o carimbo com cliente, ambiente e logotipo. Dois recursos opcionais:
+- **Imagem 3D ao lado**: envie uma ou duas imagens 3D (PNG ou JPG) e elas entram à direita da vista, na mesma folha. Sem imagem, a vista ocupa a folha inteira. O sistema não desenha o 3D, só posiciona a imagem enviada.
+- **Chamada por coluna**: da segunda coluna em diante, dá para escrever um texto próprio (ex.: "Portas de giro em alumínio prata L 1180 x A 2349 x P 360"). Ele sai ao lado do móvel, com a linha apontando para a coluna.
 
-O sistema não desenha o 3D: ele só posiciona as imagens enviadas. Sem imagem, o espaço dela fica vazio.
+Perspectiva ou planta sozinha em uma folha continua sendo enviada em **Enviar pranchas do Promob**.
 
 Se as alturas não fecharem com o vão interno (altura menos topo e rodapé), o sistema desenha mesmo assim e avisa a diferença. Para mudar as medidas depois, use o botão de lápis e régua na prancha. O desenho é só a vista frontal em 2D: perspectiva e planta continuam vindo do Promob.
 

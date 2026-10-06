@@ -190,6 +190,7 @@ const drawingInput = z.object({
           heights: z.array(mmNum.positive()).max(31).default([]),
           label: z.string().trim().max(24).nullable().optional(),
           shelves: z.coerce.number().int().min(0).max(30).optional(),
+          note: z.string().trim().max(200).nullable().optional(),
         })
       )
       .min(1, "Adicione pelo menos uma coluna")
@@ -207,15 +208,16 @@ async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: str
   const spec: DrawingSpec = {
     ...input.spec,
     depth: input.spec.depth || null,
+    layout: "VISTA",
     shelfDepth: input.spec.shelfDepth || null,
     images: { closed: ownImage(input.spec.images?.closed, projectId), open: ownImage(input.spec.images?.open, projectId) },
     specs: (input.spec.specs ?? []).filter(Boolean),
-    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0 })),
+    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0, note: c.note || null })),
   };
   let out: Awaited<ReturnType<typeof drawingPdf>>;
   try {
     const bytes = async (i: DrawingImage | null | undefined) => (i ? { bytes: await storage.getBytes(i.storageKey), mime: i.mime } : null);
-    out = await drawingPdf(spec, spec.layout === "PRANCHA" ? { closed: await bytes(spec.images?.closed), open: await bytes(spec.images?.open) } : {});
+    out = await drawingPdf(spec, { closed: await bytes(spec.images?.closed), open: await bytes(spec.images?.open) });
   } catch (e) {
     if (e instanceof DrawingError) throw new BadRequestError(e.message);
     throw e;

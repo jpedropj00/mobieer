@@ -22,6 +22,8 @@ export type DrawingColumn = {
   label: string | null;
   /** coluna de portas: nº de prateleiras atrás delas (as alturas vão em `heights`) */
   shelves?: number;
+  /** chamada própria desta coluna, ao lado do móvel (ex.: "PORTAS DE GIRO EM ALUMÍNIO PRATA L 1180 X A 2349") */
+  note?: string | null;
 };
 
 export const DRAWING_LAYOUTS = ["VISTA", "PRANCHA"] as const;
@@ -39,9 +41,8 @@ export type DrawingSpec = {
   /** rodapé em mm */
   base: number;
   columns: DrawingColumn[];
-  /** VISTA = só a vista cotada; PRANCHA = folha completa, com as imagens 3D enviadas */
   layout?: (typeof DRAWING_LAYOUTS)[number];
-  /** imagens 3D (render) enviadas para as perspectivas da prancha completa */
+  /** imagens 3D (render) que entram ao lado da vista cotada, na mesma folha */
   images?: { closed?: DrawingImage | null; open?: DrawingImage | null };
   /** espessura das chapas em mm */
   thickness?: number;
@@ -162,11 +163,11 @@ export function layoutDrawing(spec: DrawingSpec): DrawingLayout {
   ];
 
   const dims = `L ${mm(width)} X A ${mm(height)}${spec.depth && spec.depth > 0 ? ` X P ${mm(spec.depth)}` : ""}`;
-  const callout = [...wrapWords(spec.description.trim().toUpperCase(), 26), dims];
+  const callout = [...wrapWords(spec.description.trim().toUpperCase(), 26).slice(0, 4), dims];
   return { width, height, top, base, columns, chain, callout, warnings };
 }
 
-function wrapWords(text: string, max: number): string[] {
+export function wrapWords(text: string, max: number): string[] {
   const lines: string[] = [];
   let cur = "";
   for (const w of text.split(/\s+/).filter(Boolean)) {
@@ -176,5 +177,5 @@ function wrapWords(text: string, max: number): string[] {
     } else cur = cur ? `${cur} ${w}` : w;
   }
   if (cur) lines.push(cur);
-  return lines.slice(0, 4);
+  return lines.slice(0, 10);
 }
