@@ -1,6 +1,6 @@
 const API_BASE = "/api";
 
-import { ApiError, errorFromResponse, readJson, safeFetch } from "@/lib/errors";
+import { ApiError, NetworkError, errorFromResponse, readJson, safeFetch } from "@/lib/errors";
 
 // Reexportado para quem já importa daqui.
 export { ApiError };
@@ -31,10 +31,12 @@ type RequestOptions = {
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
   headers?: Record<string, string>;
+  /** desiste depois deste tempo (ms) em vez de esperar para sempre */
+  timeoutMs?: number;
 };
 
 export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, params, headers } = options;
+  const { method = "GET", body, params, headers, timeoutMs } = options;
 
   let url = `${API_BASE}${path}`;
   if (params) {
@@ -46,15 +48,27 @@ export async function api<T = unknown>(path: string, options: RequestOptions = {
     if (qs) url += `?${qs}`;
   }
 
-  const response = await safeFetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response: Response;
+  try {
+    response = await safeFetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
+    });
+  } catch (e) {
+    // estourou o tempo: vira erro de rede, que as telas sabem mostrar e repetir
+    if (controller?.signal.aborted) throw new NetworkError("O servidor demorou para responder. Tente novamente.");
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 
   const payload = await readJson(response);
   if (!response.ok) throw await failure(response, payload);

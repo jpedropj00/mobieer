@@ -19,6 +19,10 @@ export function pgAdapterFor(databaseUrl: string) {
     // connection_limit=1 serializava todo Promise.all; o pooler aguenta mais
     max: Number.isFinite(limit) && limit > 1 ? limit : 5,
     idleTimeoutMillis: 10_000,
+    // não esperar para sempre por uma conexão: falha rápido e o pedido seguinte abre outra
+    connectionTimeoutMillis: 10_000,
+    // mantém a conexão viva entre pedidos, para o pooler não derrubá-la em silêncio
+    keepAlive: true,
     // igual ao sslmode=require de antes: cifra sem conferir a cadeia do certificado
     ssl: sslmode && sslmode !== "disable" ? { rejectUnauthorized: false } : undefined,
   });
