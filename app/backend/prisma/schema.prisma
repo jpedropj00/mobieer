@@ -26,6 +26,8 @@ enum UserStatus {
 model User {
   id               String     @id @default(cuid())
   aiConversations AiConversation[]
+  // cargos além do principal (roleId): as permissões são a soma de todos
+  extraRoles      UserExtraRole[]
   // verificação em duas etapas (TOTP): segredo cifrado, quando foi ativada e hashes dos códigos de recuperação
   mfaSecret        String?
   mfaEnabledAt     DateTime?
@@ -289,6 +291,7 @@ model Organization {
 }
 
 model Role {
+  extraUsers  UserExtraRole[]
   id          String           @id @default(cuid())
   name        String           @unique // ADMIN | MANAGER | WAREHOUSE | REQUESTER | VIEWER
   label       String
@@ -4812,4 +4815,16 @@ model ContractorAttendance {
 
   @@unique([contractorId, date])
   @@index([organizationId, date])
+}
+
+/// Cargo adicional de um usuário. O principal continua em User.roleId.
+model UserExtraRole {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, roleId])
+  @@index([roleId])
 }

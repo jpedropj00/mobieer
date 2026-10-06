@@ -152,11 +152,13 @@ export function Sidebar({ collapsed, onNavigate }: { collapsed: boolean; onNavig
   const location = useLocation();
   const chatUnread = useChatUnread(can("chat.use"));
 
+  const userRoles: string[] = user ? user.roles ?? [user.role] : [];
   const visible = (i: NavItem) =>
     (!i.permission || can(i.permission)) &&
     (!i.anyPermission || i.anyPermission.some((p) => can(p))) &&
-    (!i.roles || (user && i.roles.includes(user.role))) &&
-    (!i.hideForRoles || !user || !i.hideForRoles.includes(user.role));
+    // com mais de um cargo: aparece se qualquer cargo pede o item; some só se todos os cargos escondem
+    (!i.roles || userRoles.some((r) => i.roles!.includes(r))) &&
+    (!i.hideForRoles || !user || !userRoles.every((r) => i.hideForRoles!.includes(r)));
 
   const groups = NAV_GROUPS.map((g) => ({
     ...g,

@@ -1,3 +1,4 @@
+import { whereHasPermission } from "./user-roles";
 import { prisma } from "../prisma";
 
 /**
@@ -16,7 +17,7 @@ export async function notifyUsersWithPermission(opts: {
     where: {
       organizationId: opts.organizationId,
       status: "ACTIVE",
-      role: { permissions: { some: { permission: { code: opts.permission } } } },
+      ...whereHasPermission(opts.permission),
     },
     select: { id: true },
   });

@@ -31,6 +31,8 @@ const schema = z.object({
   position: z.string().optional().or(z.literal("")),
   sector: z.string().optional().or(z.literal("")),
   roleId: z.string().min(1, "Perfil obrigatório"),
+  // cargos além do principal
+  extraRoleIds: z.array(z.string()).default([]),
 });
 
 type Values = z.infer<typeof schema>;
@@ -58,7 +60,7 @@ export function UsersPage() {
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", email: "", password: "", position: "", sector: "", roleId: "" });
+    form.reset({ name: "", email: "", password: "", position: "", sector: "", roleId: "", extraRoleIds: [] });
     setDialogOpen(true);
   };
   const openEdit = (u: User) => {
@@ -70,6 +72,7 @@ export function UsersPage() {
       position: u.position ?? "",
       sector: u.sector ?? "",
       roleId: u.role.id,
+      extraRoleIds: (u.extraRoles ?? []).map((r) => r.id),
     });
     setDialogOpen(true);
   };
@@ -82,6 +85,8 @@ export function UsersPage() {
         position: values.position || null,
         sector: values.sector || null,
         roleId: values.roleId,
+        // o principal nunca vai repetido nos adicionais
+        extraRoleIds: (values.extraRoleIds ?? []).filter((id) => id !== values.roleId),
       };
       if (editing) return apiPut(`/users/${editing.id}`, body);
       // sem senha, o sistema gera uma provisória e mostra uma vez
@@ -214,6 +219,11 @@ export function UsersPage() {
                           <Shield className="mr-1 h-3 w-3" />
                           {u.role.label}
                         </Badge>
+                        {(u.extraRoles ?? []).map((r) => (
+                          <Badge key={r.id} variant="outline" className="ml-1 mt-1" title="Cargo adicional">
+                            + {r.label}
+                          </Badge>
+                        ))}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <p className="text-sm">{u.position ?? "—"}</p>
@@ -336,6 +346,31 @@ export function UsersPage() {
                 </SelectContent>
               </Select>
               {form.formState.errors.roleId && <p className="text-xs text-destructive">{form.formState.errors.roleId.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>Cargos adicionais (opcional)</Label>
+              <div className="grid max-h-44 grid-cols-1 gap-1 overflow-y-auto rounded-md border p-2 sm:grid-cols-2">
+                {roles?.data
+                  .filter((r) => r.id !== form.watch("roleId"))
+                  .map((r) => {
+                    const selected = (form.watch("extraRoleIds") ?? []).includes(r.id);
+                    return (
+                      <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/60">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={selected}
+                          onChange={(e) => {
+                            const cur = form.getValues("extraRoleIds") ?? [];
+                            form.setValue("extraRoleIds", e.target.checked ? [...cur, r.id] : cur.filter((id) => id !== r.id), { shouldDirty: true });
+                          }}
+                        />
+                        {r.label}
+                      </label>
+                    );
+                  })}
+              </div>
+              <p className="text-xs text-muted-foreground">A pessoa passa a ter as permissões de todos os cargos marcados, somadas às do perfil principal.</p>
             </div>
             {!editing && (
               <div className="space-y-2">

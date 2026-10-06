@@ -1,9 +1,10 @@
+import { effectivePermissions, roleNames, rolesInclude, rolesLabel } from "../lib/user-roles";
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { prisma } from "../prisma";
 import { ApiError, UnauthorizedError } from "../utils/ApiError";
-import { accessAllowed, passwordExpired } from "../lib/security-policy";
+import { accessAllowedAny, passwordExpired } from "../lib/security-policy";
 import { loadSecurityPolicy } from "../lib/security";
 
 /** Com troca de senha pendente, só estas rotas respondem (a tela de troca usa). */
@@ -30,11 +31,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       where: { id: payload.sub },
       include: {
         organization: { include: { enterprise: true } },
-        role: {
-          include: {
-            permissions: { include: { permission: true } },
-          },
-        },
+        ...rolesInclude,
       },
     });
 
@@ -45,7 +42,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
     // IP e horário valem para a sessão inteira, não só na entrada
     const policy = await loadSecurityPolicy();
-    const access = accessAllowed(policy, { role: user.role.name, ip: req.ip });
+    const access = accessAllowedAny(policy, { roles: roleNames(user), ip: req.ip });
     if (!access.ok) throw new ApiError(403, access.message, undefined, "ACCESS_RESTRICTED");
     const path = req.originalUrl.split("?")[0];
     if ((user.mustChangePassword || passwordExpired(user.passwordChangedAt, policy)) && !PASSWORD_CHANGE_ALLOWED.includes(path)) {
@@ -57,11 +54,13 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       name: user.name,
       email: user.email,
       role: user.role.name,
-      roleLabel: user.role.label,
+      roles: roleNames(user),
+      roleLabel: rolesLabel(user),
       organizationId: user.organizationId,
       enterpriseId: user.organization.enterpriseId,
       sector: user.sector,
-      permissions: user.role.permissions.map((rp) => rp.permission.code),
+      // soma das permissões de todos os cargos da pessoa
+      permissions: effectivePermissions(user),
     };
 
     next();
