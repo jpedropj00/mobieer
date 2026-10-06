@@ -38,15 +38,15 @@ export type DrawingSpec = {
   /** rodapé em mm */
   base: number;
   columns: DrawingColumn[];
-  /** VISTA = só a vista cotada; PRANCHA = folha completa (perspectivas, vistas, especificações) */
+  // Dados guardados para a prancha completa, que será gerada por IA a partir
+  // destas medidas. O sistema hoje desenha só a vista cotada.
   layout?: (typeof DRAWING_LAYOUTS)[number];
-  /** espessura das chapas em mm (prancha completa) */
+  /** espessura das chapas em mm */
   thickness?: number;
-  /** cor de fora do móvel na prancha completa */
   finish?: (typeof DRAWING_FINISHES)[number];
-  /** profundidade da prateleira; sem ela a peça sai sem essa cota */
+  /** profundidade da prateleira */
   shelfDepth?: number | null;
-  /** linhas do quadro de especificações */
+  /** especificações do móvel (materiais, ferragens, puxador…) */
   specs?: string[];
 };
 

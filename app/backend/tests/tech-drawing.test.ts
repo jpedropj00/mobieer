@@ -72,14 +72,10 @@ test("vista cotada: o PDF sai com uma página só", async () => {
   assert.deepEqual(warnings, []);
 });
 
-test("prancha completa: prateleira atrás das portas só conta por dentro, e as especificações saem das medidas", async () => {
-  const { boardSpecs } = await import("../src/modules/techproject/tech-board.pdf");
-  const baixo: DrawingSpec = { layout: "PRANCHA", description: "Armário baixo com portas", width: 900, height: 750, depth: 450, top: 0, base: 50, thickness: 15, specs: ["Puxador fornecido pelo cliente"], columns: [{ kind: "PORTAS", width: null, count: 2, shelves: 1, heights: [], label: null }] };
+test("vista cotada: prateleira atrás das portas fica guardada, mas não aparece por fora", () => {
+  const baixo: DrawingSpec = { description: "Armário baixo com portas", width: 900, height: 750, depth: 450, top: 0, base: 50, thickness: 15, specs: ["Puxador fornecido pelo cliente"], columns: [{ kind: "PORTAS", width: null, count: 2, shelves: 1, heights: [], label: null }] };
   const l = layoutDrawing(baixo);
   assert.equal(l.columns[0].hidden, true);
   assert.equal(l.columns[0].lines.length, 1);
   assert.deepEqual(l.columns[0].bands.map((b) => b.value), [350, 350]);
-  assert.deepEqual(boardSpecs(baixo, l), ["Medidas: L 900 x A 750 x P 450 mm", "Chapas de 15 mm", "02 portas de abrir", "01 prateleira interna", "Rodapé de 50 mm", "Puxador fornecido pelo cliente"]);
-  const { pdf } = await drawingPdf(baixo);
-  assert.equal((await PDFDocument.load(pdf)).getPageCount(), 1);
 });

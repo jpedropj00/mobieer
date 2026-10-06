@@ -42,9 +42,9 @@ const heightsOf = (s: string) => s.split(/[;/\n|]+|\s+(?=\d)/).map((p) => num(p)
 
 const emptyForm = (room: string): Form => ({
   room,
-  title: "PROJETO EXECUTIVO",
+  title: "VISTA A INTERNA",
   scale: "1:10",
-  layout: "PRANCHA",
+  layout: "VISTA",
   thickness: "15",
   finish: "MADEIRA",
   shelfDepth: "",
@@ -106,7 +106,7 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
           top: num(f.top),
           base: num(f.base),
           columns: f.columns.map((c) => ({ kind: c.kind, width: num(c.width) || null, count: c.kind === "VAO" ? 0 : Math.round(num(c.count)), heights: heightsOf(c.heights), label: null, shelves: c.kind === "PORTAS" ? Math.round(num(c.shelves)) : 0 })),
-          layout: f.layout,
+          layout: "VISTA" as const,
           thickness: num(f.thickness) || 15,
           finish: f.finish,
           shelfDepth: num(f.shelfDepth) || null,
@@ -133,17 +133,10 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{sheet?.drawing ? "Editar medidas do desenho" : "Desenhar por medidas"}</DialogTitle>
-          <DialogDescription>Informe as medidas em milímetros. O sistema desenha a prancha do projeto executivo e coloca na pasta técnica.</DialogDescription>
+          <DialogDescription>Informe as medidas em milímetros. O sistema guarda as medidas e desenha a vista frontal cotada como uma prancha da pasta técnica.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 text-sm">
-          <div className="space-y-1">
-            <Label className="text-xs">Formato</Label>
-            <div className="flex rounded-md border text-xs">
-              <button type="button" className={`flex-1 px-3 py-2 ${f.layout === "PRANCHA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "PRANCHA")}>Prancha completa (perspectivas, vistas e especificações)</button>
-              <button type="button" className={`flex-1 border-l px-3 py-2 ${f.layout === "VISTA" ? "bg-muted font-medium" : ""}`} onClick={() => set("layout", "VISTA")}>Só a vista frontal cotada</button>
-            </div>
-          </div>
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_90px]">
             <div className="space-y-1"><Label className="text-xs">Ambiente</Label><Input value={f.room} placeholder="Ex.: Suíte master" onChange={(e) => set("room", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Título da prancha</Label><Input value={f.title} onChange={(e) => set("title", e.target.value)} /></div>
@@ -162,11 +155,11 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
             <div className="space-y-1"><Label className="text-xs">Topo</Label><Input inputMode="decimal" value={f.top} placeholder="50" onChange={(e) => set("top", e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">Rodapé</Label><Input inputMode="decimal" value={f.base} placeholder="70" onChange={(e) => set("base", e.target.value)} /></div>
           </div>
-          {f.layout === "PRANCHA" && (
+          {(
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="space-y-1"><Label className="text-xs">Espessura das chapas</Label><Input inputMode="decimal" value={f.thickness} placeholder="15" onChange={(e) => set("thickness", e.target.value)} /></div>
               <div className="space-y-1">
-                <Label className="text-xs">Cor do móvel no desenho</Label>
+                <Label className="text-xs">Cor do móvel</Label>
                 <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={f.finish} onChange={(e) => set("finish", e.target.value as Finish)}>
                   {(Object.keys(FINISH_LABEL) as Finish[]).map((k) => <option key={k} value={k}>{FINISH_LABEL[k]}</option>)}
                 </select>
@@ -219,9 +212,9 @@ export function TechDrawingDialog<T>({ base, open, onClose, onSaved, sheet, defa
             ))}
           </div>
 
-          {f.layout === "PRANCHA" && (
+          {(
             <div className="space-y-1">
-              <Label className="text-xs">Especificações (uma por linha) — entram no quadro, depois das que saem das medidas</Label>
+              <Label className="text-xs">Especificações do móvel (uma por linha) — ficam guardadas com as medidas</Label>
               <Textarea rows={4} value={f.specs} placeholder={"Ex.: MDF Carvalho Treviso 15mm\nInterno em MDF Branco\nPuxador fornecido pelo cliente"} onChange={(e) => set("specs", e.target.value)} />
             </div>
           )}

@@ -195,6 +195,8 @@ async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: str
   const spec: DrawingSpec = {
     ...input.spec,
     depth: input.spec.depth || null,
+    // a prancha completa fica para a IA: aqui sai só a vista cotada
+    layout: "VISTA",
     shelfDepth: input.spec.shelfDepth || null,
     specs: (input.spec.specs ?? []).filter(Boolean),
     columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0 })),

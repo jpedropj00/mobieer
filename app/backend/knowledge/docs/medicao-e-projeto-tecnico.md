@@ -28,11 +28,7 @@ No cartão **Pasta técnica** há o botão **Desenhar por medidas**. Você digit
 4. Em prateleiras e gavetas, digite as alturas de cima para baixo, separadas por ponto e vírgula. Em branco, o sistema divide por igual. Se faltar a última, ela fica com o resto.
 5. Clique em **Salvar e ver o desenho**.
 
-O desenho sai em dois formatos, escolhidos no topo da tela:
-- **Prancha completa**: uma folha com perspectiva fechada e aberta, quadro de especificações, vista frontal, vista frontal interna, vista lateral, vista superior, planta baixa interna, detalhe do rodapé e a peça da prateleira. Nela você informa também a espessura das chapas, a cor do móvel no desenho e as especificações (uma por linha). Em coluna de portas, informe quantas prateleiras ficam atrás delas.
-- **Só a vista frontal cotada**: apenas a vista de frente com as cotas.
-
-As perspectivas da prancha são desenhos, não fotos: a imagem realista continua vindo do Promob ou do Render com IA.
+Além das medidas, a tela guarda a espessura das chapas, a cor, a profundidade da prateleira, as especificações do móvel e, em coluna de portas, quantas prateleiras ficam atrás delas. Hoje o sistema desenha só a vista frontal cotada; esses dados ficam guardados com a prancha.
 
 Se as alturas não fecharem com o vão interno (altura menos topo e rodapé), o sistema desenha mesmo assim e avisa a diferença. Para mudar as medidas depois, use o botão de lápis e régua na prancha. O desenho é só a vista frontal em 2D: perspectiva e planta continuam vindo do Promob.
 
