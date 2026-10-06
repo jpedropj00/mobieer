@@ -140,6 +140,8 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
   // desenho por medidas: null = fechado; "new" = novo; ou a prancha em edição
   const [drawing, setDrawing] = useState<Sheet | "new" | null>(null);
   const [annotating, setAnnotating] = useState<Sheet | null>(null);
+  // precisa ficar aqui em cima, antes de qualquer retorno: hook depois de "return" quebra a tela
+  const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const apply = (d: Folder) => {
@@ -188,7 +190,6 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
 
   // Antes estes botões ficavam travados enquanto houvesse título ou ordem sem salvar, e não dava
   // para saber por quê. Agora salvam o que estiver pendente e seguem.
-  const [saving, setSaving] = useState(false);
   const afterSave = async (go: (fresh: Sheet[]) => void) => {
     if (!dirty || !sheets.length) return go(sheets);
     setSaving(true);
