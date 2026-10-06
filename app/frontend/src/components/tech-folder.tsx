@@ -18,7 +18,7 @@ import { getToken } from "@/services/api";
 
 type Sheet = { id: string; room: string; title: string; scale: string | null; note: string | null; fileName: string; mime: string; page: number | null; stamp: boolean; drawing?: DrawingSpec; annotated?: boolean };
 type Spec = { room: string; rows: { label: string; value: string }[]; description: string | null };
-type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[]; area?: { w: number; h: number } };
+type Folder = { sheets: Sheet[]; includeSpecs: boolean; notes: string[]; specs: Spec[]; rooms: string[]; quote: { number: string; status: string } | null; titles: string[]; scales: string[]; area?: { w: number; h: number }; ai?: { image: boolean } };
 
 /** Tela de anotar uma prancha: carrega a prancha de fundo e as anotações já salvas. */
 function AnnotateDialog({ base, sheet, aspect, onClose, onSaved }: { base: string; sheet: Sheet | null; aspect: number; onClose: () => void; onSaved: (d: Folder) => void }) {
@@ -186,6 +186,22 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
   const d = q.data?.data;
   if (!d) return <p className="py-6 text-sm text-muted-foreground">Não foi possível carregar a pasta técnica.</p>;
 
+  // Antes estes botões ficavam travados enquanto houvesse título ou ordem sem salvar, e não dava
+  // para saber por quê. Agora salvam o que estiver pendente e seguem.
+  const [saving, setSaving] = useState(false);
+  const afterSave = async (go: (fresh: Sheet[]) => void) => {
+    if (!dirty || !sheets.length) return go(sheets);
+    setSaving(true);
+    try {
+      const r = await apiPut<{ data: Folder }>(base, body());
+      apply(r.data);
+      go(r.data.sheets);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSaving(false);
+    }
+  };
   const edit = (id: string, patch: Partial<Sheet>) => { setSheets((cur) => cur.map((s) => (s.id === id ? { ...s, ...patch } : s))); setDirty(true); };
   const move = (i: number, dir: -1 | 1) => {
     setSheets((cur) => { const next = [...cur]; const j = i + dir; if (j < 0 || j >= next.length) return cur; [next[i], next[j]] = [next[j], next[i]]; return next; });
@@ -238,7 +254,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
             <Button variant="outline" disabled={upload.isPending} onClick={() => fileRef.current?.click()}>
               {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} Enviar pranchas do Promob
             </Button>
-            <Button variant="outline" disabled={dirty} title={dirty ? "Salve as alterações antes" : "Digite as medidas e o sistema desenha a vista cotada"} onClick={() => setDrawing("new")}>
+            <Button variant="outline" disabled={saving} title="Digite as medidas e o sistema desenha a vista cotada" onClick={() => void afterSave(() => setDrawing("new"))}>
               <PencilRuler className="h-4 w-4" /> Desenhar por medidas
             </Button>
             <p className="basis-full text-xs text-muted-foreground">Imagens (PNG ou JPG) de planta, vistas e perspectiva recebem o carimbo. PDF exportado do Promob entra página por página.</p>
@@ -263,12 +279,12 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
                 <div className="flex shrink-0 gap-0.5">
                   {/* página de PDF que entra sem carimbo vai como veio do Promob: não tem área para anotar */}
                   {(s.stamp || s.mime !== "application/pdf") && (
-                    <Button variant={s.annotated ? "secondary" : "ghost"} size="icon" className="h-8 w-8" disabled={dirty} onClick={() => setAnnotating(s)} title={dirty ? "Salve as alterações antes de anotar" : s.annotated ? "Editar anotações" : "Desenhar e escrever na prancha"}><PencilLine className="h-4 w-4" /></Button>
+                    <Button variant={s.annotated ? "secondary" : "ghost"} size="icon" className="h-8 w-8" disabled={saving} onClick={() => void afterSave((fresh) => setAnnotating(fresh.find((x) => x.id === s.id) ?? s))} title={s.annotated ? "Editar anotações" : "Desenhar e escrever na prancha"}><PencilLine className="h-4 w-4" /></Button>
                   )}
-                  {s.drawing && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={dirty} onClick={() => setDrawing(s)} title={dirty ? "Salve as alterações antes de editar" : "Editar medidas"}><PencilRuler className="h-4 w-4" /></Button>}
+                  {s.drawing && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={saving} onClick={() => void afterSave((fresh) => setDrawing(fresh.find((x) => x.id === s.id) ?? s))} title="Editar medidas"><PencilRuler className="h-4 w-4" /></Button>}
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === 0} onClick={() => move(i, -1)} title="Subir"><ArrowUp className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === sheets.length - 1} onClick={() => move(i, 1)} title="Descer"><ArrowDown className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={remove.isPending || dirty} onClick={() => remove.mutate(s.id)} title={dirty ? "Salve as alterações antes de remover" : "Remover prancha"}><Trash2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={remove.isPending || saving} onClick={() => void afterSave(() => remove.mutate(s.id))} title="Remover prancha"><Trash2 className="h-4 w-4" /></Button>
                 </div>
               )}
             </div>
@@ -283,7 +299,7 @@ export function TechFolderPanel({ projectId, canManage }: { projectId: string; c
         </div>
       </CardContent>
       <AnnotateDialog base={base} sheet={annotating} aspect={d.area ? d.area.w / d.area.h : 801.92 / 453.32} onClose={() => setAnnotating(null)} onSaved={apply} />
-      <TechDrawingDialog<Folder> base={base} open={drawing !== null} onClose={() => setDrawing(null)} onSaved={apply} sheet={drawing && drawing !== "new" ? drawing : null} defaultRoom={room.trim() || d.rooms[0] || ""} />
+      <TechDrawingDialog<Folder> base={base} open={drawing !== null} onClose={() => setDrawing(null)} onSaved={apply} sheet={drawing && drawing !== "new" ? drawing : null} defaultRoom={room.trim() || d.rooms[0] || ""} aiImage={d.ai?.image} />
     </Card>
   );
 }

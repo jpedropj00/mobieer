@@ -9,6 +9,9 @@
  *   POST /drawings            desenha uma vista cotada a partir das medidas
  *   PUT  /drawings/:sheetId   refaz o desenho com medidas novas
  *   GET/PUT/DELETE /sheets/:sheetId/overlay   anotações por cima da prancha
+ *   GET  /sheets/:sheetId/ai-brief   o móvel em dados + a instrução para a IA
+ *   POST /sheets/:sheetId/ai-image   a IA gera a imagem 3D a partir da vista cotada
+ *   GET  /sheets/:sheetId/preview.pdf   só esta prancha, já com o carimbo
  *   GET  .pdf      gera a pasta
  *   POST /publish  guarda nos documentos do projeto (Projeto técnico)
  */
@@ -27,8 +30,13 @@ import { ok } from "../../utils/response";
 import { storeGeneratedPdf } from "../docgen/docgen.service";
 import { techFolderPdf } from "./tech-folder.pdf";
 import { drawingPdf } from "./tech-drawing.pdf";
+import { ApiError } from "../../utils/ApiError";
+import { hitLimit, type RateStore } from "../../utils/rate-limit";
+import { AiProviderError } from "../ai/provider";
+import { imageProvider } from "../ai/provider/image";
+import { MAX_AI_EXTRA_CHARS, TECH_AI_VIEWS, techAiBrief, techAiPrompt } from "./tech-ai.rules";
 import { COLUMN_KINDS, DRAWING_FINISHES, DRAWING_LAYOUTS, DrawingError, type DrawingImage, type DrawingSpec } from "./tech-drawing.rules";
-import { SCALES, SHEET_AREA, SHEET_TITLES, pngFromDataUrl, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
+import { SCALES, SHEET_AREA, SHEET_TITLES, nextSheetNumber, pngFromDataUrl, specBlocks, titleFromFile, type TechFolderData, type TechSheet } from "./tech-folder.rules";
 
 const router = Router();
 router.use(authenticate);
@@ -76,7 +84,7 @@ function view(p: Awaited<ReturnType<typeof projectFor>>, data: TechFolderData) {
   const rooms = [...new Set([...specs.map((s) => s.room), ...(quote?.items ?? []).map((i) => i.room?.trim()).filter((r): r is string => Boolean(r))])];
   // a tela só precisa saber se a prancha tem anotação, não onde o arquivo está
   const sheets = data.sheets.map((s) => ({ ...s, overlay: undefined, annotated: Boolean(s.overlay) }));
-  return { ...data, sheets, specs, rooms, quote: quote ? { number: quote.number, status: quote.status } : null, titles: SHEET_TITLES, scales: SCALES, area: SHEET_AREA };
+  return { ...data, sheets, specs, rooms, quote: quote ? { number: quote.number, status: quote.status } : null, titles: SHEET_TITLES, scales: SCALES, area: SHEET_AREA, ai: { image: imageProvider().enabled } };
 }
 
 router.get(
@@ -144,7 +152,7 @@ router.post(
     const added: TechSheet[] = Array.from({ length: pages }, (_, i) => ({
       id: randomUUID(),
       room,
-      title: isPdf && pages > 1 ? `PRANCHA ${cur.sheets.length + i + 1}` : titleFromFile(req.file!.originalname, cur.sheets.length + i),
+      title: isPdf && pages > 1 ? `PRANCHA ${nextSheetNumber(cur.sheets) + i}` : titleFromFile(req.file!.originalname, nextSheetNumber(cur.sheets) + i - 1),
       scale: null,
       note: null,
       storageKey,
@@ -170,6 +178,16 @@ function ownImage(i: DrawingImage | null | undefined, projectId: string): Drawin
   return i;
 }
 
+// um trecho da coluna, quando ela tem mais de uma coisa (de cima para baixo)
+const partInput = z.object({
+  kind: z.enum(COLUMN_KINDS),
+  count: z.coerce.number().int().min(0).max(30).default(0),
+  heights: z.array(z.coerce.number().positive().max(20_000)).max(31).default([]),
+  label: z.string().trim().max(24).nullable().optional(),
+  shelves: z.coerce.number().int().min(0).max(30).optional(),
+  height: z.coerce.number().min(0).max(20_000).nullable().optional(),
+});
+
 const drawingInput = z.object({
   room: z.string().trim().min(1, "Informe o ambiente").max(80),
   title: z.string().trim().min(1, "Informe o título da prancha").max(60),
@@ -181,6 +199,8 @@ const drawingInput = z.object({
     depth: mmNum.nullable().optional(),
     top: mmNum.default(0),
     base: mmNum.default(0),
+    sideLeft: mmNum.max(1000).optional(),
+    sideRight: mmNum.max(1000).optional(),
     columns: z
       .array(
         z.object({
@@ -191,6 +211,7 @@ const drawingInput = z.object({
           label: z.string().trim().max(24).nullable().optional(),
           shelves: z.coerce.number().int().min(0).max(30).optional(),
           note: z.string().trim().max(200).nullable().optional(),
+          parts: z.array(partInput).max(6).optional(),
         })
       )
       .min(1, "Adicione pelo menos uma coluna")
@@ -204,6 +225,16 @@ const drawingInput = z.object({
   }),
 });
 
+/** Desenha de novo a prancha de uma especificação já guardada (ex.: depois que a IA trocou a imagem). */
+async function redrawSpec(spec: DrawingSpec, title: string, projectId: string) {
+  const bytes = async (i: DrawingImage | null | undefined) => (i ? { bytes: await storage.getBytes(i.storageKey), mime: i.mime } : null);
+  const out = await drawingPdf(spec, { closed: await bytes(spec.images?.closed), open: await bytes(spec.images?.open) });
+  const fileName = `desenho-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "vista"}.pdf`;
+  const storageKey = buildStorageKey(`${projectId}/pasta-tecnica`, fileName);
+  await storage.put(storageKey, out.pdf, "application/pdf");
+  return { storageKey, fileName };
+}
+
 async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: string) {
   const spec: DrawingSpec = {
     ...input.spec,
@@ -212,7 +243,7 @@ async function renderDrawing(input: z.infer<typeof drawingInput>, projectId: str
     shelfDepth: input.spec.shelfDepth || null,
     images: { closed: ownImage(input.spec.images?.closed, projectId), open: ownImage(input.spec.images?.open, projectId) },
     specs: (input.spec.specs ?? []).filter(Boolean),
-    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0, note: c.note || null })),
+    columns: input.spec.columns.map((c) => ({ kind: c.kind, width: c.width || null, count: c.count, heights: c.heights, label: c.label || null, shelves: c.shelves || 0, note: c.note || null, parts: (c.parts ?? []).length > 1 ? c.parts!.map((p) => ({ kind: p.kind, count: p.count, heights: p.heights, label: p.label || null, shelves: p.shelves || 0, height: p.height || null })) : undefined })),
   };
   let out: Awaited<ReturnType<typeof drawingPdf>>;
   try {
@@ -308,6 +339,69 @@ router.get(
   })
 );
 
+// ---- IA no projeto técnico: imagem 3D gerada a partir da vista cotada
+/** Cada imagem custa uma chamada paga de geração de imagem. */
+const AI_LIMIT = { windowMs: 60 * 60_000, max: 20 };
+const aiStore: RateStore = new Map();
+
+router.get(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/ai-brief",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const s = (await load(p.id)).sheets.find((x) => x.id === req.params.sheetId);
+    if (!s?.drawing) throw new NotFoundError("Esta prancha não foi desenhada por medidas");
+    const ctx = { client: p.client.name, room: s.room };
+    return ok(res, { configured: imageProvider().enabled, brief: techAiBrief(s.drawing, ctx), prompts: { FECHADO: techAiPrompt(s.drawing, ctx, "FECHADO"), ABERTO: techAiPrompt(s.drawing, ctx, "ABERTO") } });
+  })
+);
+
+// A tela manda a vista cotada já como imagem (o servidor não converte PDF em imagem).
+router.post(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/ai-image",
+  requirePermission("organization.manage"),
+  uploadDocument.single("file"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const body = z.object({ slot: z.enum(["closed", "open"]).default("closed"), view: z.enum(TECH_AI_VIEWS).default("FECHADO"), extra: z.string().trim().max(MAX_AI_EXTRA_CHARS).optional() }).parse(req.body ?? {});
+    if (!imageProvider().enabled) throw new BadRequestError("A IA de imagem ainda não está configurada neste ambiente (falta a chave GEMINI_API_KEY). Enquanto isso, envie a imagem 3D pelo botão de escolher imagem.");
+    if (!req.file || !/^image\/(png|jpe?g)$/i.test(req.file.mimetype)) throw new BadRequestError("Não recebi a vista cotada para enviar à IA. Tente de novo.");
+    const cur = await load(p.id);
+    const old = cur.sheets.find((s) => s.id === req.params.sheetId);
+    if (!old?.drawing) throw new NotFoundError("Esta prancha não foi desenhada por medidas");
+
+    const limit = hitLimit(aiStore, `tech-ai:${req.user!.id}`, AI_LIMIT);
+    if (!limit.allowed) throw new ApiError(429, `Limite de imagens por hora atingido. Tente de novo em ${Math.ceil(limit.retryAfterSec / 60)} minutos.`, undefined, "RATE_LIMITED");
+
+    const started = Date.now();
+    let out;
+    try {
+      out = await imageProvider().render({ bytes: req.file.buffer, mime: req.file.mimetype, prompt: techAiPrompt(old.drawing, { client: p.client.name, room: old.room }, body.view, body.extra) });
+    } catch (e) {
+      if (e instanceof AiProviderError) {
+        console.warn("[projeto-tecnico-ia] provider error", JSON.stringify({ status: e.status ?? null, detail: e.detail ?? e.message }));
+        throw new ApiError(e.status === 429 ? 429 : 502, e.status === 429 ? "A IA está com muitas solicitações agora. Tente de novo em instantes." : `Não consegui gerar a imagem: ${e.status ? "a IA recusou ou falhou" : e.message}.`, undefined, e.status === 429 ? "RATE_LIMITED" : "EXTERNAL_SERVICE_ERROR");
+      }
+      throw e;
+    }
+    console.info("[projeto-tecnico-ia] image generated", JSON.stringify({ project: p.code, ms: Date.now() - started, view: body.view }));
+
+    // só PNG e JPG entram no PDF
+    if (!/^image\/(png|jpe?g)$/i.test(out.mime)) throw new ApiError(502, "A IA devolveu a imagem em um formato que a prancha não aceita. Tente de novo.", undefined, "EXTERNAL_SERVICE_ERROR");
+    const imageKey = buildStorageKey(`${p.id}/pasta-tecnica`, `ia-${body.view.toLowerCase()}.${/png/i.test(out.mime) ? "png" : "jpg"}`);
+    await storage.put(imageKey, out.bytes, out.mime);
+    const previous = old.drawing.images?.[body.slot] ?? null;
+    const spec: DrawingSpec = { ...old.drawing, images: { ...old.drawing.images, [body.slot]: { storageKey: imageKey, fileName: `Imagem gerada por IA (${body.view === "ABERTO" ? "aberto" : "fechado"})`, mime: out.mime } } };
+    const d = await redrawSpec(spec, old.title, p.id);
+    const sheets = cur.sheets.map((s) => (s.id === old.id ? { ...s, storageKey: d.storageKey, fileName: d.fileName, drawing: spec } : s));
+    await save(p.id, { ...cur, sheets });
+    await storage.remove(old.storageKey).catch(() => undefined);
+    if (previous) await storage.remove(previous.storageKey).catch(() => undefined);
+    await prisma.auditLog.create({ data: { userId: req.user!.id, action: "TECH_AI_IMAGE_GENERATED", entity: "Project", entityId: p.id, details: { sheetId: old.id, view: body.view } } });
+    return ok(res, { ...view(p, { ...cur, sheets }), sheetId: old.id }, "Imagem 3D gerada pela IA e colocada na prancha");
+  })
+);
+
 // ---- anotações por cima da prancha (desenho à mão e texto)
 router.get(
   "/projects/:projectId/tech-folder/sheets/:sheetId/overlay",
@@ -354,6 +448,32 @@ router.delete(
     await save(p.id, data);
     if (old.overlay) await storage.remove(old.overlay.storageKey).catch(() => undefined);
     return ok(res, view(p, data), "Anotações removidas");
+  })
+);
+
+// Uma prancha só, do jeito que sai na pasta (carimbo, título e escala) — para conferir sem gerar tudo.
+router.get(
+  "/projects/:projectId/tech-folder/sheets/:sheetId/preview.pdf",
+  requirePermission("organization.read"),
+  asyncHandler(async (req, res) => {
+    const p = await projectFor(req.params.projectId, req.user!.organizationId);
+    const s = (await load(p.id)).sheets.find((x) => x.id === req.params.sheetId);
+    if (!s) throw new NotFoundError("Prancha não encontrada");
+    const full = await techFolderPdf({
+      client: p.client.name,
+      project: { code: p.code, name: p.name },
+      sheets: [{ ...s, bytes: await storage.getBytes(s.storageKey), overlayBytes: s.overlay ? await storage.getBytes(s.overlay.storageKey).catch(() => null) : null }],
+      specs: [],
+      notes: [],
+      issuedAt: new Date(),
+      hideSheetNumber: true,
+    });
+    // a primeira página é a capa: aqui interessa só a prancha
+    const doc = await PDFDocument.load(full);
+    doc.removePage(0);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="prancha-${p.code}.pdf"`);
+    return res.send(Buffer.from(await doc.save()));
   })
 );
 

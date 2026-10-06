@@ -59,6 +59,8 @@ export type TechFolderPdfInput = {
   specs: SpecBlock[];
   notes: string[];
   issuedAt: Date;
+  /** prévia de uma prancha só: sem "FOLHA 02/02" */
+  hideSheetNumber?: boolean;
 };
 
 export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
@@ -196,7 +198,7 @@ export async function techFolderPdf(d: TechFolderPdfInput): Promise<Buffer> {
     if (s.scale) text(p, s.scale, W / 2 - font.widthOfTextAtSize(s.scale, 8) / 2, baseY, 8);
     if (s.note) right(p, s.note, W - M - 22, baseY + 16, 9, font, RED);
     stamp(p, s.room);
-    right(p, folha, W - M, STAMP.y - 14, 8, font, GRAY);
+    if (!d.hideSheetNumber) right(p, folha, W - M, STAMP.y - 14, 8, font, GRAY);
   }
 
   return Buffer.from(await doc.save());

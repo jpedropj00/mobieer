@@ -23,10 +23,24 @@ PDF exportado do Promob entra página por página. Se a página já vem com cari
 ## Desenhar por medidas (vista cotada sem o Promob)
 No cartão **Pasta técnica** há o botão **Desenhar por medidas**. Você digita as medidas em milímetros e o sistema desenha a vista frontal do móvel com as cotas, e coloca como uma prancha da pasta:
 1. Informe o ambiente, o título da prancha (ex.: VISTA A INTERNA) e a escala.
-2. Escreva a descrição do móvel (sai na chamada, junto com L x A x P) e informe largura, altura, profundidade, topo e rodapé.
+2. Escreva a descrição do móvel (sai na chamada, junto com L x A x P) e informe largura, altura, profundidade, roda-teto e rodapé.
 3. Monte as colunas, da esquerda para a direita. Cada coluna pode ter **prateleiras**, **portas**, **gavetas** ou ser um **vão livre**. Largura em branco fica com o que sobrar.
 4. Em prateleiras e gavetas, digite as alturas de cima para baixo, separadas por ponto e vírgula. Em branco, o sistema divide por igual. Se faltar a última, ela fica com o resto.
 5. Clique em **Salvar e ver o desenho**.
+
+Tipos de coluna: **Prateleiras**, **Portas**, **Gavetas**, **Sapateira**, **Maleiro**, **Vão livre** e **Outros (escrever)** — em Outros você digita o nome (ex.: Cabideiro) e ele sai escrito dentro da coluna.
+
+**Mais de uma coisa na mesma coluna**: clique em **Mais uma coisa nesta coluna** para empilhar, de cima para baixo, por exemplo maleiro, prateleiras e gavetas. Cada trecho tem a sua altura (um deles pode ficar em branco para ficar com o que sobrar) e o sistema põe uma chapa entre um e outro.
+
+**Alturas digitadas**: são os vãos livres, de cima para baixo. Se a soma for menor que o espaço, os vãos ficam como você digitou e o de baixo recebe a sobra; se passar, o sistema avisa.
+
+Medidas gerais do móvel:
+- **Roda-teto**: a faixa de acabamento em cima.
+- **Rodapé**: a faixa de baixo.
+- **Fechamento / vista esquerda e direita**: a tira de acabamento ao lado do móvel. As colunas ocupam a largura que sobra.
+- **Espessura da chapa**: 15,5 mm por padrão. As prateleiras saem desenhadas com essa espessura e ela entra na cota (vão, 15,5, vão…). As alturas que você digita são os vãos livres; a espessura o sistema desconta sozinho.
+
+O botão **Salvar e ver o desenho** abre a prancha como ela sai na pasta, com o carimbo, o título e a escala.
 
 A folha sai no modelo da loja: a vista cotada, o título (ex.: VISTA B), a escala e o carimbo com cliente, ambiente e logotipo. Dois recursos opcionais:
 - **Imagem 3D ao lado**: envie uma ou duas imagens 3D (PNG ou JPG) e elas entram à direita da vista, na mesma folha. Sem imagem, a vista ocupa a folha inteira. O sistema não desenha o 3D, só posiciona a imagem enviada.
@@ -35,6 +49,11 @@ A folha sai no modelo da loja: a vista cotada, o título (ex.: VISTA B), a escal
 Perspectiva ou planta sozinha em uma folha continua sendo enviada em **Enviar pranchas do Promob**.
 
 Se as alturas não fecharem com o vão interno (altura menos topo e rodapé), o sistema desenha mesmo assim e avisa a diferença. Para mudar as medidas depois, use o botão de lápis e régua na prancha. O desenho é só a vista frontal em 2D: perspectiva e planta continuam vindo do Promob.
+
+## Imagem 3D gerada por IA (em preparação)
+Na tela **Desenhar por medidas**, cada espaço de imagem 3D tem o botão **Gerar com IA**. A IA recebe a vista cotada já salva e as medidas digitadas, e devolve a perspectiva do móvel (fechado ou aberto), que entra ao lado da vista na mesma folha. Ela não pode mudar medidas, quantidade nem posição de portas, prateleiras e gavetas.
+
+O botão só funciona quando a chave da IA de imagem (GEMINI_API_KEY) está configurada no servidor; sem ela, ele fica desativado e a imagem 3D continua sendo enviada pelo botão de escolher imagem. Para usar, salve o desenho primeiro e depois abra as medidas de novo (o lápis com régua na prancha).
 
 ## Desenhar e escrever na prancha
 Cada prancha da pasta técnica tem o botão **Anotar** (o lápis). Ele abre a prancha em tela grande para você desenhar à mão e escrever por cima: marcar um ponto, riscar, escrever "maleiro", avisar de uma tomada. Há três ferramentas (**Desenhar**, **Escrever** e **Borracha**), cinco cores e três espessuras, além de desfazer e limpar. Em **Escrever**, clique no ponto da prancha, digite e aperte Enter.
