@@ -3,7 +3,7 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BoletoError, beneficiaryFromText, dueDateFromFactor, findBoletoInText, parseBoleto } from "../src/modules/finance/boleto.rules";
+import { BoletoError, amountFromText, beneficiaryFromText, dueDateFromFactor, dueDateFromText, findBoletoInText, parseBoleto } from "../src/modules/finance/boleto.rules";
 
 const now = new Date("2026-08-20T12:00:00Z");
 // boleto Santander da foto enviada: R$ 123,70, vence 26/08/2026
@@ -57,4 +57,27 @@ test("PDF: acha a linha digitável no meio do texto e o beneficiário", () => {
   assert.equal(findBoletoInText(text, now)?.amount, 123.7);
   assert.equal(findBoletoInText("sem boleto aqui 123", now), null);
   assert.deepEqual(beneficiaryFromText(text), { name: "BANCO SANTANDER S/A", document: "090400888000142" });
+});
+
+// fatura de cartão: o código vem com valor e vencimento zerados, os dois saem do texto
+const FATURA = [
+  "Pagamento Total Data de Vencimento Limite Total",
+  "2.506,63 13/10/2026 3.200,00",
+  "encargos que terão o valor máximo de R$453,32.",
+  "Beneficiário: Financeira Exemplo S.A. Nosso Número: 1234567890-1 Vencimento : 13/10/2026",
+  "Pagador: FULANA DE TAL Nº do Documento: 1234567890 Valor : 2.506,63",
+  "Beneficiário CNPJ Agência / Código Beneficiário",
+  "11.222.333/0001-81",
+  "Valor original da dívida R$ 0,00",
+].join("\n");
+
+test("fatura de cartão: valor e vencimento lidos do texto do PDF", () => {
+  assert.equal(amountFromText(FATURA), 2506.63);
+  assert.equal(dueDateFromText(FATURA), "2026-10-13");
+  assert.equal(amountFromText("Valor original da dívida R$ 0,00"), null);
+  assert.equal(dueDateFromText("sem data aqui"), null);
+});
+
+test("beneficiário da fatura: nome sem o 'Nosso Número' e CNPJ achado no resto do texto", () => {
+  assert.deepEqual(beneficiaryFromText(FATURA), { name: "Financeira Exemplo S.A.", document: "11.222.333/0001-81" });
 });

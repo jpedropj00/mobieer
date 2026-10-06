@@ -44,7 +44,7 @@ import {
   statusAfterPayments,
 } from "./documents.service";
 import { issueReceipt } from "./receipt.service";
-import { BoletoError, beneficiaryFromText, findBoletoInText, parseBoleto } from "./boleto.rules";
+import { BoletoError, amountFromText, beneficiaryFromText, dueDateFromText, findBoletoInText, parseBoleto } from "./boleto.rules";
 import { extractPdfLines } from "../promob/promob.pdf";
 
 const router = Router();
@@ -939,6 +939,9 @@ router.post(
         boleto = findBoletoInText(text);
         beneficiary = beneficiaryFromText(text);
         if (!boleto) throw new BoletoError("Não achei a linha digitável neste PDF — digite os números do boleto");
+        // fatura de cartão: valor e vencimento não vêm no código, só no texto
+        if (boleto.amount == null) boleto.amount = amountFromText(text);
+        if (boleto.dueDate == null) boleto.dueDate = dueDateFromText(text);
       } else if (code) {
         boleto = parseBoleto(code);
       } else throw new BoletoError("Digite a linha digitável, leia o código de barras ou envie o PDF do boleto");

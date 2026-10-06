@@ -145,8 +145,34 @@ export function beneficiaryFromText(text: string): { name: string | null; docume
   if (idx < 0) return { name: null, document: null };
   const near = lines.slice(idx, idx + 3).join(" ");
   // CNPJ formatado, só números (alguns bancos imprimem com um zero na frente: 15 dígitos) ou CPF
-  const doc = /(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14,15}(?!\d)|\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}(?!\d))/.exec(near)?.[1] ?? null;
+  // sem documento perto do nome: vale o primeiro CNPJ do boleto (o do pagador costuma ser CPF)
+  const doc =
+    /(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{14,15}(?!\d)|\d{3}\.\d{3}\.\d{3}-\d{2}|\d{11}(?!\d))/.exec(near)?.[1] ?? /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/.exec(text)?.[0] ?? null;
   const rest = near.replace(/^(benefici[aá]rio|cedente)[:\s]*/i, "");
-  const name = rest.split(/\s[-–]\s|\s\d{2}\.?\d{3}|\s\d{11,14}|CNPJ|CPF/i)[0].trim() || null;
+  const name = rest.split(/\s[-–]\s|\s\d{2}\.?\d{3}|\s\d{11,14}|CNPJ|CPF|Nosso\s+N[uú]mero|Vencimento|Ag[eê]ncia|Pagador/i)[0].trim() || null;
   return { name: name && name.length > 2 ? name.slice(0, 120) : null, document: doc };
+}
+
+/**
+ * Fatura de cartão e boleto de valor em aberto trazem valor e vencimento
+ * zerados no código de barras. Nesse caso os dois saem do texto do PDF.
+ */
+export function amountFromText(text: string): number | null {
+  const m = /\bvalor[ \t]*(?:do documento|cobrado|total)?[ \t]*:?[ \t]*(?:R\$[ \t]*)?(\d{1,3}(?:\.\d{3})*,\d{2})/i.exec(text);
+  const value = m ? Number(m[1].replace(/\./g, "").replace(",", ".")) : 0;
+  return value > 0 ? value : null;
+}
+
+export function dueDateFromText(text: string): string | null {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/vencimento/i.test(lines[i])) continue;
+    // a data na mesma linha, depois da palavra; senão, na linha de baixo (cabeçalho de tabela)
+    const m = /vencimento[^\d\n]{0,40}?(\d{2})\/(\d{2})\/(\d{4})/i.exec(lines[i]) ?? /(\d{2})\/(\d{2})\/(\d{4})/.exec(lines[i + 1] ?? "");
+    if (!m) continue;
+    const [, d, mo, y] = m;
+    const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+    if (date.getUTCDate() === Number(d) && date.getUTCMonth() === Number(mo) - 1) return iso(date);
+  }
+  return null;
 }
