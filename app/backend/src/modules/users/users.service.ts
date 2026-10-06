@@ -83,7 +83,7 @@ export async function getUser(id: string) {
 export async function createUser(input: CreateUserInput, actorId: string) {
   // Sem senha informada, gera uma provisória; de todo jeito a pessoa troca no primeiro acesso.
   const password = input.password || temporaryPassword();
-  const hash = await bcrypt.hash(password, 10);
+  const hash = await bcrypt.hash(password, 12);
 
   const user = await prisma.user.create({
     data: {
@@ -132,7 +132,7 @@ export async function resetUserPassword(id: string, actorId: string) {
   const password = temporaryPassword();
   const updated = await prisma.user.update({
     where: { id },
-    data: { password: await bcrypt.hash(password, 10), mustChangePassword: true, passwordChangedAt: new Date(), lockedAt: null, failedLoginCount: 0, resetToken: null, resetTokenExpiry: null },
+    data: { password: await bcrypt.hash(password, 12), mustChangePassword: true, passwordChangedAt: new Date(), lockedAt: null, failedLoginCount: 0, resetToken: null, resetTokenExpiry: null },
     include: { role: true },
   });
   await prisma.auditLog.create({ data: { userId: actorId, action: "USER_PASSWORD_RESET_BY_ADMIN", entity: "User", entityId: id } });

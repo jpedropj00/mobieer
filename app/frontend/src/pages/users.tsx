@@ -321,7 +321,7 @@ export function UsersPage() {
             {!editing && (
               <div className="space-y-2">
                 <Label htmlFor="u-password">Senha</Label>
-                <Input id="u-password" type="password" placeholder="Deixe vazio para usar mudar123" {...form.register("password")} />
+                <Input id="u-password" type="password" placeholder="Deixe vazio para gerar uma senha temporária" {...form.register("password")} />
                 {form.formState.errors.password && <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>}
               </div>
             )}

@@ -56,7 +56,7 @@ router.post(
     if (!role) throw new InvalidStateError("Perfil MONTADOR não existe — rode as migrations");
 
     const password = input.password ?? tempPassword();
-    const hash = await bcrypt.hash(password, 10);
+    const hash = await bcrypt.hash(password, 12);
 
     if (contractor.userId) {
       // já tem acesso: redefine e-mail/senha e reativa

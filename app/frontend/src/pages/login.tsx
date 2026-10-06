@@ -20,9 +20,9 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 
 const DEMO_ACCOUNTS = [
-  { label: "Administrador", email: "admin@mobieer.com.br", password: "admin123" },
-  { label: "Almoxarife", email: "almoxarife@mobieer.com.br", password: "almox123" },
-  { label: "Solicitante", email: "solicitante@mobieer.com.br", password: "sol123" },
+  { label: "Administrador", email: "admin@mobieer.com.br" },
+  { label: "Almoxarife", email: "almoxarife@mobieer.com.br" },
+  { label: "Solicitante", email: "solicitante@mobieer.com.br" },
 ];
 
 export function LoginPage() {
@@ -99,8 +99,8 @@ export function LoginPage() {
                 key={acc.email}
                 type="button"
                 onClick={() => {
+                  // só o e-mail: a senha é a do SEED_PASSWORD de quem rodou o seed
                   setValue("email", acc.email);
-                  setValue("password", acc.password);
                 }}
                 className="rounded-lg border border-sidebar-border bg-sidebar-muted/10 px-3 py-2 text-left transition-colors hover:border-primary/50 hover:bg-sidebar-muted/30"
               >
