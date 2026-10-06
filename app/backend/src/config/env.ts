@@ -1,3 +1,4 @@
+import { resolveAiEndpoint } from "./ai-endpoint";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -18,7 +19,9 @@ const mailDriver = (process.env.MAIL_DRIVER || "console").toLowerCase();
 const bool = (v: string | undefined, dflt = false) =>
   v === undefined || v === "" ? dflt : ["1", "true", "yes", "on"].includes(v.toLowerCase());
 
-const aiApiKey = process.env.AI_API_KEY || "";
+const aiApiKey = (process.env.AI_API_KEY || "").trim();
+// endereço e modelo saem da própria chave quando AI_BASE_URL falta ou é de outro provedor
+const aiEndpoint = resolveAiEndpoint(aiApiKey, process.env.AI_BASE_URL, process.env.AI_MODEL);
 const signatureToken = process.env.SIGNATURE_API_TOKEN || "";
 const nfeToken = process.env.NFE_API_TOKEN || "";
 
@@ -72,9 +75,12 @@ export const env = {
   //     Sem AI_API_KEY => usa o gerador heurístico local. ---
   ai: {
     enabled: bool(process.env.AI_ENABLED, Boolean(aiApiKey)),
-    baseUrl: (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
+    baseUrl: aiEndpoint.baseUrl,
     apiKey: aiApiKey,
-    model: process.env.AI_MODEL || "gpt-4o-mini",
+    model: aiEndpoint.model,
+    providerName: aiEndpoint.provider,
+    /** AI_BASE_URL apontava para outro provedor e foi trocado pelo da chave */
+    endpointAdjusted: aiEndpoint.adjusted,
     timeoutMs: Number(process.env.AI_TIMEOUT_MS || 30000),
   },
 
